@@ -113,6 +113,6 @@ def after_request(response):
     return response
 
 # 导入视图函数
-from wxcloudrun import views3  # 导入两个视图模块
+from wxcloudrun import views  # 导入两个视图模块
 
 

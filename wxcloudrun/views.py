@@ -1,69 +1,31 @@
 from datetime import datetime, timedelta
-from flask import render_template, request, jsonify, send_from_directory, abort, send_file
-from wxcloudrun import app, db
-from wxcloudrun.model import User, Product, PurchaseOrder, DeliveryOrder, PushOrder, SystemSettings, StockRecord
+from flask import render_template, request, jsonify, send_from_directory, abort, make_response, send_file
+from run import app
+from wxcloudrun.model import *
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+import pandas as pd
 import jwt
 from functools import wraps
 import os
+import time
 import config
 import requests
 import uuid
 import json
+from wxcloudrun import db
+from wxcloudrun.token import generate_token, verify_token, extend_token_expiry
 import traceback
-from PIL import Image
-import io
-import qrcode
+from Crypto.Cipher import AES
 import base64
-import pandas as pd
-from sqlalchemy import func, desc, and_
-import logging
+from werkzeug.utils import secure_filename
+import string
+import random
+from sqlalchemy import inspect, text, func, desc, distinct, case, Text
+from sqlalchemy.sql import literal, literal_column
+from wxcloudrun.response import *
 
-# 测试路由
-@app.route('/api/test', methods=['GET'])
-def test_api():
-    return jsonify({
-        'code': 0,
-        'message': '测试成功',
-        'data': {
-            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-    })
-
-# 初始化数据库
-def init_db():
-    """初始化数据库"""
-    try:
-        print('开始初始化数据库...')
-        db.create_all()
-        
-        # 检查是否需要创建管理员账号
-        admin = User.query.filter_by(user_type=1).first()
-        if not admin:
-            print('创建默认管理员账号...')
-            admin = User(
-                username='admin',
-                password='admin123',  # 实际应用中应该使用加密密码
-                nickname='管理员',
-                user_type=1,
-                status=1,
-                created_at=datetime.now()
-            )
-            db.session.add(admin)
-            db.session.commit()
-            print('管理员账号创建成功')
-            
-        print('数据库初始化完成')
-        
-    except Exception as e:
-        print(f'数据库初始化失败: {str(e)}')
-        print(f'错误追踪:\n{traceback.format_exc()}')
-        db.session.rollback()
-        raise
-
-
-# 修改登录验证装饰器
+# 用户认证中间件
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -104,6 +66,7 @@ def login_required(f):
             
     return decorated_function
 
+#管理员认证中间件
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -144,42 +107,29 @@ def admin_required(f):
 
     return decorated_function
 
-# 微信小程序配置
-WECHAT_APPID = 'wxa17a5479891750b3'  # 替换为您的小程序 APPID
-WECHAT_SECRET = '33359853cfee1dc1e2b6e535249e351d'  # 替换为您的小程序密钥
 
-# 添加解密方法
-def decrypt_user_info(session_key, encrypted_data, iv):
+@app.route('/api/test/db', methods=['GET'])
+def test_db():
+    """
+    测试数据库连接的接口
+    """
     try:
-        # 使用 base64 解码
-        session_key = base64.b64decode(session_key)
-        encrypted_data = base64.b64decode(encrypted_data)
-        iv = base64.b64decode(iv)
-        
-        # 使用 AES-128-CBC 解密
-        cipher = AES.new(session_key, AES.MODE_CBC, iv)
-        decrypted = cipher.decrypt(encrypted_data)
-        
-        # 去除补位符号
-        pad = decrypted[-1]
-        if isinstance(pad, int):
-            pad_size = pad
-        else:
-            pad_size = ord(pad)
-        decrypted = decrypted[:-pad_size]
-        
-        # 解析 JSON 数据
-        decrypted_data = json.loads(decrypted)
-        return decrypted_data
+        return jsonify({
+            'code': 0,
+            'data': {
+                'database_name': config.database,
+                'host': config.db_address,
+                'connection_status': 'connected' if db.session.is_active else 'disconnected'
+            },
+            'message': '数据库连接测试'
+        })
     except Exception as e:
-        print('解密用户信息失败:', str(e))
-        return None
+        return jsonify({
+            'code': -1,
+            'message': f'数据库连接测试失败：{str(e)}'
+        }), 500
 
-# 添加生成随机字符串的辅助函数
-def generate_random_string(length=8):
-    """生成指定长度的随机字符串，包含字母和数字"""
-    characters = string.ascii_letters + string.digits
-    return ''.join(random.choice(characters) for _ in range(length))
+
 
 # 添加头像上传接口
 @app.route('/upload/avatar', methods=['POST'])
@@ -266,10 +216,7 @@ def upload_avatar(user_id):
         print(f'- 错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '头像上传失败'}), 500
 
-# 添加文件类型检查函数
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 # 微信openid登录接口
 @app.route('/wx/openid/login', methods=['POST'])
@@ -361,10 +308,9 @@ def wechat_openid_login():
         print(f'- 错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '登录失败'}), 500
 
-
-# 微信登录接口
-@app.route('/wx/login', methods=['POST'])
-def wechat_login():
+#微信注册
+@app.route('/wx/register', methods=['POST'])
+def wechat_register():
     try:
         print('='*50)
         print('开始处理微信登录请求')
@@ -376,16 +322,8 @@ def wechat_login():
         code = data.get('code')
         encrypted_data = data.get('encryptedData')
         iv = data.get('iv')
-        bind_user = data.get('bind_user', False)
         openid = data.get('openid')
 
-        # 检查参数完整性
-        print('参数检查:')
-        print(f'- code: {"存在" if code else "缺失"}')
-        print(f'- encryptedData: {"存在" if encrypted_data else "缺失"}')
-        print(f'- iv: {"存在" if iv else "缺失"}')
-        print(f'- bind_user: {bind_user}')
-        
         if not all([code, encrypted_data, iv]):
             print('错误: 缺少必要参数')
             return jsonify({'error': '缺少必要参数'}), 400
@@ -396,60 +334,104 @@ def wechat_login():
             return jsonify({'error': '获取微信用户信息失败'}), 400
 
         openid = wx_data.get('openid')
-        session_key = wx_data.get('session_key')
         
-        # 解密用户信息
-        try:
-            user_info = decrypt_weixin_data(session_key, encrypted_data, iv)
-        except Exception as e:
-            print('解密失败:', str(e))
-            return jsonify({'error': '解密用户信息失败'}), 400
-        
-        # 查找或创建用户
+        # 注册用户
         user = User.query.filter_by(openid=openid).first()
+        if not user:
+            user = User(
+                openid=openid,
+                nickname=wx_data.get('nickName'),
+                avatar=wx_data.get('avatarUrl'),
+                user_type=0,
+                status=1,
+                created_at=datetime.now()
+            )
+            db.session.add(user)
+            db.session.commit()
+            print(f'新用户创建成功: ID={user.id}')
         
-        if user:
-            if user.status == 0:
-                return jsonify({'error': '账号已被禁用'}), 403
-            else:
-                if bind_user:
-                    return jsonify({
-                        'code': 200,
-                        'data': {
-                            'need_bind': True,
-                            'openid': openid,
-                            'userInfo': {
-                                'nickName': user_info.get('nickName'),
-                                'avatarUrl': user_info.get('avatarUrl')
-                            }
-                        }
-                    })
-        
-        # 创建新用户
-        username = f'wx_{generate_random_string(8)}'
-        while User.query.filter_by(username=username).first():
-            username = f'wx_{generate_random_string(8)}'
-        
-        user = User(
-            username=username,
-            password=generate_random_string(12),
-            nickname=user_info.get('nickName', username),
-            avatar=user_info.get('avatarUrl', ''),
-            openid=openid,
-            user_type=0,
-            status=1,
-            created_at=datetime.now()
-        )
-        db.session.add(user)
-        db.session.commit()
-
         # 生成token
         token = generate_token(user.id)
         
         return jsonify({
             'code': 200,
             'data': {
-                'need_bind': False,
+                'token': token
+            }
+        })
+        
+    except Exception as e:
+        print('\n处理微信注册请求时发生错误:')
+        print(f'- 错误类型: {type(e).__name__}')
+        print(f'- 错误信息: {str(e)}')
+        print(f'- 错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '注册失败'}), 500  
+
+        
+@app.route('/wx/login', methods=['POST'])
+def wechat_login():
+    try:
+        print('='*50)
+        print('开始处理微信登录请求')
+        print('='*50)
+        
+        data = request.json
+        print('收到的请求数据:', json.dumps(data, ensure_ascii=False, indent=2))
+        
+        code = data.get('code')
+        if not code:
+            print('错误: 缺少code参数')
+            return jsonify({'error': '缺少必要参数'}), 400
+            
+        # 获取微信用户信息
+        wx_data = get_wx_user_info(code)
+        if not wx_data:
+            print('错误: 获取微信用户信息失败')
+            return jsonify({'error': '获取微信用户信息失败'}), 400
+
+        if 'errcode' in wx_data:
+            print('错误: 微信API返回错误:', wx_data['errmsg'])
+            return jsonify({'error': wx_data['errmsg']}), 400
+
+        openid = wx_data.get('openid')
+        session_key = wx_data.get('session_key')
+        
+        if not openid or not session_key:
+            print('错误: 微信返回数据不完整')
+            return jsonify({'error': '获取微信用户信息失败'}), 400
+            
+        # 查找用户
+        user = User.query.filter_by(openid=openid).first()
+        
+        # 用户不存在
+        if not user:
+            print('用户不存在,询问是否注册')
+            return jsonify({
+                'code': 200,
+                'data': {
+                    'is_registered': False,
+                    'openid': openid,
+                    'session_key': session_key
+                }
+            }),400
+            
+        # 用户被禁用
+        if user.status == 0:
+            print('用户已被禁用')
+            return jsonify({'error': '账号已被禁用'}), 403
+            
+        # 生成token
+        token = generate_token(user.id)
+        if not token:
+            print('生成token失败')
+            return jsonify({'error': '登录失败'}), 500
+            
+        print('登录成功')
+        return jsonify({
+            'code': 200,
+            'data': {
+                'is_registered': True,
+                'token': token,
                 'userInfo': {
                     'id': user.id,
                     'username': user.username,
@@ -459,17 +441,13 @@ def wechat_login():
                     'address': user.address,
                     'contact': user.contact,
                     'user_type': user.user_type
-                },
-                'token': token
+                }
             }
         })
             
     except Exception as e:
-        print('\n发生未预期的错误:')
-        print(f'- 错误类型: {type(e).__name__}')
-        print(f'- 错误信息: {str(e)}')
-        print(f'- 错误追踪:\n{traceback.format_exc()}')
-        db.session.rollback()
+        print('微信登录失败:', str(e))
+        print('错误追踪:\n', traceback.format_exc())
         return jsonify({'error': '登录失败'}), 500
 
 # 微信登录绑定账号接口
@@ -521,85 +499,8 @@ def wx_login_link():
         db.session.rollback()
         return jsonify({'error': '微信账号关联失败'}), 500
 
-# 添加获取微信用户信息的辅助函数
-def get_wx_user_info(code):
-    """获取微信用户信息"""
-    try:
-        print('\n开始请求微信API:')
-        wx_api_url = 'https://api.weixin.qq.com/sns/jscode2session'
-        print(f'- 接口地址: {wx_api_url}')
-        print(f'- 请求参数: appid={WECHAT_APPID}, code={code}')
-        
-        params = {
-            'appid': WECHAT_APPID,
-            'secret': WECHAT_SECRET,
-            'js_code': code,
-            'grant_type': 'authorization_code'
-        }
-        
-        response = requests.get(wx_api_url, params=params)
-        wx_data = response.json()
-        print('\n微信API响应:')
-        print(json.dumps(wx_data, ensure_ascii=False, indent=2))
 
-        if 'errcode' in wx_data:
-            print('错误: 微信API返回错误')
-            print(f'错误码: {wx_data.get("errcode")}')
-            print(f'错误信息: {wx_data.get("errmsg")}')
-            return None
 
-        return wx_data
-        
-    except Exception as e:
-        print(f'获取微信用户信息失败: {str(e)}')
-        return None
-
-# 数据解密函数也添加详细日志
-def decrypt_weixin_data(session_key, encrypted_data, iv):
-    try:
-        print('开始解密微信数据:')
-        print(f'- session_key长度: {len(session_key)}')
-        print(f'- encrypted_data长度: {len(encrypted_data)}')
-        print(f'- iv长度: {len(iv)}')
-        
-        # Base64解码
-        print('\n执行Base64解码...')
-        session_key = base64.b64decode(session_key)
-        encrypted_data = base64.b64decode(encrypted_data)
-        iv = base64.b64decode(iv)
-        
-        print('解码后数据长度:')
-        print(f'- session_key: {len(session_key)} 字节')
-        print(f'- encrypted_data: {len(encrypted_data)} 字节')
-        print(f'- iv: {len(iv)} 字节')
-        
-        # 创建解密器
-        print('\n创建AES解密器...')
-        cipher = AES.new(session_key, AES.MODE_CBC, iv)
-        
-        # 解密数据
-        print('执行解密...')
-        decrypted = cipher.decrypt(encrypted_data)
-        
-        # 处理填充
-        print('处理PKCS7填充...')
-        pad = decrypted[-1]
-        if not isinstance(pad, int):
-            pad = ord(pad)
-        data = decrypted[:-pad]
-        
-        # 解析JSON
-        print('解析JSON数据...')
-        result = json.loads(data)
-        print('解密成功')
-        return result
-        
-    except Exception as e:
-        print('\n解密过程出错:')
-        print(f'- 错误类型: {type(e).__name__}')
-        print(f'- 错误信息: {str(e)}')
-        print(f'- 错误追踪:\n{traceback.format_exc()}')
-        raise Exception('解密用户信息失败')
 
 # 更新用户信息接口
 @app.route('/user/update', methods=['POST'])
@@ -784,23 +685,7 @@ def login():
         print(f'- 错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '登录失败'}), 500
 
-# 修改登录频率限制检查函数
-def is_login_attempts_exceeded(username):
-    try:
-        user = User.query.filter_by(username=username).first()
-        if not user:
-                return False
-            
-            # 如果尝试次数超过5次且最后一次尝试在30分钟内
-        if user.login_attempts >= 5 and user.last_login_attempt:
-            if datetime.utcnow() - user.last_login_attempt < timedelta(minutes=30):
-                    return True
-                    
-            return False
-            
-    except Exception as e:
-        print(f'检查登录频率时出错: {str(e)}')
-        return False
+
 # 新增或更新商品（需要登录）
 @app.route('/products', methods=['POST'])
 @admin_required
@@ -1025,7 +910,7 @@ def get_recent_products():
 
 # 确保文件扩展名合法
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in config.ALLOWED_EXTENSIONS
 
 
 # 上传图片接口
@@ -1056,11 +941,8 @@ def upload_file_handler(user_id):
         
         # 保存文件
         file_path = os.path.join(upload_dir, new_filename)
-        file.save(file_path)
+        file.save(file_path)  
         
-        # 如果是图片，生成缩略图
-        if file_ext in {'png', 'jpg', 'jpeg', 'gif'}:
-            create_thumbnail(file_path)
             
         # 返回可访问的URL
         file_url = f'/uploads/{file_ext}/{new_filename}'
@@ -1329,6 +1211,14 @@ def update_stock(user_id, product_id):
         print(f'处理库存更新请求失败: {str(e)}')
         return jsonify({'error': '更新库存失败'}), 500
 
+
+@app.errorhandler(404)
+def not_found_error(error):
+    return jsonify({'error': '请求的资源不存在'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': '服务器内部错误'}), 500
 # 更新商品颜色库存
 @app.route('/products/<product_id>/specs/stock', methods=['POST'])
 @login_required
@@ -1420,21 +1310,7 @@ def get_color_stocks(product_id):
         print('获取颜色库存失败:', str(e))
         return jsonify({'error': '服务器错误'}), 500
 
-@app.errorhandler(404)
-def not_found_error(error):
-    return jsonify({'error': '请求的资源不存在'}), 404
 
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({'error': '服务器内部错误'}), 500
-
-
-def validate_product_data(data):
-    required_fields = ['id', 'name', 'price']
-    for field in required_fields:
-        if field not in data:
-            return False, f'缺少必要字段: {field}'
-    return True, None
 
 # 添加Excel导入接口
 @app.route('/products/import', methods=['POST'])
@@ -1597,65 +1473,7 @@ def download_template():
     except Exception as e:
         return jsonify({'error': '模板文件不存在'}), 404
 
-# 添加创建模板的函数
-def create_template():
-    import pandas as pd
-    
-    # 创建示例数据
-    data = {
-        '款号': ['A001', 'A002'],
-        '商品名称': ['羊毛围巾-灰色', '羊毛围巾-黑色'],
-        '价格': [299, 299],
-        '描述': ['100%羊毛，柔软保暖', '100%羊毛，经典黑色'],
-        '款式': [1, 1],  # 1代表围巾
-        '颜色': ['灰色,黑色', '黑色,灰色'],  # 用逗号分隔多个颜色
-        '库存': ['10,5', '8,3'],  # 对应颜色的库存数量
-        '标签': ['羊毛,保暖,围巾', '羊毛,经典,围巾']  # 用逗号分隔多个标签
-    }
-    
-    df = pd.DataFrame(data)
-    
-    # 确保目录存在
-    os.makedirs('static/templates', exist_ok=True)
-    
-    # 保存为Excel文件
-    template_path = 'static/templates/products_template.xlsx'
-    writer = pd.ExcelWriter(template_path, engine='openpyxl')
-    
-    # 写入数据
-    df.to_excel(writer, index=False, sheet_name='商品数据')
-    
-    # 获取工作表
-    worksheet = writer.sheets['商品数据']
-    
-    # 添加说明
-    notes = {
-        'A1': '商品唯一标识，必填',
-        'B1': '商品名称，必填',
-        'C1': '商品价格，可选（默认0）',
-        'D1': '商品描述，可选',
-        'E1': '款式：1=围巾，2=帽子，3=手套（默认1）',
-        'F1': '颜色：多个颜色用英文逗号分隔',
-        'G1': '库存：与颜色一一对应，用英文逗号分隔',
-        'H1': '标签：多个标签用英文逗号分隔'
-    }
-    
-    # 设置列宽
-    worksheet.column_dimensions['A'].width = 15
-    worksheet.column_dimensions['B'].width = 20
-    worksheet.column_dimensions['C'].width = 10
-    worksheet.column_dimensions['D'].width = 30
-    worksheet.column_dimensions['E'].width = 10
-    worksheet.column_dimensions['F'].width = 20
-    worksheet.column_dimensions['G'].width = 20
-    worksheet.column_dimensions['H'].width = 30
-    
-    # 添加批注
-    for cell, note in notes.items():
-        worksheet[cell].comment = openpyxl.comments.Comment(note, 'System')
-    
-    writer.close()
-    print(f'模板文件已创建: {template_path}')
+
 
 # 数据统计接口
 @app.route('/statistics', methods=['GET'])
@@ -1783,39 +1601,7 @@ def get_statistics(user_id):
         print(f'获取统计数据失败: {str(e)}')
         return jsonify({'error': '获取统计数据失败'}), 500
 
-# 辅助函数：处理采购统计数据
-def process_top_purchased(data):
-    result = []
-    current_product = None
-    product_data = None
-    color_stats = {}
-    
-    for row in data:
-        product_id = row.id
-        
-        if current_product != product_id:
-            if current_product is not None:
-                product_data['color_stats'] = color_stats
-                result.append(product_data)
-                
-            current_product = product_id
-            color_stats = {}
-            product_data = {
-                'id': product_id,
-                'name': row.name,
-                'order_count': row.order_count or 0,
-                'total_quantity': row.total_quantity or 0,
-                'total_amount': float(row.total_amount or 0)
-            }
-        
-        if row.color:
-            color_stats[row.color] = row.color_quantity
-    
-    if current_product is not None:
-        product_data['color_stats'] = color_stats
-        result.append(product_data)
-    
-    return result
+
 
 # 添加记录商品访问的接口
 @app.route('/products/<product_id>/view', methods=['POST'])
@@ -1910,18 +1696,18 @@ def get_purchase_orders(user_id):
         
         # 获取当前用户信息
         current_user = User.query.get(user_id)
-        
+        if not current_user:
+            return jsonify({'error': '用户不存在'}), 404
+            
         # 构建查询，加入用户信息
         query = db.session.query(PurchaseOrder, User).join(
             User, PurchaseOrder.user_id == User.id
         )
-        print(f"当前用户信息: {current_user.user_type}")
+        
         # 如果不是管理员，限制只能查看自己的订单
         if current_user.user_type != 1:  # 假设 1 表示管理员
             query = query.filter(PurchaseOrder.user_id == user_id)
-        
-        print(f"基础查询构建完成: {str(query)}")
-
+            
         # 添加筛选条件
         if status:
             query = query.filter(PurchaseOrder.status == status)
@@ -1937,7 +1723,6 @@ def get_purchase_orders(user_id):
         
         # 构建返回数据
         orders = []
-        print("开始处理订单数据...")
         
         for order, user in pagination.items:
             try:
@@ -1945,7 +1730,6 @@ def get_purchase_orders(user_id):
                 order_items = db.session.query(PurchaseOrderItem).filter(
                     PurchaseOrderItem.order_id == order.id
                 ).all()
-                print(f"获取到订单 {order.id} 的明细数量: {len(order_items)}")
                 
                 # 使用字典来临时存储合并的商品数据
                 merged_products = {}
@@ -1953,8 +1737,6 @@ def get_purchase_orders(user_id):
                 for item in order_items:
                     try:
                         product = Product.query.get(item.product_id)
-                        print(f"获取商品信息: product_id={item.product_id}, found={product is not None}")
-                        
                         if not product:
                             continue
                             
@@ -1966,8 +1748,8 @@ def get_purchase_orders(user_id):
                                 'product_name': product.name,
                                 'image': json.loads(product.images)[0] if product.images else None,
                                 'total_quantity': 0,
-                                'total_amount': 0,                                
-                                'specs': []  # 用于存储不同颜色规格的信息
+                                'total_amount': 0,
+                                'specs': []
                             }
                         
                         # 添加当前规格信息
@@ -1990,7 +1772,7 @@ def get_purchase_orders(user_id):
                 # 将合并后的商品数据转换为列表
                 items = list(merged_products.values())
                 
-                # 添加用户信息到订单数据
+                # 添加订单数据
                 order_data = {
                     'id': order.id,
                     'order_number': order.order_number,
@@ -2009,18 +1791,18 @@ def get_purchase_orders(user_id):
                     }
                 }
                 orders.append(order_data)
-                print(f"订单 {order.id} 处理完成")
                 
             except Exception as e:
                 print(f"处理订单 {order.id} 时出错: {str(e)}")
                 continue
-            
-            return jsonify({
-                'orders': orders,
+        
+        # 返回所有订单数据
+        return jsonify({
+            'orders': orders,
             'total': pagination.total,
             'pages': pagination.pages,
             'current_page': page
-            }), 200
+        }), 200
             
     except Exception as e:
         print(f'获取采购单列表失败: {str(e)}')
@@ -2064,22 +1846,18 @@ def update_purchase_order(user_id, order_id):
 
 # 添加用户管理相关接口
 @app.route('/users', methods=['GET'])
-@login_required
+@admin_required
 def get_users(user_id):
-    try:
-        # 检查权限
-        current_user = User.query.get(user_id)
-        if not current_user or current_user.user_type != 1:
-            return jsonify({'error': '无权限访问'}), 403
-
+    try:       
         # 获取查询参数
         page = int(request.args.get('page', 1))
         page_size = min(int(request.args.get('page_size', 10)), 50)
         keyword = request.args.get('keyword', '').strip()
         status = request.args.get('status')
+        user_type = request.args.get('user_type')  # 添加用户类型筛选
         
         # 构建基础查询
-        query = User.query.filter(User.user_type == 0)
+        query = User.query.filter(User.user_type != 1)  # 排除管理员
         
         # 添加筛选条件
         if keyword:
@@ -2091,7 +1869,20 @@ def get_users(user_id):
             ))
             
         if status is not None:
-            query = query.filter(User.status == int(status))
+            try:
+                status = int(status)
+                if status in [0, 1]:  # 验证状态值是否有效
+                    query = query.filter(User.status == status)
+            except ValueError:
+                pass
+                
+        if user_type is not None:
+            try:
+                user_type = int(user_type)
+                if user_type in [0, 2, 3, 4]:  # 验证用户类型是否有效 (0:零售 2:A类 3:B类 4:C类)
+                    query = query.filter(User.user_type == user_type)
+            except ValueError:
+                pass
             
         # 获取分页数据
         paginated_users = query.order_by(User.created_at.desc())\
@@ -2125,6 +1916,8 @@ def get_users(user_id):
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '获取用户列表失败'}), 500
 
+
+
 # 更新用户状态
 @app.route('/users/<int:target_user_id>/status', methods=['PUT'])
 @login_required
@@ -2135,7 +1928,7 @@ def update_user_status(user_id, target_user_id):
         if not current_user or current_user.user_type != 1:
             return jsonify({'error': '无权限执行此操作'}), 403
 
-            data = request.json
+        data = request.json
         new_status = data.get('status')
         
         if new_status not in [0, 1]:  # 0:禁用 1:启用
@@ -2196,6 +1989,8 @@ def get_user_profile(user_id):
         print(f'错误类型: {type(e).__name__}')
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '获取用户信息失败'}), 500
+
+
 
 # 更新当前用户信息
 @app.route('/user/profile', methods=['PUT'])
@@ -3053,50 +2848,41 @@ def cancel_delivery(user_id, order_id):
 
 # 删除用户接口
 @app.route('/users/delete', methods=['POST'])
-@login_required
-def delete_user(current_user_id):
+@admin_required
+def delete_user(user_id):
     try:
         data = request.json
         target_user_id = data.get('user_id')
         
         if not target_user_id:
             return jsonify({'error': '缺少用户ID'}), 400
-        
-        # 检查当前用户是否是管理员
-        current_user = User.query.get(current_user_id)
-        if not current_user:
-            return jsonify({'error': '当前用户不存在'}), 401
-        
-        if current_user.user_type != 1:
-            return jsonify({'error': '没有权限执行此操作'}), 403
 
         # 检查要删除的用户是否存在
         target_user = User.query.get(target_user_id)
         if not target_user:
             return jsonify({'error': '用户不存在'}), 404
 
-        # 不允许删除自己
-        if int(target_user_id) == current_user_id:
-            return jsonify({'error': '不能删除自己的账号'}), 400
-
-        # 执行删除操作
-        db.session.delete(target_user)
-        
         try:
+            # 将用户状态设置为已删除，并清空openid
+            target_user.status = 0  # 0表示禁用/删除状态
+            target_user.openid = None  # 清空openid
+            target_user.updated_at = datetime.now()
+            
             db.session.commit()
             return jsonify({
                 'code': 200,
-                'message': '用户删除成功'
+                'message': '用户已禁用并解除微信绑定'
             })
+            
         except Exception as e:
             db.session.rollback()
-            print(f'删除用户失败: {str(e)}')
-            return jsonify({'error': '删除用户失败'}), 500
+            print(f'禁用用户失败: {str(e)}')
+            return jsonify({'error': '禁用用户失败'}), 500
 
     except Exception as e:
-        print(f'删除用户失败: {str(e)}')
+        print(f'禁用用户失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
-        return jsonify({'error': '删除用户失败'}), 500
+        return jsonify({'error': '禁用用户失败'}), 500
 
 # 批量删除商品接口
 @app.route('/products/batch/delete', methods=['POST'])
@@ -3336,49 +3122,6 @@ def generate_qrcode(page, scene):
         print(f"生成二维码出错: {str(e)}")
         return None
 
-def get_access_token():
-    """获取小程序 access_token"""
-    try:
-        print('='*50)
-        print('开始获取小程序access_token')
-        print('='*50)
-        
-        print('\n配置信息:')
-        print(f'- APPID: {WECHAT_APPID}')
-        print(f'- SECRET: {"*" * len(WECHAT_SECRET)}')  # 不输出实际的SECRET
-        
-        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
-        print(f'\n请求URL: {url}')
-        
-        print('\n发送请求到微信服务器...')
-        response = requests.get(url)
-        print(f'接收到响应，状态码: {response.status_code}')
-        
-        if response.status_code == 200:
-            data = response.json()
-            print('\n接口响应数据:')
-            # 处理响应数据时隐藏实际的access_token
-            safe_data = data.copy()
-            if 'access_token' in safe_data:
-                safe_data['access_token'] = safe_data['access_token'][:10] + '...'
-            print(json.dumps(safe_data, ensure_ascii=False, indent=2))
-            
-            if 'access_token' in data:
-                print('\n成功获取access_token')
-                return data['access_token']
-                
-        print('\n获取access_token失败')
-        print('错误响应:')
-        print(response.text)
-        raise Exception('获取 access_token 失败')
-        
-    except Exception as e:
-        print('\n获取access_token时发生错误:')
-        print(f'- 错误类型: {type(e).__name__}')
-        print(f'- 错误信息: {str(e)}')
-        print(f'- 错误追踪:\n{traceback.format_exc()}')
-        raise
-
 
 @app.route('/push_orders', methods=['POST'])
 @admin_required
@@ -3466,35 +3209,6 @@ def create_push_order(user_id):
 
 
 
-# 修改权限检查函数
-def check_push_order_permission(cursor, user_id, order_id):
-    """检查用户是否有权限操作该推送单"""
-    # 获取用户信息
-    cursor.execute('SELECT user_type, openid FROM users WHERE id = ?', (user_id,))
-    user = cursor.fetchone()
-    if not user:
-        return False
-        
-    user_type, user_openid = user
-    
-    # 管理员有所有权限
-    if user_type == 1:
-        return True
-        
-    # 获取推送单信息
-    cursor.execute('SELECT user_id, openid FROM push_orders WHERE id = ?', (order_id,))
-    order = cursor.fetchone()
-    if not order:
-        return False
-        
-    order_user_id, order_openid = order
-    
-    # 如果推送单没有设置 openid，所有人都可以访问
-    if order_openid is None:
-        return True
-        
-    # 检查是否是创建者或 openid 匹配
-    return order_user_id == user_id or (order_openid and order_openid == user_openid)
 # 查询推送单列表
 @app.route('/push_orders', methods=['GET'])
 @login_required
@@ -3798,43 +3512,7 @@ def update_system_settings():
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '更新系统设置失败'}), 500
 
-# 初始化系统设置
-def init_system_settings():
-    try:
-        print('开始初始化系统设置...')
-        
-        # 检查商品类型设置是否存在
-        product_types = SystemSettings.query.filter_by(setting_key='product_types').first()
-        if not product_types:
-            print('创建默认商品类型设置...')
-            default_types = [
-                {'id': 1, 'name': '披肩'},
-                {'id': 2, 'name': '围巾'},
-                {'id': 3, 'name': '帽子'},
-                {'id': 4, 'name': '三角巾'},
-                {'id': 5, 'name': '其他'}
-            ]
-            product_types = SystemSettings(
-                setting_key='product_types',
-                setting_value=json.dumps(default_types),
-                setting_type='json'
-            )
-            db.session.add(product_types)
-            
-        # 检查其他默认设置...
-        
-        try:
-            db.session.commit()
-            print('系统设置初始化完成')
-        except Exception as e:
-            db.session.rollback()
-            print(f'保存系统设置失败: {str(e)}')
-            raise
-            
-    except Exception as e:
-        print(f'初始化系统设置失败: {str(e)}')
-        print(f'错误追踪:\n{traceback.format_exc()}')
-        raise
+
 
 # 获取用户统计数据
 @app.route('/user/statistics', methods=['GET'])
@@ -3858,10 +3536,10 @@ def get_user_statistics(user_id):
                 'products': products,
                 'created_at': order.created_at.isoformat()
             })
-            
-            return jsonify({
+        
+        return jsonify({
             'push_orders': orders_data
-            }), 200
+        }), 200
             
     except Exception as e:
         print(f'获取用户统计数据失败: {str(e)}')
@@ -4065,69 +3743,6 @@ def get_products(user_id):  # 添加 user_id 参数来接收装饰器传入的�
         print(f'获取商品列表失败: {str(e)}')
         return jsonify({'error': '获取商品列表失败'}), 500
 
-
-def send_push_notification(openid, order_number, products):
-    """发送微信推送消息"""
-    try:
-        access_token = get_access_token()
-        if not access_token:
-            return False
-
-        url = f'https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token={access_token}'
-        
-        # 处理订单编号，确保不超过20个字符
-        if len(order_number) > 20:
-            display_order_number = order_number[-20:]
-        else:
-            display_order_number = order_number
-            
-        # 构建商品信息文本，限制在20个字符内
-        product_names = [p.get('name', '未知商品') for p in products]
-        products_text = ''
-        total_products = len(products)
-        
-        if total_products == 1:
-            products_text = product_names[0][:20]
-        elif total_products == 2:
-            products_text = f"{product_names[0][:8]}、{product_names[1][:8]}"
-        else:
-            products_text = f"{product_names[0][:6]}等{total_products}件商品"
-            
-        # 获取当前时间
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-            
-        data = {
-            "touser": openid,
-            "template_id": "DMHyXBE15LMRREDyij2FrlRiSKNOO6iLvmxITZSr480",
-            "page": "pages/pushRecords/pushRecords",
-            "data": {
-                "thing1": {  # 订单编号
-                    "value": display_order_number
-                },
-                "thing4": {  # 商品信息
-                    "value": products_text
-                },
-                "time2": {  # 推送时间
-                    "value": current_time
-                }
-            }
-        }
-        
-        print("发送的订阅消息数据:", data)  # 添加日志
-        
-        response = requests.post(url, json=data)
-        result = response.json()
-        
-        if result.get('errcode') == 0:
-            print("订阅消息发送成功")
-            return True
-        else:
-            print(f"订阅消息发送失败: {result}")
-            return False
-            
-    except Exception as e:
-        print(f"发送订阅消息异常: {str(e)}")
-        return False
 
 @app.route('/push_orders/share', methods=['POST'])
 @login_required
@@ -4335,86 +3950,6 @@ def bind_push_order(user_id, share_code):
         print(f"错误追踪:\n{traceback.format_exc()}")
         return jsonify({'error': '绑定失败'}), 500
 
-#获取用户采购单的总数，商品总数，总金额
-@app.route('/user/purchase_statistics', methods=['GET'])
-@login_required
-def get_user_purchase_statistics(user_id):
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            
-            # 获取今日统计
-            cursor.execute("""
-                SELECT 
-                    COUNT(DISTINCT id) as order_count,
-                    COALESCE(SUM(total_quantity), 0) as total_quantity,
-                    COALESCE(SUM(total_amount), 0) as total_amount
-                FROM purchase_orders 
-                WHERE user_id = %s 
-                AND status != 3
-                AND DATE(created_at) = CURDATE()
-            """, (user_id,))
-            daily_stats = cursor.fetchone()
-            
-            # 获取本周统计
-            cursor.execute("""
-                SELECT 
-                    COUNT(DISTINCT id) as order_count,
-                    COALESCE(SUM(total_quantity), 0) as total_quantity,
-                    COALESCE(SUM(total_amount), 0) as total_amount
-                FROM purchase_orders 
-                WHERE user_id = %s 
-                AND status != 3
-                AND YEARWEEK(created_at) = YEARWEEK(NOW())
-            """, (user_id,))
-            weekly_stats = cursor.fetchone()
-            
-            # 获取近30天统计
-            cursor.execute("""
-                SELECT 
-                    COUNT(DISTINCT id) as order_count,
-                    COALESCE(SUM(total_quantity), 0) as total_quantity,
-                    COALESCE(SUM(total_amount), 0) as total_amount
-                FROM purchase_orders 
-                WHERE user_id = %s 
-                AND status != 3
-                AND created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-            """, (user_id,))
-            monthly_stats = cursor.fetchone()
-            
-            # 其他查询保持不变...
-            
-            stats_data = {
-                'daily_statistics': {
-                    'order_count': daily_stats[0] if daily_stats else 0,
-                    'total_quantity': float(daily_stats[1]) if daily_stats else 0,
-                    'total_amount': float(daily_stats[2]) if daily_stats else 0
-                },
-                'weekly_statistics': {
-                    'order_count': weekly_stats[0] if weekly_stats else 0,
-                    'total_quantity': float(weekly_stats[1]) if weekly_stats else 0,
-                    'total_amount': float(weekly_stats[2]) if weekly_stats else 0
-                },
-                'monthly_statistics': {
-                    'order_count': monthly_stats[0] if monthly_stats else 0,
-                    'total_quantity': float(monthly_stats[1]) if monthly_stats else 0,
-                    'total_amount': float(monthly_stats[2]) if monthly_stats else 0
-                }
-            }
-            
-            return jsonify({
-                'code': 0,
-                'message': 'success',
-                'data': stats_data
-            })
-            
-    except Exception as e:
-        print(f"Error getting purchase statistics: {str(e)}")
-        return jsonify({
-            'code': 1,
-            'message': f"获取统计数据失败: {str(e)}"
-        }), 500
-
 # 添加商品推送记录接口
 @app.route('/products/push', methods=['POST'])
 @login_required
@@ -4555,23 +4090,6 @@ def update_push_order_status(user_id, order_id):
         return jsonify({'error': '更新推送单状态失败'}), 500
 
 
-# 辅助函数：生成缩略图
-def create_thumbnail(image_path, max_size=(800, 800)):
-    """生成图片缩略图"""
-    try:
-        from PIL import Image
-        
-        # 打开图片
-        with Image.open(image_path) as img:
-            # 保持宽高比缩放
-            img.thumbnail(max_size)
-            # 保存缩略图，使用优化和压缩
-            img.save(image_path, quality=85, optimize=True)
-            return True
-    except Exception as e:
-        print(f'生成缩略图失败: {str(e)}')
-        print(f'错误追踪:\n{traceback.format_exc()}')
-        return False
 
 # 访问上传的图片
 @app.route('/uploads/<path:filename>')
@@ -4601,7 +4119,8 @@ def uploaded_file(filename):
         return jsonify({'error': f'访问文件失败: {str(e)}'}), 500
 
 @app.route('/home/statistics', methods=['GET'])
-def get_home_statistics():
+@login_required
+def get_home_statistics(user_id):
     try:
         # 今日统计
         daily_stats = db.session.query(
@@ -4714,3 +4233,723 @@ def get_home_statistics():
             'message': f'Failed to get statistics: {str(e)}',
             'data': None
         })
+
+# 获取商品列表（包含公开商品和推送单商品）
+@app.route('/products/combined', methods=['GET'])
+@login_required
+def get_combined_products(user_id):
+    try:
+        print('开始获取组合商品列表')
+        
+        # 获取当前用户信息
+        current_user = User.query.get(user_id)
+        if not current_user:
+            return jsonify({'error': '用户不存在'}), 404
+            
+        # 获取分页参数
+        page = int(request.args.get('page', 1))
+        page_size = min(int(request.args.get('page_size', 10)), 50)
+        
+        # 根据用户类型获取对应价格
+        def get_price_by_user_type(product):
+            if current_user.user_type == 0:  # 零售客户
+                return product.price
+            elif current_user.user_type == 1:  # 管理员
+                return product.cost_price
+            elif current_user.user_type == 2:  # A类客户
+                return product.price_b
+            elif current_user.user_type == 3:  # B类客户
+                return product.price_c
+            elif current_user.user_type == 4:  # C类客户
+                return product.price_d
+            return product.retail_price  # 默认返回零售价
+        
+        # 获取所有公开的商品
+        public_products = Product.query.filter_by(status=1).all()
+        
+        # 获取用户关联的所有推送单商品
+        push_products = db.session.query(
+            Product,
+            PushOrder.created_at,
+            PushOrderProduct.price
+        ).join(
+            PushOrderProduct, Product.id == PushOrderProduct.product_id
+        ).join(
+            PushOrder, PushOrderProduct.push_order_id == PushOrder.id
+        ).filter(
+            PushOrder.target_user_id == user_id,
+            PushOrder.status != 2  # 排除已取消的推送单
+        ).order_by(
+            PushOrder.created_at.desc()
+        ).all()
+        
+        # 创建一个字典来存储最新的商品信息
+        products_dict = {}
+        
+        # 处理公开商品
+        for product in public_products:
+            try:
+                price = get_price_by_user_type(product)
+                products_dict[product.id] = {
+                    'id': product.id,
+                    'name': product.name,
+                    'description': product.description,
+                    'images': json.loads(product.images) if product.images else [],
+                    'price': float(price) if price else 0,
+                    'original_price': float(price) if price else 0,
+                    'specs_info': json.loads(product.specs_info) if product.specs_info else {},
+                    'specs': json.loads(product.specs) if product.specs else [],
+                    'type': product.type,
+                    'status': product.status,
+                    'source': 'public',
+                    'updated_at': product.updated_at.isoformat() if product.updated_at else None
+                }
+            except Exception as e:
+                print(f'处理公开商品出错: {str(e)}')
+                continue
+        
+        # 处理推送单商品
+        for product, created_at, push_price in push_products:
+            try:
+                if product.id not in products_dict or created_at > datetime.fromisoformat(products_dict[product.id]['updated_at']):
+                    original_price = get_price_by_user_type(product)
+                    products_dict[product.id] = {
+                        'id': product.id,
+                        'name': product.name,
+                        'description': product.description,
+                        'images': json.loads(product.images) if product.images else [],
+                        'price': float(push_price) if push_price else 0,
+                        'original_price': float(original_price) if original_price else 0,
+                        'stock': product.stock,
+                        'specs': json.loads(product.specs) if product.specs else [],
+                        'type': product.type,
+                        'status': product.status,
+                        'source': 'push',
+                        'updated_at': created_at.isoformat() if created_at else None
+                    }
+            except Exception as e:
+                print(f'处理推送商品出错: {str(e)}')
+                continue
+        
+        # 将字典转换为列表并排序
+        products_list = list(products_dict.values())
+        products_list.sort(key=lambda x: x['updated_at'] or '', reverse=True)
+        
+        # 计算分页
+        total = len(products_list)
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        paginated_products = products_list[start_idx:end_idx]
+        
+        return jsonify({
+            'products': paginated_products,
+            'total': total,
+            'pages': (total + page_size - 1) // page_size,
+            'current_page': page
+        }), 200
+        
+    except Exception as e:
+        print(f'获取组合商品列表失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '获取商品列表失败'}), 500
+
+# 编辑用户信息
+@app.route('/users/<int:target_user_id>', methods=['PUT'])
+@admin_required
+def edit_user(user_id, target_user_id):
+    try:
+        print(f'开始编辑用户信息 - 目标用户ID: {target_user_id}')
+        
+        # 获取请求数据
+        data = request.json
+        print('请求数据:', json.dumps(data, ensure_ascii=False))
+        
+        # 获取目标用户
+        target_user = User.query.get(target_user_id)
+        if not target_user:
+            return jsonify({'error': '用户不存在'}), 404
+            
+        # 可编辑字段列表
+        editable_fields = {
+            'username': str,
+            'nickname': str,
+            'phone': str,
+            'address': str,
+            'contact': str,
+            'user_type': int,
+            'status': int,
+            'password': str,
+            'avatar': str
+        }
+        
+        # 验证用户类型
+        if 'user_type' in data:
+            if data['user_type'] not in [0, 1, 2, 3, 4]:  # 0:零售 1:管理员 2:A类 3:B类 4:C类
+                return jsonify({'error': '无效的用户类型'}), 400
+                
+        # 验证状态
+        if 'status' in data:
+            if data['status'] not in [0, 1]:  # 0:禁用 1:启用
+                return jsonify({'error': '无效的状态值'}), 400
+        
+        # 更新用户信息
+        changes_made = False
+        for field, field_type in editable_fields.items():
+            if field in data:
+                try:
+                    # 特殊处理密码字段
+                    if field == 'password' and data[field]:
+                        setattr(target_user, field, data[field])
+                        changes_made = True
+                        continue
+                        
+                    # 处理其他字段
+                    value = data[field]
+                    if value is not None:  # 只更新非空值
+                        if isinstance(value, field_type):
+                            setattr(target_user, field, value)
+                            changes_made = True
+                        else:
+                            try:
+                                # 尝试类型转换
+                                setattr(target_user, field, field_type(value))
+                                changes_made = True
+                            except (ValueError, TypeError):
+                                print(f'字段 {field} 的值 {value} 类型转换失败')
+                                return jsonify({'error': f'字段 {field} 的值类型错误'}), 400
+                except Exception as e:
+                    print(f'更新字段 {field} 时出错: {str(e)}')
+                    return jsonify({'error': f'更新字段 {field} 失败'}), 400
+        
+        if not changes_made:
+            return jsonify({'message': '没有需要更新的信息'}), 200
+            
+        # 更新时间戳
+        target_user.updated_at = datetime.now()
+        
+        try:
+            db.session.commit()
+            print(f'用户 {target_user_id} 信息更新成功')
+            
+            # 返回更新后的用户信息
+            return jsonify({
+                'message': '用户信息更新成功',
+                'user': {
+                    'id': target_user.id,
+                    'username': target_user.username,
+                    'nickname': target_user.nickname,
+                    'phone': target_user.phone,
+                    'address': target_user.address,
+                    'contact': target_user.contact,
+                    'user_type': target_user.user_type,
+                    'status': target_user.status,
+                    'avatar': target_user.avatar,
+                    'created_at': target_user.created_at.isoformat() if target_user.created_at else None,
+                    'updated_at': target_user.updated_at.isoformat() if target_user.updated_at else None
+                }
+            }), 200
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f'保存用户信息时出错: {str(e)}')
+            return jsonify({'error': '保存用户信息失败'}), 500
+            
+    except Exception as e:
+        print(f'编辑用户信息失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '编辑用户信息失败'}), 500
+
+# 重置数据库接口
+@app.route('/system/reset', methods=['POST'])
+def reset_database():
+    try:
+        print('开始重置数据库...')
+        
+        # 获取请求数据
+        data = request.json
+        if not data or 'admin_username' not in data or 'admin_password' not in data:
+            return jsonify({'error': '缺少管理员账号或密码'}), 400
+            
+        admin_username = data['admin_username']
+        admin_password = data['admin_password']
+        
+        # 验证用户名和密码格式
+        if len(admin_username) < 4 or len(admin_password) < 6:
+            return jsonify({'error': '用户名长度至少4位，密码长度至少6位'}), 400
+            
+        # 删除所有表的数据
+        try:
+            db.session.query(PushOrderProduct).delete()
+            db.session.query(PushOrder).delete()
+            db.session.query(DeliveryOrder).delete()
+            db.session.query(DeliveryItem).delete()  # 添加配送订单项表
+            db.session.query(PurchaseOrderItem).delete()
+            db.session.query(PurchaseOrder).delete()
+            db.session.query(ProductView).delete()
+            db.session.query(Product).delete()
+            db.session.query(User).delete()
+            db.session.query(ColorStock).delete()
+            db.session.query(StockRecord).delete()
+            db.session.query(SystemSettings).delete()
+            db.session.commit()
+            print('所有表数据已清空')
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f'清空数据失败: {str(e)}')
+            return jsonify({'error': '清空数据失败'}), 500
+            
+        # 创建新的管理员用户
+        try:
+            admin_user = User(
+                username=admin_username,
+                password=admin_password,
+                user_type=1,  # 管理员类型
+                status=1,     # 启用状态
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            db.session.add(admin_user)
+            db.session.commit()
+            print(f'创建管理员用户成功: {admin_username}')
+            
+            # 创建默认系统设置
+            default_settings = SystemSettings(
+                min_delivery_amount=0,
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            db.session.add(default_settings)
+            db.session.commit()
+            print('创建默认系统设置成功')
+            
+            return jsonify({
+                'message': '数据库重置成功',
+                'admin': {
+                    'id': admin_user.id,
+                    'username': admin_user.username,
+                    'user_type': admin_user.user_type,
+                    'created_at': admin_user.created_at.isoformat()
+                }
+            }), 200
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f'创建管理员用户失败: {str(e)}')
+            return jsonify({'error': '创建管理员用户失败'}), 500
+            
+    except Exception as e:
+        print(f'重置数据库失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '重置数据库失败'}), 500
+
+# 获取公开商品列表
+@app.route('/products/public', methods=['GET'])
+@login_required
+def get_public_products(user_id):
+    try:
+        print('开始获取公开商品列表')
+        
+        # 获取当前用户信息
+        current_user = User.query.get(user_id)
+        if not current_user:
+            return jsonify({'error': '用户不存在'}), 404
+        
+        # 获取分页参数
+        page = int(request.args.get('page', 1))
+        page_size = min(int(request.args.get('page_size', 10)), 50)
+        
+        # 获取筛选参数
+        product_type = request.args.get('type')
+        keyword = request.args.get('keyword', '').strip()
+        sort_by = request.args.get('sort_by', 'created_at')  # 默认按创建时间排序
+        sort_order = request.args.get('sort_order', 'desc')  # 默认降序
+        
+        # 构建基础查询
+        query = Product.query.filter(
+            db.and_(
+                Product.status == 1,      # 商品状态为上架
+                Product.is_public == 1    # 商品为公开
+            )
+        )
+        
+        # 添加筛选条件
+        if product_type:
+            query = query.filter(Product.type == product_type)
+            
+        if keyword:
+            search = f'%{keyword}%'
+            query = query.filter(db.or_(
+                Product.name.like(search),
+                Product.description.like(search)
+            ))
+            
+        # 添加排序
+        if sort_by == 'price':
+            order_column = Product.price
+        elif sort_by == 'stock':
+            order_column = Product.stock
+        else:  # 默认按创建时间
+            order_column = Product.created_at
+            
+        if sort_order == 'asc':
+            query = query.order_by(order_column.asc())
+        else:
+            query = query.order_by(order_column.desc())
+            
+        # 获取分页数据
+        pagination = query.paginate(page=page, per_page=page_size, error_out=False)
+        
+        # 根据用户类型获取价格
+        def get_price_by_user_type(product):
+            if current_user.user_type == 0:  # 零售客户
+                return float(product.price) if product.price else 0
+            elif current_user.user_type == 1:  # 管理员
+                return float(product.cost_price) if product.cost_price else 0
+            elif current_user.user_type == 2:  # A类客户
+                return float(product.price_b) if product.price_b else 0
+            elif current_user.user_type == 3:  # B类客户
+                return float(product.price_c) if product.price_c else 0
+            elif current_user.user_type == 4:  # C类客户
+                return float(product.price_d) if product.price_d else 0
+            return float(product.price) if product.price else 0
+        
+        # 格式化商品数据
+        products = []
+        for product in pagination.items:
+            try:
+                price = get_price_by_user_type(product)
+                product_data = {
+                    'id': product.id,
+                    'name': product.name,
+                    'description': product.description,
+                    'price': price,
+                    'retail_price': float(product.price) if product.price else 0,
+                    'images': json.loads(product.images) if product.images else [],
+                    'type': product.type,
+                    'specs_info': product.specs_info,
+                    'specs': json.loads(product.specs) if product.specs else [],
+                    'created_at': product.created_at.isoformat() if product.created_at else None,
+                    'updated_at': product.updated_at.isoformat() if product.updated_at else None
+                }
+                products.append(product_data)
+            except Exception as e:
+                print(f'处理商品数据出错 - 商品ID: {product.id}, 错误: {str(e)}')
+                continue
+                
+        return jsonify({
+            'products': products,
+            'total': pagination.total,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': pagination.pages,
+            'user_type': current_user.user_type
+        }), 200
+        
+    except Exception as e:
+        print(f'获取公开商品列表失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '获取商品列表失败'}), 500
+
+# 获取用户推送单商品列表（只保留最新的）
+@app.route('/products/push/latest', methods=['GET'])
+@login_required
+def get_latest_push_products(user_id):
+    try:
+        print('开始获取用户最新推送商品列表')
+        
+        # 获取当前用户信息
+        current_user = User.query.get(user_id)
+        if not current_user:
+            return jsonify({'error': '用户不存在'}), 404
+            
+        # 获取分页参数
+        page = int(request.args.get('page', 1))
+        page_size = min(int(request.args.get('page_size', 10)), 50)
+        
+        # 获取筛选参数
+        product_type = request.args.get('type')
+        keyword = request.args.get('keyword', '').strip()
+        sort_by = request.args.get('sort_by', 'push_time')  # 默认按推送时间排序
+        sort_order = request.args.get('sort_order', 'desc')  # 默认降序
+        
+        # 构建子查询获取最新推送时间
+        latest_push_subquery = db.session.query(
+            PushOrderProduct.product_id,
+            func.max(PushOrder.created_at).label('latest_push_time')
+        ).join(
+            PushOrder, PushOrder.id == PushOrderProduct.push_order_id
+        ).filter(
+            PushOrder.target_user_id == user_id,
+            PushOrder.status != 2  # 排除已取消的推送单
+        ).group_by(
+            PushOrderProduct.product_id
+        ).subquery()
+        
+        # 构建主查询
+        query = db.session.query(
+            Product,
+            PushOrderProduct.price.label('push_price'),
+            PushOrder.created_at.label('push_time')
+        ).join(
+            latest_push_subquery,
+            Product.id == latest_push_subquery.c.product_id
+        ).join(
+            PushOrderProduct,
+            Product.id == PushOrderProduct.product_id
+        ).join(
+            PushOrder,
+            db.and_(
+                PushOrder.id == PushOrderProduct.push_order_id,
+                PushOrder.created_at == latest_push_subquery.c.latest_push_time
+            )
+        ).filter(
+            Product.status == 1  # 只查询上架商品
+        )
+        
+        # 添加筛选条件
+        if product_type:
+            query = query.filter(Product.type == product_type)
+            
+        if keyword:
+            search = f'%{keyword}%'
+            query = query.filter(db.or_(
+                Product.name.like(search),
+                Product.description.like(search)
+            ))
+            
+        # 添加排序
+        if sort_by == 'price':
+            order_column = PushOrderProduct.price
+        elif sort_by == 'push_time':
+            order_column = PushOrder.created_at
+        else:  # 默认按推送时间
+            order_column = PushOrder.created_at
+            
+        if sort_order == 'asc':
+            query = query.order_by(order_column.asc())
+        else:
+            query = query.order_by(order_column.desc())
+            
+        # 获取分页数据
+        pagination = query.paginate(page=page, per_page=page_size, error_out=False)
+        
+        # 根据用户类型获取原始价格
+        def get_price_by_user_type(product):
+            if current_user.user_type == 0:  # 零售客户
+                return float(product.retail_price) if product.retail_price else 0
+            elif current_user.user_type == 1:  # 管理员
+                return float(product.cost_price) if product.cost_price else 0
+            elif current_user.user_type == 2:  # A类客户
+                return float(product.price_b) if product.price_b else 0
+            elif current_user.user_type == 3:  # B类客户
+                return float(product.price_c) if product.price_c else 0
+            elif current_user.user_type == 4:  # C类客户
+                return float(product.price_d) if product.price_d else 0
+            return float(product.retail_price) if product.retail_price else 0
+        
+        # 格式化商品数据
+        products = []
+        for product, push_price, push_time in pagination.items:
+            try:
+                original_price = get_price_by_user_type(product)
+                product_data = {
+                    'id': product.id,
+                    'name': product.name,
+                    'description': product.description,
+                    'price': float(push_price) if push_price else original_price,  # 优先使用推送价格
+                    'original_price': original_price,  # 原始价格（根据用户类型）
+                    'retail_price': float(product.retail_price) if product.retail_price else 0,
+                    'images': json.loads(product.images) if product.images else [],
+                    'type': product.type,
+                    'stock': product.stock,
+                    'specs': json.loads(product.specs) if product.specs else [],
+                    'push_time': push_time.isoformat() if push_time else None,
+                    'created_at': product.created_at.isoformat() if product.created_at else None,
+                    'updated_at': product.updated_at.isoformat() if product.updated_at else None
+                }
+                products.append(product_data)
+            except Exception as e:
+                print(f'处理商品数据出错 - 商品ID: {product.id}, 错误: {str(e)}')
+                continue
+                
+        return jsonify({
+            'products': products,
+            'total': pagination.total,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': pagination.pages,
+            'user_type': current_user.user_type
+        }), 200
+        
+    except Exception as e:
+        print(f'获取用户推送商品列表失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '获取商品列表失败'}), 500
+
+# 获取合并商品列表（推送商品优先）
+@app.route('/products/merged', methods=['GET'])
+@login_required
+def get_merged_products(user_id):
+    try:
+        print('开始获取合并商品列表')
+        
+        # 获取当前用户信息
+        current_user = User.query.get(user_id)
+        if not current_user:
+            return jsonify({'error': '用户不存在'}), 404
+            
+        # 获取分页参数
+        page = int(request.args.get('page', 1))
+        page_size = min(int(request.args.get('page_size', 10)), 50)
+        
+        # 获取筛选参数
+        product_type = request.args.get('type')
+        keyword = request.args.get('keyword', '').strip()
+        sort_by = request.args.get('sort_by', 'updated_time')  # 默认按更新时间排序
+        sort_order = request.args.get('sort_order', 'desc')  # 默认降序
+        
+        # 构建推送商品子查询
+        latest_push_subquery = db.session.query(
+            PushOrderProduct.product_id,
+            func.max(PushOrder.created_at).label('latest_push_time')
+        ).join(
+            PushOrder, PushOrder.id == PushOrderProduct.push_order_id
+        ).filter(
+            PushOrder.target_user_id == user_id,
+            PushOrder.status != 2  # 排除已取消的推送单
+        ).group_by(
+            PushOrderProduct.product_id
+        ).subquery()
+        
+        # 构建推送商品查询
+        push_products_query = db.session.query(
+            Product,
+            PushOrderProduct.price.label('push_price'),
+            PushOrder.created_at.label('push_time'),
+            literal_column("'push'").label('source')  # 修改这里
+        ).join(
+            latest_push_subquery,
+            Product.id == latest_push_subquery.c.product_id
+        ).join(
+            PushOrderProduct,
+            Product.id == PushOrderProduct.product_id
+        ).join(
+            PushOrder,
+            db.and_(
+                PushOrder.id == PushOrderProduct.push_order_id,
+                PushOrder.created_at == latest_push_subquery.c.latest_push_time
+            )
+        ).filter(
+            Product.status == 1  # 只查询上架商品
+        )
+        
+        # 获取已推送商品的ID列表
+        pushed_product_ids = [row[0].id for row in push_products_query.all()]
+        
+        # 构建公开商品查询（排除已推送的商品）
+        public_products_query = db.session.query(
+            Product,
+            literal(None).label('push_price'),
+            literal(None).label('push_time'),
+            literal_column("'public'").label('source')  # 修改这里
+        ).filter(
+            db.and_(
+                Product.status == 1,      # 商品状态为上架
+                Product.is_public == 1,   # 商品为公开
+                ~Product.id.in_(pushed_product_ids) if pushed_product_ids else True  # 排除已推送商品
+            )
+        )
+        
+        # 合并两个查询
+        query = push_products_query.union(public_products_query)
+        
+        # 添加筛选条件
+        if product_type:
+            query = query.filter(Product.type == product_type)
+            
+        if keyword:
+            search = f'%{keyword}%'
+            query = query.filter(db.or_(
+                Product.name.like(search),
+                Product.description.like(search)
+            ))
+            
+        # 添加排序
+        if sort_by == 'price':
+            # 对于推送商品使用push_price，对于公开商品使用原价
+            query = query.order_by(
+                case(
+                    (PushOrderProduct.price != None, PushOrderProduct.price),
+                    else_=Product.price
+                ).desc() if sort_order == 'desc' else case(
+                    (PushOrderProduct.price != None, PushOrderProduct.price),
+                    else_=Product.price
+                ).asc()
+            )
+        elif sort_by == 'push_time':
+            query = query.order_by(
+                PushOrder.created_at.desc() if sort_order == 'desc' else PushOrder.created_at.asc()
+            )
+        else:  # 默认按更新时间
+            query = query.order_by(
+                Product.updated_at.desc() if sort_order == 'desc' else Product.updated_at.asc()
+            )
+            
+        # 获取分页数据
+        pagination = query.paginate(page=page, per_page=page_size, error_out=False)
+        
+        # 根据用户类型获取原始价格
+        def get_price_by_user_type(product):
+            if current_user.user_type == 0:  # 零售客户
+                return float(product.price) if product.price else 0
+            elif current_user.user_type == 1:  # 管理员
+                return float(product.cost_price) if product.cost_price else 0
+            elif current_user.user_type == 2:  # A类客户
+                return float(product.price_b) if product.price_b else 0
+            elif current_user.user_type == 3:  # B类客户
+                return float(product.price_c) if product.price_c else 0
+            elif current_user.user_type == 4:  # C类客户
+                return float(product.price_d) if product.price_d else 0
+            return float(product.price) if product.price else 0
+        
+        # 格式化商品数据
+        products = []
+        for product, push_price, push_time, source in pagination.items:
+            try:
+                original_price = get_price_by_user_type(product)
+                product_data = {
+                    'id': product.id,
+                    'name': product.name,
+                    'description': product.description,
+                    'price': float(push_price) if push_price else original_price,  # 优先使用推送价格
+                    'original_price': original_price,  # 原始价格（根据用户类型）
+                    'retail_price': float(product.price) if product.price else 0,
+                    'images': json.loads(product.images) if product.images else [],
+                    'type': product.type,
+                    'specs': json.loads(product.specs) if product.specs else [],
+                    'specs_info': json.loads(product.specs_info) if product.specs_info else {},
+                    'source': source,  # 添加来源标记
+                    'push_time': push_time.isoformat() if push_time else None,
+                    'created_at': product.created_at.isoformat() if product.created_at else None,
+                    'updated_at': product.updated_at.isoformat() if product.updated_at else None
+                }
+                products.append(product_data)
+            except Exception as e:
+                print(f'处理商品数据出错 - 商品ID: {product.id}, 错误: {str(e)}')
+                continue
+                
+        return jsonify({
+            'products': products,
+            'total': pagination.total,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': pagination.pages,
+            'user_type': current_user.user_type
+        }), 200
+        
+    except Exception as e:
+        print(f'获取合并商品列表失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '获取商品列表失败'}), 500
+

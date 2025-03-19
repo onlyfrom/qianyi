@@ -17,8 +17,8 @@ SQLALCHEMY_POOL_TIMEOUT = 10
 SQLALCHEMY_POOL_RECYCLE = 1800
 
 # 微信小程序配置
-APPID = os.environ.get("APPID", "wxa17a5479891750b3")
-SECRET = os.environ.get("SECRET", "33359853cfee1dc1e2b6e535249e351d")
+WECHAT_APPID = os.environ.get("APPID", "wxa17a5479891750b3")
+WECHAT_SECRET = os.environ.get("SECRET", "33359853cfee1dc1e2b6e535249e351d")
 
 # JWT配置
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "onlyfrom")
