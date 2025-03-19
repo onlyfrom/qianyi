@@ -1,69 +1,30 @@
 from datetime import datetime, timedelta
-from flask import render_template, request, jsonify, send_from_directory, abort, send_file
-from wxcloudrun import app, db
-from wxcloudrun.model import User, Product, PurchaseOrder, DeliveryOrder, PushOrder, SystemSettings, StockRecord
+from flask import render_template, request, jsonify, send_from_directory, abort, make_response, send_file
+from run import app
+from wxcloudrun.model import *
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+import pandas as pd
 import jwt
 from functools import wraps
 import os
+import time
 import config
 import requests
 import uuid
 import json
+from wxcloudrun import db
+from wxcloudrun.token import generate_token, verify_token, extend_token_expiry
 import traceback
-from PIL import Image
-import io
-import qrcode
+from Crypto.Cipher import AES
 import base64
-import pandas as pd
-from sqlalchemy import func, desc, and_
-import logging
+from werkzeug.utils import secure_filename
+import string
+import random
+from sqlalchemy import inspect, text, func, desc, distinct, case, Text
+from wxcloudrun.response import *
 
-# 测试路由
-@app.route('/api/test', methods=['GET'])
-def test_api():
-    return jsonify({
-        'code': 0,
-        'message': '测试成功',
-        'data': {
-            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-    })
-
-# 初始化数据库
-def init_db():
-    """初始化数据库"""
-    try:
-        print('开始初始化数据库...')
-        db.create_all()
-        
-        # 检查是否需要创建管理员账号
-        admin = User.query.filter_by(user_type=1).first()
-        if not admin:
-            print('创建默认管理员账号...')
-            admin = User(
-                username='admin',
-                password='admin123',  # 实际应用中应该使用加密密码
-                nickname='管理员',
-                user_type=1,
-                status=1,
-                created_at=datetime.now()
-            )
-            db.session.add(admin)
-            db.session.commit()
-            print('管理员账号创建成功')
-            
-        print('数据库初始化完成')
-        
-    except Exception as e:
-        print(f'数据库初始化失败: {str(e)}')
-        print(f'错误追踪:\n{traceback.format_exc()}')
-        db.session.rollback()
-        raise
-
-
-# 修改登录验证装饰器
+# 用户认证中间件
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -104,6 +65,7 @@ def login_required(f):
             
     return decorated_function
 
+#管理员认证中间件
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -144,42 +106,29 @@ def admin_required(f):
 
     return decorated_function
 
-# 微信小程序配置
-WECHAT_APPID = 'wxa17a5479891750b3'  # 替换为您的小程序 APPID
-WECHAT_SECRET = '33359853cfee1dc1e2b6e535249e351d'  # 替换为您的小程序密钥
 
-# 添加解密方法
-def decrypt_user_info(session_key, encrypted_data, iv):
+@app.route('/api/test/db', methods=['GET'])
+def test_db():
+    """
+    测试数据库连接的接口
+    """
     try:
-        # 使用 base64 解码
-        session_key = base64.b64decode(session_key)
-        encrypted_data = base64.b64decode(encrypted_data)
-        iv = base64.b64decode(iv)
-        
-        # 使用 AES-128-CBC 解密
-        cipher = AES.new(session_key, AES.MODE_CBC, iv)
-        decrypted = cipher.decrypt(encrypted_data)
-        
-        # 去除补位符号
-        pad = decrypted[-1]
-        if isinstance(pad, int):
-            pad_size = pad
-        else:
-            pad_size = ord(pad)
-        decrypted = decrypted[:-pad_size]
-        
-        # 解析 JSON 数据
-        decrypted_data = json.loads(decrypted)
-        return decrypted_data
+        return jsonify({
+            'code': 0,
+            'data': {
+                'database_name': config.database,
+                'host': config.db_address,
+                'connection_status': 'connected' if db.session.is_active else 'disconnected'
+            },
+            'message': '数据库连接测试'
+        })
     except Exception as e:
-        print('解密用户信息失败:', str(e))
-        return None
+        return jsonify({
+            'code': -1,
+            'message': f'数据库连接测试失败：{str(e)}'
+        }), 500
 
-# 添加生成随机字符串的辅助函数
-def generate_random_string(length=8):
-    """生成指定长度的随机字符串，包含字母和数字"""
-    characters = string.ascii_letters + string.digits
-    return ''.join(random.choice(characters) for _ in range(length))
+
 
 # 添加头像上传接口
 @app.route('/upload/avatar', methods=['POST'])
@@ -266,10 +215,7 @@ def upload_avatar(user_id):
         print(f'- 错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '头像上传失败'}), 500
 
-# 添加文件类型检查函数
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 # 微信openid登录接口
 @app.route('/wx/openid/login', methods=['POST'])
@@ -521,85 +467,8 @@ def wx_login_link():
         db.session.rollback()
         return jsonify({'error': '微信账号关联失败'}), 500
 
-# 添加获取微信用户信息的辅助函数
-def get_wx_user_info(code):
-    """获取微信用户信息"""
-    try:
-        print('\n开始请求微信API:')
-        wx_api_url = 'https://api.weixin.qq.com/sns/jscode2session'
-        print(f'- 接口地址: {wx_api_url}')
-        print(f'- 请求参数: appid={WECHAT_APPID}, code={code}')
-        
-        params = {
-            'appid': WECHAT_APPID,
-            'secret': WECHAT_SECRET,
-            'js_code': code,
-            'grant_type': 'authorization_code'
-        }
-        
-        response = requests.get(wx_api_url, params=params)
-        wx_data = response.json()
-        print('\n微信API响应:')
-        print(json.dumps(wx_data, ensure_ascii=False, indent=2))
 
-        if 'errcode' in wx_data:
-            print('错误: 微信API返回错误')
-            print(f'错误码: {wx_data.get("errcode")}')
-            print(f'错误信息: {wx_data.get("errmsg")}')
-            return None
 
-        return wx_data
-        
-    except Exception as e:
-        print(f'获取微信用户信息失败: {str(e)}')
-        return None
-
-# 数据解密函数也添加详细日志
-def decrypt_weixin_data(session_key, encrypted_data, iv):
-    try:
-        print('开始解密微信数据:')
-        print(f'- session_key长度: {len(session_key)}')
-        print(f'- encrypted_data长度: {len(encrypted_data)}')
-        print(f'- iv长度: {len(iv)}')
-        
-        # Base64解码
-        print('\n执行Base64解码...')
-        session_key = base64.b64decode(session_key)
-        encrypted_data = base64.b64decode(encrypted_data)
-        iv = base64.b64decode(iv)
-        
-        print('解码后数据长度:')
-        print(f'- session_key: {len(session_key)} 字节')
-        print(f'- encrypted_data: {len(encrypted_data)} 字节')
-        print(f'- iv: {len(iv)} 字节')
-        
-        # 创建解密器
-        print('\n创建AES解密器...')
-        cipher = AES.new(session_key, AES.MODE_CBC, iv)
-        
-        # 解密数据
-        print('执行解密...')
-        decrypted = cipher.decrypt(encrypted_data)
-        
-        # 处理填充
-        print('处理PKCS7填充...')
-        pad = decrypted[-1]
-        if not isinstance(pad, int):
-            pad = ord(pad)
-        data = decrypted[:-pad]
-        
-        # 解析JSON
-        print('解析JSON数据...')
-        result = json.loads(data)
-        print('解密成功')
-        return result
-        
-    except Exception as e:
-        print('\n解密过程出错:')
-        print(f'- 错误类型: {type(e).__name__}')
-        print(f'- 错误信息: {str(e)}')
-        print(f'- 错误追踪:\n{traceback.format_exc()}')
-        raise Exception('解密用户信息失败')
 
 # 更新用户信息接口
 @app.route('/user/update', methods=['POST'])
@@ -784,23 +653,7 @@ def login():
         print(f'- 错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '登录失败'}), 500
 
-# 修改登录频率限制检查函数
-def is_login_attempts_exceeded(username):
-    try:
-        user = User.query.filter_by(username=username).first()
-        if not user:
-                return False
-            
-            # 如果尝试次数超过5次且最后一次尝试在30分钟内
-        if user.login_attempts >= 5 and user.last_login_attempt:
-            if datetime.utcnow() - user.last_login_attempt < timedelta(minutes=30):
-                    return True
-                    
-            return False
-            
-    except Exception as e:
-        print(f'检查登录频率时出错: {str(e)}')
-        return False
+
 # 新增或更新商品（需要登录）
 @app.route('/products', methods=['POST'])
 @admin_required
@@ -1025,7 +878,7 @@ def get_recent_products():
 
 # 确保文件扩展名合法
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in config.ALLOWED_EXTENSIONS
 
 
 # 上传图片接口
@@ -1056,11 +909,8 @@ def upload_file_handler(user_id):
         
         # 保存文件
         file_path = os.path.join(upload_dir, new_filename)
-        file.save(file_path)
+        file.save(file_path)  
         
-        # 如果是图片，生成缩略图
-        if file_ext in {'png', 'jpg', 'jpeg', 'gif'}:
-            create_thumbnail(file_path)
             
         # 返回可访问的URL
         file_url = f'/uploads/{file_ext}/{new_filename}'
@@ -1329,6 +1179,14 @@ def update_stock(user_id, product_id):
         print(f'处理库存更新请求失败: {str(e)}')
         return jsonify({'error': '更新库存失败'}), 500
 
+
+@app.errorhandler(404)
+def not_found_error(error):
+    return jsonify({'error': '请求的资源不存在'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': '服务器内部错误'}), 500
 # 更新商品颜色库存
 @app.route('/products/<product_id>/specs/stock', methods=['POST'])
 @login_required
@@ -1420,21 +1278,7 @@ def get_color_stocks(product_id):
         print('获取颜色库存失败:', str(e))
         return jsonify({'error': '服务器错误'}), 500
 
-@app.errorhandler(404)
-def not_found_error(error):
-    return jsonify({'error': '请求的资源不存在'}), 404
 
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({'error': '服务器内部错误'}), 500
-
-
-def validate_product_data(data):
-    required_fields = ['id', 'name', 'price']
-    for field in required_fields:
-        if field not in data:
-            return False, f'缺少必要字段: {field}'
-    return True, None
 
 # 添加Excel导入接口
 @app.route('/products/import', methods=['POST'])
@@ -1597,65 +1441,7 @@ def download_template():
     except Exception as e:
         return jsonify({'error': '模板文件不存在'}), 404
 
-# 添加创建模板的函数
-def create_template():
-    import pandas as pd
-    
-    # 创建示例数据
-    data = {
-        '款号': ['A001', 'A002'],
-        '商品名称': ['羊毛围巾-灰色', '羊毛围巾-黑色'],
-        '价格': [299, 299],
-        '描述': ['100%羊毛，柔软保暖', '100%羊毛，经典黑色'],
-        '款式': [1, 1],  # 1代表围巾
-        '颜色': ['灰色,黑色', '黑色,灰色'],  # 用逗号分隔多个颜色
-        '库存': ['10,5', '8,3'],  # 对应颜色的库存数量
-        '标签': ['羊毛,保暖,围巾', '羊毛,经典,围巾']  # 用逗号分隔多个标签
-    }
-    
-    df = pd.DataFrame(data)
-    
-    # 确保目录存在
-    os.makedirs('static/templates', exist_ok=True)
-    
-    # 保存为Excel文件
-    template_path = 'static/templates/products_template.xlsx'
-    writer = pd.ExcelWriter(template_path, engine='openpyxl')
-    
-    # 写入数据
-    df.to_excel(writer, index=False, sheet_name='商品数据')
-    
-    # 获取工作表
-    worksheet = writer.sheets['商品数据']
-    
-    # 添加说明
-    notes = {
-        'A1': '商品唯一标识，必填',
-        'B1': '商品名称，必填',
-        'C1': '商品价格，可选（默认0）',
-        'D1': '商品描述，可选',
-        'E1': '款式：1=围巾，2=帽子，3=手套（默认1）',
-        'F1': '颜色：多个颜色用英文逗号分隔',
-        'G1': '库存：与颜色一一对应，用英文逗号分隔',
-        'H1': '标签：多个标签用英文逗号分隔'
-    }
-    
-    # 设置列宽
-    worksheet.column_dimensions['A'].width = 15
-    worksheet.column_dimensions['B'].width = 20
-    worksheet.column_dimensions['C'].width = 10
-    worksheet.column_dimensions['D'].width = 30
-    worksheet.column_dimensions['E'].width = 10
-    worksheet.column_dimensions['F'].width = 20
-    worksheet.column_dimensions['G'].width = 20
-    worksheet.column_dimensions['H'].width = 30
-    
-    # 添加批注
-    for cell, note in notes.items():
-        worksheet[cell].comment = openpyxl.comments.Comment(note, 'System')
-    
-    writer.close()
-    print(f'模板文件已创建: {template_path}')
+
 
 # 数据统计接口
 @app.route('/statistics', methods=['GET'])
@@ -1783,39 +1569,7 @@ def get_statistics(user_id):
         print(f'获取统计数据失败: {str(e)}')
         return jsonify({'error': '获取统计数据失败'}), 500
 
-# 辅助函数：处理采购统计数据
-def process_top_purchased(data):
-    result = []
-    current_product = None
-    product_data = None
-    color_stats = {}
-    
-    for row in data:
-        product_id = row.id
-        
-        if current_product != product_id:
-            if current_product is not None:
-                product_data['color_stats'] = color_stats
-                result.append(product_data)
-                
-            current_product = product_id
-            color_stats = {}
-            product_data = {
-                'id': product_id,
-                'name': row.name,
-                'order_count': row.order_count or 0,
-                'total_quantity': row.total_quantity or 0,
-                'total_amount': float(row.total_amount or 0)
-            }
-        
-        if row.color:
-            color_stats[row.color] = row.color_quantity
-    
-    if current_product is not None:
-        product_data['color_stats'] = color_stats
-        result.append(product_data)
-    
-    return result
+
 
 # 添加记录商品访问的接口
 @app.route('/products/<product_id>/view', methods=['POST'])
@@ -2135,7 +1889,7 @@ def update_user_status(user_id, target_user_id):
         if not current_user or current_user.user_type != 1:
             return jsonify({'error': '无权限执行此操作'}), 403
 
-            data = request.json
+        data = request.json
         new_status = data.get('status')
         
         if new_status not in [0, 1]:  # 0:禁用 1:启用
@@ -2196,6 +1950,8 @@ def get_user_profile(user_id):
         print(f'错误类型: {type(e).__name__}')
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '获取用户信息失败'}), 500
+
+
 
 # 更新当前用户信息
 @app.route('/user/profile', methods=['PUT'])
@@ -3336,49 +3092,6 @@ def generate_qrcode(page, scene):
         print(f"生成二维码出错: {str(e)}")
         return None
 
-def get_access_token():
-    """获取小程序 access_token"""
-    try:
-        print('='*50)
-        print('开始获取小程序access_token')
-        print('='*50)
-        
-        print('\n配置信息:')
-        print(f'- APPID: {WECHAT_APPID}')
-        print(f'- SECRET: {"*" * len(WECHAT_SECRET)}')  # 不输出实际的SECRET
-        
-        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
-        print(f'\n请求URL: {url}')
-        
-        print('\n发送请求到微信服务器...')
-        response = requests.get(url)
-        print(f'接收到响应，状态码: {response.status_code}')
-        
-        if response.status_code == 200:
-            data = response.json()
-            print('\n接口响应数据:')
-            # 处理响应数据时隐藏实际的access_token
-            safe_data = data.copy()
-            if 'access_token' in safe_data:
-                safe_data['access_token'] = safe_data['access_token'][:10] + '...'
-            print(json.dumps(safe_data, ensure_ascii=False, indent=2))
-            
-            if 'access_token' in data:
-                print('\n成功获取access_token')
-                return data['access_token']
-                
-        print('\n获取access_token失败')
-        print('错误响应:')
-        print(response.text)
-        raise Exception('获取 access_token 失败')
-        
-    except Exception as e:
-        print('\n获取access_token时发生错误:')
-        print(f'- 错误类型: {type(e).__name__}')
-        print(f'- 错误信息: {str(e)}')
-        print(f'- 错误追踪:\n{traceback.format_exc()}')
-        raise
-
 
 @app.route('/push_orders', methods=['POST'])
 @admin_required
@@ -3466,35 +3179,6 @@ def create_push_order(user_id):
 
 
 
-# 修改权限检查函数
-def check_push_order_permission(cursor, user_id, order_id):
-    """检查用户是否有权限操作该推送单"""
-    # 获取用户信息
-    cursor.execute('SELECT user_type, openid FROM users WHERE id = ?', (user_id,))
-    user = cursor.fetchone()
-    if not user:
-        return False
-        
-    user_type, user_openid = user
-    
-    # 管理员有所有权限
-    if user_type == 1:
-        return True
-        
-    # 获取推送单信息
-    cursor.execute('SELECT user_id, openid FROM push_orders WHERE id = ?', (order_id,))
-    order = cursor.fetchone()
-    if not order:
-        return False
-        
-    order_user_id, order_openid = order
-    
-    # 如果推送单没有设置 openid，所有人都可以访问
-    if order_openid is None:
-        return True
-        
-    # 检查是否是创建者或 openid 匹配
-    return order_user_id == user_id or (order_openid and order_openid == user_openid)
 # 查询推送单列表
 @app.route('/push_orders', methods=['GET'])
 @login_required
@@ -3798,43 +3482,7 @@ def update_system_settings():
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '更新系统设置失败'}), 500
 
-# 初始化系统设置
-def init_system_settings():
-    try:
-        print('开始初始化系统设置...')
-        
-        # 检查商品类型设置是否存在
-        product_types = SystemSettings.query.filter_by(setting_key='product_types').first()
-        if not product_types:
-            print('创建默认商品类型设置...')
-            default_types = [
-                {'id': 1, 'name': '披肩'},
-                {'id': 2, 'name': '围巾'},
-                {'id': 3, 'name': '帽子'},
-                {'id': 4, 'name': '三角巾'},
-                {'id': 5, 'name': '其他'}
-            ]
-            product_types = SystemSettings(
-                setting_key='product_types',
-                setting_value=json.dumps(default_types),
-                setting_type='json'
-            )
-            db.session.add(product_types)
-            
-        # 检查其他默认设置...
-        
-        try:
-            db.session.commit()
-            print('系统设置初始化完成')
-        except Exception as e:
-            db.session.rollback()
-            print(f'保存系统设置失败: {str(e)}')
-            raise
-            
-    except Exception as e:
-        print(f'初始化系统设置失败: {str(e)}')
-        print(f'错误追踪:\n{traceback.format_exc()}')
-        raise
+
 
 # 获取用户统计数据
 @app.route('/user/statistics', methods=['GET'])
@@ -4066,69 +3714,6 @@ def get_products(user_id):  # 添加 user_id 参数来接收装饰器传入的�
         return jsonify({'error': '获取商品列表失败'}), 500
 
 
-def send_push_notification(openid, order_number, products):
-    """发送微信推送消息"""
-    try:
-        access_token = get_access_token()
-        if not access_token:
-            return False
-
-        url = f'https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token={access_token}'
-        
-        # 处理订单编号，确保不超过20个字符
-        if len(order_number) > 20:
-            display_order_number = order_number[-20:]
-        else:
-            display_order_number = order_number
-            
-        # 构建商品信息文本，限制在20个字符内
-        product_names = [p.get('name', '未知商品') for p in products]
-        products_text = ''
-        total_products = len(products)
-        
-        if total_products == 1:
-            products_text = product_names[0][:20]
-        elif total_products == 2:
-            products_text = f"{product_names[0][:8]}、{product_names[1][:8]}"
-        else:
-            products_text = f"{product_names[0][:6]}等{total_products}件商品"
-            
-        # 获取当前时间
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-            
-        data = {
-            "touser": openid,
-            "template_id": "DMHyXBE15LMRREDyij2FrlRiSKNOO6iLvmxITZSr480",
-            "page": "pages/pushRecords/pushRecords",
-            "data": {
-                "thing1": {  # 订单编号
-                    "value": display_order_number
-                },
-                "thing4": {  # 商品信息
-                    "value": products_text
-                },
-                "time2": {  # 推送时间
-                    "value": current_time
-                }
-            }
-        }
-        
-        print("发送的订阅消息数据:", data)  # 添加日志
-        
-        response = requests.post(url, json=data)
-        result = response.json()
-        
-        if result.get('errcode') == 0:
-            print("订阅消息发送成功")
-            return True
-        else:
-            print(f"订阅消息发送失败: {result}")
-            return False
-            
-    except Exception as e:
-        print(f"发送订阅消息异常: {str(e)}")
-        return False
-
 @app.route('/push_orders/share', methods=['POST'])
 @login_required
 def share_push_order(user_id):
@@ -4335,86 +3920,6 @@ def bind_push_order(user_id, share_code):
         print(f"错误追踪:\n{traceback.format_exc()}")
         return jsonify({'error': '绑定失败'}), 500
 
-#获取用户采购单的总数，商品总数，总金额
-@app.route('/user/purchase_statistics', methods=['GET'])
-@login_required
-def get_user_purchase_statistics(user_id):
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            
-            # 获取今日统计
-            cursor.execute("""
-                SELECT 
-                    COUNT(DISTINCT id) as order_count,
-                    COALESCE(SUM(total_quantity), 0) as total_quantity,
-                    COALESCE(SUM(total_amount), 0) as total_amount
-                FROM purchase_orders 
-                WHERE user_id = %s 
-                AND status != 3
-                AND DATE(created_at) = CURDATE()
-            """, (user_id,))
-            daily_stats = cursor.fetchone()
-            
-            # 获取本周统计
-            cursor.execute("""
-                SELECT 
-                    COUNT(DISTINCT id) as order_count,
-                    COALESCE(SUM(total_quantity), 0) as total_quantity,
-                    COALESCE(SUM(total_amount), 0) as total_amount
-                FROM purchase_orders 
-                WHERE user_id = %s 
-                AND status != 3
-                AND YEARWEEK(created_at) = YEARWEEK(NOW())
-            """, (user_id,))
-            weekly_stats = cursor.fetchone()
-            
-            # 获取近30天统计
-            cursor.execute("""
-                SELECT 
-                    COUNT(DISTINCT id) as order_count,
-                    COALESCE(SUM(total_quantity), 0) as total_quantity,
-                    COALESCE(SUM(total_amount), 0) as total_amount
-                FROM purchase_orders 
-                WHERE user_id = %s 
-                AND status != 3
-                AND created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-            """, (user_id,))
-            monthly_stats = cursor.fetchone()
-            
-            # 其他查询保持不变...
-            
-            stats_data = {
-                'daily_statistics': {
-                    'order_count': daily_stats[0] if daily_stats else 0,
-                    'total_quantity': float(daily_stats[1]) if daily_stats else 0,
-                    'total_amount': float(daily_stats[2]) if daily_stats else 0
-                },
-                'weekly_statistics': {
-                    'order_count': weekly_stats[0] if weekly_stats else 0,
-                    'total_quantity': float(weekly_stats[1]) if weekly_stats else 0,
-                    'total_amount': float(weekly_stats[2]) if weekly_stats else 0
-                },
-                'monthly_statistics': {
-                    'order_count': monthly_stats[0] if monthly_stats else 0,
-                    'total_quantity': float(monthly_stats[1]) if monthly_stats else 0,
-                    'total_amount': float(monthly_stats[2]) if monthly_stats else 0
-                }
-            }
-            
-            return jsonify({
-                'code': 0,
-                'message': 'success',
-                'data': stats_data
-            })
-            
-    except Exception as e:
-        print(f"Error getting purchase statistics: {str(e)}")
-        return jsonify({
-            'code': 1,
-            'message': f"获取统计数据失败: {str(e)}"
-        }), 500
-
 # 添加商品推送记录接口
 @app.route('/products/push', methods=['POST'])
 @login_required
@@ -4555,23 +4060,6 @@ def update_push_order_status(user_id, order_id):
         return jsonify({'error': '更新推送单状态失败'}), 500
 
 
-# 辅助函数：生成缩略图
-def create_thumbnail(image_path, max_size=(800, 800)):
-    """生成图片缩略图"""
-    try:
-        from PIL import Image
-        
-        # 打开图片
-        with Image.open(image_path) as img:
-            # 保持宽高比缩放
-            img.thumbnail(max_size)
-            # 保存缩略图，使用优化和压缩
-            img.save(image_path, quality=85, optimize=True)
-            return True
-    except Exception as e:
-        print(f'生成缩略图失败: {str(e)}')
-        print(f'错误追踪:\n{traceback.format_exc()}')
-        return False
 
 # 访问上传的图片
 @app.route('/uploads/<path:filename>')
@@ -4714,3 +4202,4 @@ def get_home_statistics():
             'message': f'Failed to get statistics: {str(e)}',
             'data': None
         })
+

@@ -1,35 +1,67 @@
-from datetime import datetime, timedelta
-from flask import render_template, request, jsonify, send_from_directory, abort, send_file
-from wxcloudrun import app, db
-from wxcloudrun.model import User, Product, PurchaseOrder, DeliveryOrder, PushOrder, SystemSettings, StockRecord
-from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
-import jwt
-from functools import wraps
-import os
-import config
-import requests
-import uuid
+from flask import Flask, request, jsonify, send_from_directory, send_file, make_response
+from flask_cors import CORS
 import json
-import traceback
-from PIL import Image
-import io
-import qrcode
+import jwt
+from datetime import datetime, timedelta
+from functools import wraps
+import requests
+from Crypto.Cipher import AES
 import base64
+from werkzeug.utils import secure_filename
+import os
+from werkzeug.wrappers import Response
+from openpyxl import load_workbook
 import pandas as pd
-from sqlalchemy import func, desc, and_
-import logging
+from io import BytesIO
+import openpyxl
+import traceback
+import random
+import string
+import time
+import uuid
+from extensions import db
+from models import User, Product, StockRecord, ColorStock, ProductView, PurchaseOrder, \
+    PurchaseOrderItem, DeliveryOrder, DeliveryItem, PushOrder, PushOrderProduct, SystemSettings
+from sqlalchemy import inspect, text, func, desc, distinct, case, Text
 
-# 测试路由
-@app.route('/api/test', methods=['GET'])
-def test_api():
-    return jsonify({
-        'code': 0,
-        'message': '测试成功',
-        'data': {
-            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-    })
+from flask_migrate import Migrate  # 添加到文件开头的导入部分
+
+app = Flask(__name__)
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
+
+SECRET_KEY = 'onlyfrom'  # 用于签名 JWT 的密钥
+
+
+# 修改文件上传配置
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'xlsx', 'xls', 'pdf'}
+MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
+
+# 确保上传目录存在
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+app.config.update(
+    UPLOAD_FOLDER=UPLOAD_FOLDER,
+    MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH
+)
+
+# 数据库配置
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:beibei&395@sh-cynosdbmysql-grp-kbj3s1h8.sql.tencentcdb.com:25481/qyflask'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_size': 10,
+    'pool_recycle': 3600,
+    'pool_pre_ping': True
+}
+
+db.init_app(app)
+migrate = Migrate(app, db)  # 移动到这里，在 db.init_app(app) 之后
 
 # 初始化数据库
 def init_db():
@@ -62,6 +94,50 @@ def init_db():
         db.session.rollback()
         raise
 
+# 生成 JWT
+def generate_token(user_id):
+    """生成JWT token"""
+    try:
+        payload = {
+            'user_id': user_id,
+            'iat': datetime.utcnow(),
+            'exp': datetime.utcnow() + timedelta(hours=1)
+        }
+        return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+    except Exception as e:
+        print(f'生成token失败: {str(e)}')
+        return None
+
+# 验证 JWT
+def verify_token(token):
+    """验证JWT token"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+        return payload['user_id']
+    except jwt.ExpiredSignatureError:
+        print('token已过期')
+        return None
+    except jwt.InvalidTokenError as e:
+        print(f'无效的token: {str(e)}')
+        return None
+    except Exception as e:
+        print(f'验证token时发生错误: {str(e)}')
+        return None
+
+# 延长 token 有效期
+def extend_token_expiry(token):
+    """延长token的有效期"""
+    try:
+        # 解码当前token（不验证过期时间）
+        payload = jwt.decode(token, SECRET_KEY, options={"verify_exp": False}, algorithms=['HS256'])
+        # 更新过期时间
+        payload['iat'] = datetime.utcnow()
+        payload['exp'] = datetime.utcnow() + timedelta(hours=1)
+        # 重新编码
+        return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+    except Exception as e:
+        print(f'延长token有效期失败: {str(e)}')
+        return None
 
 # 修改登录验证装饰器
 def login_required(f):
@@ -4714,3 +4790,9 @@ def get_home_statistics():
             'message': f'Failed to get statistics: {str(e)}',
             'data': None
         })
+
+
+if __name__ == '__main__':
+    with app.app_context():
+        init_db()
+    app.run(host='0.0.0.0', port=80)
