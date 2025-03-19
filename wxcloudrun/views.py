@@ -322,7 +322,6 @@ def wechat_register():
         code = data.get('code')
         encrypted_data = data.get('encryptedData')
         iv = data.get('iv')
-        openid = data.get('openid')
 
         if not all([code, encrypted_data, iv]):
             print('错误: 缺少必要参数')
@@ -409,9 +408,7 @@ def wechat_login():
             return jsonify({
                 'code': 200,
                 'data': {
-                    'is_registered': False,
-                    'openid': openid,
-                    'session_key': session_key
+                    'is_registered': False
                 }
             }),400
             
