@@ -3113,14 +3113,8 @@ def generate_qrcode_api():
 
 def generate_qrcode(page, scene):
     try:
-        # 使用固定路径
-        qrcode_dir = 'static/qrcodes'
-        if not os.path.exists(qrcode_dir):
-            os.makedirs(qrcode_dir)
-            
         # 生成唯一的文件名
         filename = f"qr_{int(time.time())}_{uuid.uuid4().hex[:8]}.jpg"
-        filepath = f'{qrcode_dir}/{filename}'
         
         # 调用微信接口生成小程序码
         access_token = get_access_token()
@@ -3137,23 +3131,84 @@ def generate_qrcode(page, scene):
         response = requests.post(url, json=params)
         
         if response.status_code == 200:
-            # 保存文件
-            with open(filepath, 'wb') as f:
-                f.write(response.content)
+            # 获取云托管环境ID
+            env_id = os.environ.get('WX_CLOUD_ENV_ID')
             
-            print(f"二维码已保存到: {filepath}")
-
-            # 返回相对路径，使用正斜杠
-            relative_path = f'/static/qrcodes/{filename}'
-            return relative_path
+            # 上传到云存储
+            upload_url = f'https://api.weixin.qq.com/tcb/uploadfile?access_token={access_token}'
+            upload_params = {
+                "env": env_id,
+                "path": f"qrcodes/{filename}"
+            }
+            
+            # 获取上传链接
+            r = requests.post(upload_url, json=upload_params)
+            upload_info = r.json()
+            
+            if upload_info.get('errcode') == 0:
+                # 执行上传
+                upload_response = requests.post(
+                    upload_info['url'],
+                    files={
+                        'key': ('', upload_info['path']),
+                        'Signature': ('', upload_info['authorization']),
+                        'x-cos-security-token': ('', upload_info['token']),
+                        'x-cos-meta-fileid': ('', upload_info['file_id']),
+                        'file': ('', response.content)
+                    }
+                )
+                
+                if upload_response.status_code == 200:
+                    # 返回文件 ID
+                    return upload_info['file_id']
+                else:
+                    print(f"上传文件失败: {upload_response.text}")
+                    return None
+            else:
+                print(f"获取上传链接失败: {upload_info}")
+                return None
         else:
             print(f"生成二维码失败: {response.text}")
             return None
             
     except Exception as e:
         print(f"生成二维码出错: {str(e)}")
-        print(f"错误追踪:\n{traceback.format_exc()}")  # 添加详细错误追踪
+        print(f"错误追踪:\n{traceback.format_exc()}")
         return None
+
+def get_access_token():
+    """获取小程序 access_token"""
+    try:
+        # 在云托管环境中，可以直接从环境变量获取
+        access_token = os.environ.get('WX_TOKEN')
+        if access_token:
+            print('\n从环境变量获取access_token成功')
+            return access_token
+
+        appid = "wxa17a5479891750b3"
+        secret = "33359853cfee1dc1e2b6e535249e351d"
+        # 如果环境变量中没有，才使用传统方式获取
+        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}'   
+        response = requests.get(url)        
+        if response.status_code == 200:
+            data = response.json()
+            print('\n接口响应数据:')
+            # 处理响应数据时隐藏实际的access_token
+            safe_data = data.copy()
+            if 'access_token' in safe_data:
+                safe_data['access_token'] = safe_data['access_token'][:10] + '...'
+            print(json.dumps(safe_data, ensure_ascii=False, indent=2))            
+            if 'access_token' in data:
+                print('\n成功获取access_token')
+                return data['access_token']               
+
+        raise Exception('获取 access_token 失败')
+        
+    except Exception as e:
+        print(f'获取access_token失败: {str(e)}')
+        raise
+
+
 
 
 @app.route('/push_orders', methods=['POST'])
@@ -3173,7 +3228,7 @@ def create_push_order(user_id):
         # 生成分享码
         share_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
         # 生成二维码
-        qrcode_path = generate_qrcode('pages/pushShare/pushShare', f'code={share_code}')
+        qrcode_file_id = generate_qrcode('pages/pushShare/pushShare', f'code={share_code}')
 
         # 获取目标用户的openid
         target_openid = None
@@ -3190,7 +3245,7 @@ def create_push_order(user_id):
             target_user_id=target_user_id,
             openid=target_openid,
             share_code=share_code,
-            qrcode_path=qrcode_path,
+            qrcode_path=qrcode_file_id,  # 存储 file_id
             created_at=datetime.now()
         )
 
@@ -3226,7 +3281,7 @@ def create_push_order(user_id):
                 'order_id': push_order.id,
                 'order_number': order_number,
                 'share_code': share_code,
-                'qrcode_path': qrcode_path
+                'qrcode_path': qrcode_file_id
             }), 201
 
         except Exception as e:
@@ -5083,4 +5138,87 @@ def handle_cloud_file(user_id):
     except Exception as e:
         print(f"处理云存储文件失败: {str(e)}")
         return jsonify({'error': f'处理文件失败: {str(e)}'}), 500
+
+@app.route('/test/qrcode', methods=['GET'])
+def test_qrcode():
+    try:
+        # 测试生成一个简单的二维码
+        page = 'pages/index/index'
+        scene = 'test=123'
+        
+        # 记录测试步骤和结果
+        test_steps = []
+        
+        # 步骤1：获取access_token
+        try:
+            access_token = get_access_token()
+            test_steps.append({
+                'step': 'get_access_token',
+                'status': 'success',
+                'data': {
+                    'token_preview': f'{access_token[:10]}...',
+                    'source': 'environment' if os.environ.get('WX_TOKEN') else 'api'
+                }
+            })
+        except Exception as e:
+            test_steps.append({
+                'step': 'get_access_token',
+                'status': 'failed',
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            })
+            raise
+        
+        # 步骤2：生成二维码并上传
+        try:
+            qrcode_file_id = generate_qrcode(page, scene)
+            if qrcode_file_id:
+                test_steps.append({
+                    'step': 'generate_qrcode',
+                    'status': 'success',
+                    'data': {
+                        'file_id': qrcode_file_id,
+                        'env_id': os.environ.get('WX_CLOUD_ENV_ID', 'unknown')
+                    }
+                })
+            else:
+                test_steps.append({
+                    'step': 'generate_qrcode',
+                    'status': 'failed',
+                    'error': '生成二维码返回空值'
+                })
+                raise Exception('生成二维码失败')
+        except Exception as e:
+            test_steps.append({
+                'step': 'generate_qrcode',
+                'status': 'failed',
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            })
+            raise
+            
+        # 所有步骤成功完成
+        return jsonify({
+            'code': 200,
+            'message': '二维码生成成功',
+            'data': {
+                'test_steps': test_steps,
+                'final_result': {
+                    'file_id': qrcode_file_id,
+                    'env_id': os.environ.get('WX_CLOUD_ENV_ID', 'unknown')
+                }
+            }
+        })
+            
+    except Exception as e:
+        return jsonify({
+            'code': 500,
+            'message': '测试失败',
+            'error': {
+                'type': type(e).__name__,
+                'message': str(e),
+                'traceback': traceback.format_exc(),
+                'test_steps': test_steps
+            }
+        }), 500
 
