@@ -5144,7 +5144,6 @@ def test_headers():
             'message': '获取请求头信息成功',
             'data': {
                 'all_headers': wx_headers,
-                'env_vars': envss
             }
         })
             
