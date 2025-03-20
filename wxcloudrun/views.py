@@ -3092,11 +3092,18 @@ def generate_qrcode_api():
         scene = data.get('scene')
         
         qrcode_path = generate_qrcode(page, scene)
-        return jsonify({
-            'code': 200,
-            'message': 'QR code generated successfully',
-            'qrcode': qrcode_path
-        })
+
+        if qrcode_path:
+            return jsonify({
+                'code': 200,
+                'message': 'QR code generated successfully',
+                'qrcode': qrcode_path
+            })
+        else:
+            return jsonify({
+                'code': 401,
+                'message': 'QR code generation failed'
+            }), 401
     except Exception as e:
         print(f"生成二维码出错: {str(e)}")
         return jsonify({
@@ -3106,14 +3113,14 @@ def generate_qrcode_api():
 
 def generate_qrcode(page, scene):
     try:
-        # 确保存储目录存在
-        qrcode_dir = os.path.join(app.static_folder, 'qrcodes')
+        # 使用固定路径
+        qrcode_dir = 'static/qrcodes'
         if not os.path.exists(qrcode_dir):
             os.makedirs(qrcode_dir)
             
         # 生成唯一的文件名
         filename = f"qr_{int(time.time())}_{uuid.uuid4().hex[:8]}.jpg"
-        filepath = os.path.join(qrcode_dir, filename)
+        filepath = f'{qrcode_dir}/{filename}'
         
         # 调用微信接口生成小程序码
         access_token = get_access_token()
@@ -3136,7 +3143,7 @@ def generate_qrcode(page, scene):
             
             print(f"二维码已保存到: {filepath}")
 
-            # 返回相对路径
+            # 返回相对路径，使用正斜杠
             relative_path = f'/static/qrcodes/{filename}'
             return relative_path
         else:
@@ -3145,6 +3152,7 @@ def generate_qrcode(page, scene):
             
     except Exception as e:
         print(f"生成二维码出错: {str(e)}")
+        print(f"错误追踪:\n{traceback.format_exc()}")  # 添加详细错误追踪
         return None
 
 
