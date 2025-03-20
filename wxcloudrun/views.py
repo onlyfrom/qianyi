@@ -226,14 +226,13 @@ def wechat_openid_login():
         print('开始处理微信openid登录请求')
         print('='*50)
         
-        data = request.json
-        print('收到的请求数据:', json.dumps(data, ensure_ascii=False, indent=2))
-        
-        openid = data.get('openid')
-        
+        # 从header中获取openid
+        openid = request.headers.get('x-wx-openid')
         if not openid:
-            print('错误: 缺少openid参数')
-            return jsonify({'error': '缺少openid参数'}), 400
+            print('错误: 未获取到openid')
+            return jsonify({'error': '未获取到openid'}), 401
+            
+        print('从header获取到的openid:', openid)
         
         # 查询是否存在该openid的用户
         user = User.query.filter_by(openid=openid).first()
@@ -374,30 +373,13 @@ def wechat_login():
         print('开始处理微信登录请求')
         print('='*50)
         
-        data = request.json
-        print('收到的请求数据:', json.dumps(data, ensure_ascii=False, indent=2))
-        
-        code = data.get('code')
-        if not code:
-            print('错误: 缺少code参数')
-            return jsonify({'error': '缺少必要参数'}), 400
+        # 从header中获取openid
+        openid = request.headers.get('x-wx-openid')
+        if not openid:
+            print('错误: 未获取到openid')
+            return jsonify({'error': '未获取到openid'}), 401
             
-        # 获取微信用户信息
-        wx_data = get_wx_user_info(code)
-        if not wx_data:
-            print('错误: 获取微信用户信息失败')
-            return jsonify({'error': '获取微信用户信息失败'}), 400
-
-        if 'errcode' in wx_data:
-            print('错误: 微信API返回错误:', wx_data['errmsg'])
-            return jsonify({'error': wx_data['errmsg']}), 400
-
-        openid = wx_data.get('openid')
-        session_key = wx_data.get('session_key')
-        
-        if not openid or not session_key:
-            print('错误: 微信返回数据不完整')
-            return jsonify({'error': '获取微信用户信息失败'}), 400
+        print('从header获取到的openid:', openid)
             
         # 查找用户
         user = User.query.filter_by(openid=openid).first()
