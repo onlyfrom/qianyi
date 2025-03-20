@@ -5139,8 +5139,6 @@ def test_headers():
         # 获取所有请求头
         wx_headers = request.headers
         
-        # 获取环境变量
-        envss = dict(os.environ)
         return jsonify({
             'code': 200,
             'message': '获取请求头信息成功',
