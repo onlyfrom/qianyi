@@ -4,7 +4,7 @@ import string
 import random
 from Crypto.Cipher import AES
 from datetime import datetime, timedelta
-from flask import Response
+from flask import Response, request, jsonify
 import jwt
 from wxcloudrun import db
 from wxcloudrun.model import *
@@ -242,23 +242,27 @@ def decrypt_weixin_data(session_key, encrypted_data, iv):
 def get_wx_user_info(code):
     """获取微信用户信息"""
     try:
+        # 在云托管环境下，可以直接从header获取
+        openid = request.headers.get('x-wx-openid')
+        if openid:
+            return {
+                'openid': openid,
+                'session_key': None  # 云托管环境下不需要session_key
+            }
+            
+        # 如果不是云托管环境，使用传统方式获取
         print('\n开始请求微信API:')
         wx_api_url = 'https://api.weixin.qq.com/sns/jscode2session'
-        print(f'- 接口地址: {wx_api_url}')
-        print(f'- 请求参数: appid={config.WECHAT_APPID}, code={code}')
-        
         params = {
-            'appid': config.WECHAT_APPID,
-            'secret': config.WECHAT_SECRET,
+            'appid': "wxa17a5479891750b3",
+            'secret': "33359853cfee1dc1e2b6e535249e351d",
             'js_code': code,
             'grant_type': 'authorization_code'
         }
         
         response = requests.get(wx_api_url, params=params)
         wx_data = response.json()
-        print('\n微信API响应:')
-        print(json.dumps(wx_data, ensure_ascii=False, indent=2))
-
+        
         if 'errcode' in wx_data:
             print('错误: 微信API返回错误')
             print(f'错误码: {wx_data.get("errcode")}')
@@ -302,9 +306,11 @@ def get_access_token():
         if access_token:
             print('\n从环境变量获取access_token成功')
             return access_token
-            
+
+        appid = "wxa17a5479891750b3"
+        secret = "33359853cfee1dc1e2b6e535249e351d"
         # 如果环境变量中没有，才使用传统方式获取
-        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={config.WECHAT_APPID}&secret={config.WECHAT_SECRET}'   
+        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}'   
         response = requests.get(url)        
         if response.status_code == 200:
             data = response.json()
