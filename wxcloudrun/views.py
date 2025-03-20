@@ -25,6 +25,9 @@ from sqlalchemy import inspect, text, func, desc, distinct, case, Text
 from sqlalchemy.sql import literal, literal_column
 from wxcloudrun.response import *
 
+WECHAT_APPID = "wxa17a5479891750b3"
+WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
+
 # 用户认证中间件
 def login_required(f):
     @wraps(f)
@@ -3089,14 +3092,32 @@ def generate_qrcode_api():
     try:
         data = request.get_json()
         page = data.get('page')
-        scene = data.get('scene')
         
-        qrcode_path = generate_qrcode(page, scene)
+        # 生成唯一的分享码
+        max_attempts = 10  # 最大尝试次数
+        attempt = 0
+        while attempt < max_attempts:
+            share_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+            # 检查分享码是否已存在
+            existing_order = PushOrder.query.filter_by(share_code=share_code).first()
+            if not existing_order:
+                break
+            attempt += 1
+        
+        if attempt >= max_attempts:
+            return jsonify({
+                'code': 500,
+                'message': '无法生成唯一的分享码'
+            }), 500
+        
+        # 使用分享码生成二维码
+        qrcode_path = generate_qrcode(page, f'code={share_code}')
 
         if qrcode_path:
             return jsonify({
                 'code': 200,
                 'message': 'QR code generated successfully',
+                'share_code': share_code,
                 'qrcode': qrcode_path
             })
         else:
@@ -3116,9 +3137,7 @@ def generate_qrcode(page, scene):
         # 生成唯一的文件名
         filename = f"qr_{int(time.time())}_{uuid.uuid4().hex[:8]}.jpg"
         
-        # 调用微信接口生成小程序码
-        access_token = get_access_token()
-        url = f'http://api.weixin.qq.com/wxa/getwxacode?access_token={access_token}'
+        url = f'http://api.weixin.qq.com/wxa/getwxacode'
         
         params = {
             "path": f"{page}?{scene}",
@@ -3131,73 +3150,18 @@ def generate_qrcode(page, scene):
         response = requests.post(url, json=params)
         
         if response.status_code == 200:
-            # 获取云环境ID
-            env = config.CLOUD_ENV_ID
-            if not env:
-                print("未配置云环境ID")
-                return None
-
-            # 获取小程序配置
-            appid = config.WECHAT_APPID
-            secret = config.WECHAT_SECRET
-            if not appid or not secret:
-                print("未配置小程序信息")
-                return None
-
-            # 获取access_token
-            token_url = f"http://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
-            token_response = requests.get(token_url)
-            if token_response.status_code != 200:
-                print("获取access_token失败")
-                return None
-
-            token_data = token_response.json()
-            if 'access_token' not in token_data:
-                print(f"获取access_token失败: {token_data.get('errmsg')}")
-                return None
-
-            access_token = token_data['access_token']
+            # 确保上传目录存在
+            upload_folder = os.path.join(current_app.root_path, 'uploads')
+            if not os.path.exists(upload_folder):
+                os.makedirs(upload_folder)
             
-            # 构建上传URL
-            upload_url = f"http://api.weixin.qq.com/tcb/uploadfile?access_token={access_token}"
-            
-            # 请求上传文件
-            upload_response = requests.post(upload_url, json={
-                "env": env,
-                "path": f"qrcodes/{filename}"
-            })
-
-            if upload_response.status_code != 200:
-                print("获取上传链接失败")
-                return None
-
-            upload_result = upload_response.json()
-            if upload_result.get('errcode') != 0:
-                print(f"获取上传链接失败: {upload_result.get('errmsg')}")
-                return None
-
-            upload_url = upload_result.get('url')
-            if not upload_url:
-                print("获取上传链接失败")
-                return None
-
-            # 上传文件
-            upload_file_response = requests.post(upload_url, files={
-                'key': (f"qrcodes/{filename}", response.content, 'image/jpeg')
-            })
-
-            if upload_file_response.status_code != 200:
-                print("上传文件失败")
-                return None
-
-            # 返回云存储文件ID
-            file_id = upload_result.get('file_id')
-            if file_id:
-                print(f"二维码已上传到云存储: {file_id}")
-                return file_id
-            else:
-                print("获取文件ID失败")
-                return None
+            # 保存文件
+            file_path = os.path.join(upload_folder, filename)
+            with open(file_path, 'wb') as f:
+                f.write(response.content)
+                
+            # 返回文件URL
+            return f'/uploads/{filename}'
             
         else:
             print(f"生成二维码失败: {response.text}")
@@ -3229,11 +3193,10 @@ def get_access_token():
             print('\n从环境变量获取access_token成功')
             return env_token
 
-        WECHAT_APPID = config.WECHAT_APPID
-        WECHAT_SECRET = config.WECHAT_SECRET
+        
         # 3. 最后才使用API获取
         print('\n从环境变量和请求头都未获取到token，尝试通过API获取...')
-        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
+        url = f'http://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
         
         # 禁用证书验证警告
         import urllib3
@@ -3267,17 +3230,17 @@ def create_push_order(user_id):
         data = request.json
         target_name = data.get('target_name', '仟艺测试')
         target_user_id = data.get('target_user_id', None)
+        share_code = data.get('share_code')
+        qrcode = data.get('qrcode')
 
         if not data or 'products' not in data:
             return jsonify({'error': '无效的请求数据'}), 400
 
+        if not share_code or not qrcode:
+            return jsonify({'error': '缺少分享码或二维码'}), 400
+
         # 生成推送单号
         order_number = f"PUSH{datetime.now().strftime('%Y%m%d%H%M%S')}{random.randint(100,999)}"
-
-        # 生成分享码
-        share_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-        # 生成二维码
-        qrcode_file_id = generate_qrcode('pages/pushShare/pushShare', f'code={share_code}')
 
         # 获取目标用户的openid
         target_openid = None
@@ -3294,7 +3257,7 @@ def create_push_order(user_id):
             target_user_id=target_user_id,
             openid=target_openid,
             share_code=share_code,
-            qrcode_path=qrcode_file_id,  # 存储 file_id
+            qrcode_path=qrcode,  # 使用前端传递的二维码
             created_at=datetime.now()
         )
 
@@ -3330,7 +3293,7 @@ def create_push_order(user_id):
                 'order_id': push_order.id,
                 'order_number': order_number,
                 'share_code': share_code,
-                'qrcode_path': qrcode_file_id
+                'qrcode_path': qrcode
             }), 201
 
         except Exception as e:
