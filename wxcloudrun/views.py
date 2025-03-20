@@ -3124,7 +3124,7 @@ def generate_qrcode(page, scene):
         
         # 调用微信接口生成小程序码
         access_token = get_access_token()
-        url = f'https://api.weixin.qq.com/wxa/getwxacode?access_token={access_token}'
+        url = f'http://api.weixin.qq.com/wxa/getwxacode?access_token={access_token}'
         
         params = {
             "path": f"{page}?{scene}",
@@ -3159,9 +3159,15 @@ def get_access_token():
     try:
         # 1. 首先尝试从请求头获取
         if request:
-            wx_token = request.headers.get('x-wx-token')
+            wx_token = request.headers.get('X-WX-CLOUDBASE-ACCESS-TOKEN')
             if wx_token:
                 print('\n从请求头获取access_token成功')
+                return wx_token
+        
+        if request:
+            wx_token = request.headers.get('X-Cloudbase-Sessiontoken')
+            if wx_token:
+                print('\n从请求头获取X-Cloudbase-Sessiontoken成功')
                 return wx_token
         
         # 2. 尝试从环境变量获取
@@ -5134,7 +5140,7 @@ def test_headers():
         wx_headers = request.headers
         
         # 获取环境变量
-        envss =os.environ
+        envss = dict(os.environ)
         return jsonify({
             'code': 200,
             'message': '获取请求头信息成功',
