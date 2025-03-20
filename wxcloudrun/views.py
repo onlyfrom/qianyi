@@ -910,11 +910,58 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in config.ALLOWED_EXTENSIONS
 
 
-# 上传图片接口
 @app.route('/upload', methods=['POST'])
 @admin_required
 def upload_file_handler(user_id):
     try:
+        # 检查是否是base64上传
+        if request.is_json:
+            data = request.get_json()
+            if 'file' in data and isinstance(data['file'], str):
+                # 处理base64上传
+                try:
+                    # 解码base64数据
+                    base64_data = data['file']
+                    if ',' in base64_data:
+                        base64_data = base64_data.split(',')[1]
+                    
+                    file_data = base64.b64decode(base64_data)
+                    
+                    # 获取文件扩展名
+                    file_ext = data.get('ext', 'jpg').lower()
+                    if not allowed_file(f'temp.{file_ext}'):
+                        return jsonify({'error': '不支持的文件类型'}), 400
+                    
+                    # 创建上传目录（使用绝对路径）
+                    upload_dir = os.path.join(app.root_path, app.config['UPLOAD_FOLDER'], file_ext)
+                    os.makedirs(upload_dir, exist_ok=True)
+                    
+                    # 生成安全的文件名
+                    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                    random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+                    new_filename = f'{timestamp}_{random_str}.{file_ext}'
+                    
+                    # 保存文件
+                    file_path = os.path.join(upload_dir, new_filename)
+                    with open(file_path, 'wb') as f:
+                        f.write(file_data)
+                    
+                    # 返回可访问的URL
+                    file_url = f'/uploads/{file_ext}/{new_filename}'
+                    
+                    print(f'Base64文件已保存: {file_path}')
+                    print(f'访问URL: {file_url}')
+                    
+                    return jsonify({
+                        'url': file_url,
+                        'filename': new_filename
+                    }), 200
+                    
+                except Exception as e:
+                    print(f'处理Base64文件上传失败: {str(e)}')
+                    return jsonify({'error': 'Base64文件处理失败'}), 400
+        
+        # 处理普通文件上传
         if 'file' not in request.files:
             return jsonify({'error': '未找到上传文件'}), 400
             
@@ -925,9 +972,9 @@ def upload_file_handler(user_id):
         if not allowed_file(file.filename):
             return jsonify({'error': '不支持的文件类型'}), 400
             
-        # 获取文件类型并创建对应目录
+        # 获取文件类型并创建对应目录（使用绝对路径）
         file_ext = file.filename.rsplit('.', 1)[1].lower()
-        upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], file_ext)
+        upload_dir = os.path.join(app.root_path, app.config['UPLOAD_FOLDER'], file_ext)
         os.makedirs(upload_dir, exist_ok=True)
             
         # 生成安全的文件名
@@ -940,7 +987,6 @@ def upload_file_handler(user_id):
         file_path = os.path.join(upload_dir, new_filename)
         file.save(file_path)  
         
-            
         # 返回可访问的URL
         file_url = f'/uploads/{file_ext}/{new_filename}'
         
@@ -955,7 +1001,7 @@ def upload_file_handler(user_id):
     except Exception as e:
         print(f'处理文件上传失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
-        return jsonify({'error': '文件上传失败'}), 500
+        return jsonify({'error': '文件上传失败'}), 500 
 
 
 # 删除文件接口 - 修改路由路径以避免冲突
@@ -4092,28 +4138,32 @@ def update_push_order_status(user_id, order_id):
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
     try:
-        
-        # 获取文件类型和文件名
+        print(f'尝试访问文件: {filename}')
+        # 从完整路径中提取文件类型目录和文件名
         if '/' in filename:
-            file_ext = filename.split('/')[0]  # 获取文件类型目录
-            base_filename = os.path.basename(filename)  # 获取文件名
+            file_type, base_filename = filename.split('/', 1)
         else:
-            file_ext = filename.rsplit('.', 1)[1].lower()
+            file_type = filename.rsplit('.', 1)[1].lower()
             base_filename = filename
+            
+        # 使用绝对路径
+        upload_dir = os.path.join(app.root_path, app.config['UPLOAD_FOLDER'], file_type)
+        print(f'文件目录: {upload_dir}')
+        print(f'文件名: {base_filename}')
         
-        # 构建完整路径
-        file_dir = os.path.join(app.config['UPLOAD_FOLDER'], file_ext)
-        file_path = os.path.join(file_dir, base_filename)
-        
-        if not os.path.exists(file_path):
-            print(f"错误: 文件不存在 - {file_path}")
+        if not os.path.exists(upload_dir):
+            print(f'目录不存在: {upload_dir}')
+            return jsonify({'error': '文件目录不存在'}), 404
+            
+        if not os.path.exists(os.path.join(upload_dir, base_filename)):
+            print(f'文件不存在: {os.path.join(upload_dir, base_filename)}')
             return jsonify({'error': '文件不存在'}), 404
-        
-        return send_from_directory(file_dir, base_filename)
-        
+            
+        return send_from_directory(upload_dir, base_filename)
     except Exception as e:
-
-        return jsonify({'error': f'访问文件失败: {str(e)}'}), 500
+        print(f'访问上传文件失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '文件访问失败'}), 404
 
 @app.route('/home/statistics', methods=['GET'])
 @login_required
