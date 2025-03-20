@@ -5015,12 +5015,30 @@ def handle_cloud_file(user_id):
         product_id = data.get('product_id', '')
 
         # 获取云环境ID
-        env = current_app.config.get('CLOUD_ENV_ID')
+        env = config.CLOUD_ENV_ID
         if not env:
             return jsonify({'error': '未配置云环境ID'}), 500
 
+        # 获取小程序配置
+        appid = config.WECHAT_APPID
+        secret = config.WECHAT_SECRET
+        if not appid or not secret:
+            return jsonify({'error': '未配置小程序信息'}), 500
+
+        # 获取access_token
+        token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
+        token_response = requests.get(token_url)
+        if token_response.status_code != 200:
+            return jsonify({'error': '获取access_token失败'}), 500
+
+        token_data = token_response.json()
+        if 'access_token' not in token_data:
+            return jsonify({'error': f"获取access_token失败: {token_data.get('errmsg')}"}), 500
+
+        access_token = token_data['access_token']
+        
         # 构建下载URL
-        download_url = f"https://api.weixin.qq.com/tcb/batchdownloadfile?env={env}"
+        download_url = f"https://api.weixin.qq.com/tcb/batchdownloadfile?access_token={access_token}"
         
         # 请求下载文件
         response = requests.post(download_url, json={

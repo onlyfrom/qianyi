@@ -11,7 +11,6 @@ def generate_token(user_id):
             'iat': datetime.utcnow(),
             'exp': datetime.utcnow() + timedelta(hours=1)
         }
-        print(f'生成的payload: {payload}')
         return jwt.encode(payload, config.JWT_SECRET_KEY, algorithm='HS256')
     except Exception as e:
         print(f'生成token失败: {str(e)}')

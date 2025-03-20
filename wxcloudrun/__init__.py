@@ -21,7 +21,7 @@ app = Flask(__name__, instance_relative_config=True)
 app.config.from_object('config')
 
 # 设定数据库链接
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://{}:{}@{}/{}'.format(
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://{}:{}@{}/{}'.format(
     config.username, config.password, config.db_address, config.database
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -105,7 +105,6 @@ def handle_options(path):
 
 @app.after_request
 def after_request(response):
-    # 添加跨域头
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
@@ -113,6 +112,6 @@ def after_request(response):
     return response
 
 # 导入视图函数
-from wxcloudrun import views  # 导入两个视图模块
+from . import views
 
 

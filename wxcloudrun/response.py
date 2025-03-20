@@ -193,19 +193,42 @@ def is_login_attempts_exceeded(username):
     
 # 数据解密函数也添加详细日志
 def decrypt_weixin_data(session_key, encrypted_data, iv):
-    try:        
+    try:
+        print('开始解密微信数据:')
+        print(f'- session_key长度: {len(session_key)}')
+        print(f'- encrypted_data长度: {len(encrypted_data)}')
+        print(f'- iv长度: {len(iv)}')
+        
+        # Base64解码
+        print('\n执行Base64解码...')
         session_key = base64.b64decode(session_key)
         encrypted_data = base64.b64decode(encrypted_data)
-        iv = base64.b64decode(iv)                
-        cipher = AES.new(session_key, AES.MODE_CBC, iv)        
-        decrypted = cipher.decrypt(encrypted_data)        
+        iv = base64.b64decode(iv)
+        
+        print('解码后数据长度:')
+        print(f'- session_key: {len(session_key)} 字节')
+        print(f'- encrypted_data: {len(encrypted_data)} 字节')
+        print(f'- iv: {len(iv)} 字节')
+        
+        # 创建解密器
+        print('\n创建AES解密器...')
+        cipher = AES.new(session_key, AES.MODE_CBC, iv)
+        
+        # 解密数据
+        print('执行解密...')
+        decrypted = cipher.decrypt(encrypted_data)
+        
+        # 处理填充
+        print('处理PKCS7填充...')
         pad = decrypted[-1]
         if not isinstance(pad, int):
             pad = ord(pad)
         data = decrypted[:-pad]
         
+        # 解析JSON
+        print('解析JSON数据...')
         result = json.loads(data)
-      
+        print('解密成功')
         return result
         
     except Exception as e:
@@ -231,58 +254,22 @@ def get_wx_user_info(code):
             'grant_type': 'authorization_code'
         }
         
-        # 设置超时时间
-        response = requests.get(wx_api_url, params=params, timeout=5)
-        
-        # 检查HTTP状态码
-        if response.status_code != 200:
-            print(f'错误: 微信API请求失败，状态码: {response.status_code}')
-            return None
-            
-        try:
-            wx_data = response.json()
-        except ValueError:
-            print('错误: 微信API返回数据格式错误')
-            return None
-            
+        response = requests.get(wx_api_url, params=params)
+        wx_data = response.json()
         print('\n微信API响应:')
         print(json.dumps(wx_data, ensure_ascii=False, indent=2))
 
         if 'errcode' in wx_data:
-            error_code = wx_data.get('errcode')
-            error_msg = wx_data.get('errmsg', '未知错误')
-            print(f'错误: 微信API返回错误')
-            print(f'错误码: {error_code}')
-            print(f'错误信息: {error_msg}')
-            
-            # 特殊错误码处理
-            if error_code == 40029:
-                wx_data['errmsg'] = 'code无效，请重新获取'
-            elif error_code == 45011:
-                wx_data['errmsg'] = '请求频率过高，请稍后再试'
-            elif error_code == 40226:
-                wx_data['errmsg'] = '高风险等级用户，小程序登录拦截'
-                
-            return wx_data
-
-        # 验证返回数据完整性
-        if not wx_data.get('openid') or not wx_data.get('session_key'):
-            print('错误: 微信API返回数据不完整')
+            print('错误: 微信API返回错误')
+            print(f'错误码: {wx_data.get("errcode")}')
+            print(f'错误信息: {wx_data.get("errmsg")}')
             return None
 
         return wx_data
         
-    except requests.Timeout:
-        print('错误: 微信API请求超时')
-        return {'errcode': -1, 'errmsg': '请求超时，请重试'}
-        
-    except requests.RequestException as e:
-        print(f'错误: 网络请求失败: {str(e)}')
-        return {'errcode': -2, 'errmsg': '网络请求失败，请检查网络连接'}
-        
     except Exception as e:
         print(f'获取微信用户信息失败: {str(e)}')
-        return {'errcode': -3, 'errmsg': '系统错误，请稍后再试'}
+        return None
 
 # 添加文件类型检查函数
 def allowed_file(filename):
