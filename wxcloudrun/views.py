@@ -5137,7 +5137,7 @@ def handle_cloud_file(user_id):
 def test_headers():
     try:
         # 获取所有请求头
-        wx_headers = request.headers
+        wx_headers =   dict(request.headers)
         
         return jsonify({
             'code': 200,
