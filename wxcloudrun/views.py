@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from flask import render_template, request, jsonify, send_from_directory, abort, make_response, send_file
+from flask import render_template, request, jsonify, send_from_directory, abort, make_response, send_file, current_app
 from run import app
 from wxcloudrun.model import *
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -4999,4 +4999,80 @@ def get_merged_products(user_id):
         print(f'获取合并商品列表失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '获取商品列表失败'}), 500
+
+@app.route('/upload/cloud', methods=['POST'])
+@admin_required
+def handle_cloud_file(user_id):
+    """
+    处理从小程序云存储上传的文件
+    """
+    try:
+        data = request.get_json()
+        if not data or 'fileID' not in data:
+            return jsonify({'error': '缺少fileID参数'}), 400
+
+        fileID = data.get('fileID')
+        product_id = data.get('product_id', '')
+
+        # 获取云环境ID
+        env = current_app.config.get('CLOUD_ENV_ID')
+        if not env:
+            return jsonify({'error': '未配置云环境ID'}), 500
+
+        # 构建下载URL
+        download_url = f"https://api.weixin.qq.com/tcb/batchdownloadfile?env={env}"
+        
+        # 请求下载文件
+        response = requests.post(download_url, json={
+            "env": env,
+            "file_list": [{
+                "fileid": fileID,
+                "max_age": 7200
+            }]
+        })
+
+        if response.status_code != 200:
+            return jsonify({'error': '下载文件失败'}), 500
+
+        result = response.json()
+        if result.get('errcode') != 0:
+            return jsonify({'error': f"下载文件失败: {result.get('errmsg')}"}), 500
+
+        file_list = result.get('file_list', [])
+        if not file_list:
+            return jsonify({'error': '文件列表为空'}), 500
+
+        download_url = file_list[0].get('download_url')
+        if not download_url:
+            return jsonify({'error': '获取下载链接失败'}), 500
+
+        # 下载文件
+        file_response = requests.get(download_url)
+        if file_response.status_code != 200:
+            return jsonify({'error': '下载文件内容失败'}), 500
+
+        # 生成唯一文件名
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        random_str = str(uuid.uuid4()).split('-')[0]
+        filename = f"{timestamp}_{random_str}.jpg"
+
+        # 确保上传目录存在
+        upload_folder = os.path.join(current_app.root_path, 'uploads')
+        if not os.path.exists(upload_folder):
+            os.makedirs(upload_folder)
+
+        # 保存文件
+        file_path = os.path.join(upload_folder, filename)
+        with open(file_path, 'wb') as f:
+            f.write(file_response.content)
+
+        # 返回文件URL
+        return jsonify({
+            'url': f'/uploads/{filename}',
+            'message': '文件上传成功'
+        })
+
+    except Exception as e:
+        print(f"处理云存储文件失败: {str(e)}")
+        return jsonify({'error': f'处理文件失败: {str(e)}'}), 500
 
