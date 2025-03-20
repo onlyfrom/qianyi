@@ -297,21 +297,15 @@ def is_login_attempts_exceeded(username):
 def get_access_token():
     """获取小程序 access_token"""
     try:
-        print('='*50)
-        print('开始获取小程序access_token')
-        print('='*50)
-        
-        print('\n配置信息:')
-        print(f'- APPID: {config.WECHAT_APPID}')
-        print(f'- SECRET: {"*" * len(config.WECHAT_SECRET)}')  # 不输出实际的SECRET
-        
-        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={config.WECHAT_APPID}&secret={config.WECHAT_SECRET}'
-        print(f'\n请求URL: {url}')
-        
-        print('\n发送请求到微信服务器...')
-        response = requests.get(url)
-        print(f'接收到响应，状态码: {response.status_code}')
-        
+        # 在云托管环境中，可以直接从环境变量获取
+        access_token = os.environ.get('WX_TOKEN')
+        if access_token:
+            print('\n从环境变量获取access_token成功')
+            return access_token
+            
+        # 如果环境变量中没有，才使用传统方式获取
+        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={config.WECHAT_APPID}&secret={config.WECHAT_SECRET}'   
+        response = requests.get(url)        
         if response.status_code == 200:
             data = response.json()
             print('\n接口响应数据:')
@@ -319,22 +313,15 @@ def get_access_token():
             safe_data = data.copy()
             if 'access_token' in safe_data:
                 safe_data['access_token'] = safe_data['access_token'][:10] + '...'
-            print(json.dumps(safe_data, ensure_ascii=False, indent=2))
-            
+            print(json.dumps(safe_data, ensure_ascii=False, indent=2))            
             if 'access_token' in data:
                 print('\n成功获取access_token')
-                return data['access_token']
-                
-        print('\n获取access_token失败')
-        print('错误响应:')
-        print(response.text)
+                return data['access_token']               
+
         raise Exception('获取 access_token 失败')
         
     except Exception as e:
-        print('\n获取access_token时发生错误:')
-        print(f'- 错误类型: {type(e).__name__}')
-        print(f'- 错误信息: {str(e)}')
-        print(f'- 错误追踪:\n{traceback.format_exc()}')
+        print(f'获取access_token失败: {str(e)}')
         raise
 
 
