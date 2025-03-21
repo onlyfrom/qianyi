@@ -3135,124 +3135,69 @@ def generate_qrcode_api():
 
 def generate_qrcode(page, scene):
     try:
+        # 确保存储目录存在
+        qrcode_dir = os.path.join(app.static_folder, 'qrcodes')
+        if not os.path.exists(qrcode_dir):
+            os.makedirs(qrcode_dir)
+            
         # 生成唯一的文件名
         filename = f"qr_{int(time.time())}_{uuid.uuid4().hex[:8]}.jpg"
-
-        # 1. 获取access_token
-        url = 'https://api.weixin.qq.com/cgi-bin/token'
-        params = {
-            'grant_type': 'client_credential',
-            'appid': "wxa17a5479891750b3",
-            'secret': "33359853cfee1dc1e2b6e535249e351d"
-        }
-     
-        token_response = requests.get(url,params)
-        print(f'获取access_token响应状态码: {token_response.json()}')
-        access_token = token_response.json()['access_token']
+        filepath = os.path.join(qrcode_dir, filename)
         
-        # 2. 生成小程序码
-        qrcode_url = 'http://api.weixin.qq.com/wxa/getwxacode'
+        # 调用微信接口生成小程序码
+        access_token = get_access_token()
+        url = f'https://api.weixin.qq.com/wxa/getwxacode?access_token={access_token}'
+        
         params = {
             "path": f"{page}?{scene}",
-            "env_version": "trial",
             "width": 430,
             "auto_color": False,
             "line_color": {"r": 0, "g": 0, "b": 0},
             "is_hyaline": False
         }
         
-        qr_response = requests.post(qrcode_url, json=params)
-        print(f'生成二维码响应状态码: {qr_response.json()}')
+        response = requests.post(url, json=params)
         
-        if qr_response.status_code != 200:
-            print(f"生成二维码失败: {qr_response.text}")
-            return None
-
-        # 保存二维码内容到文件
-        qrcode_dir = os.path.join(app.root_path, 'uploads', 'qrcodes')
-        if not os.path.exists(qrcode_dir):
-            os.makedirs(qrcode_dir)
+        if response.status_code == 200:
+            # 保存文件
+            with open(filepath, 'wb') as f:
+                f.write(response.content)
             
-        qrcode_path = os.path.join(qrcode_dir, filename)
-        with open(qrcode_path, 'wb') as f:
-            f.write(qr_response.content)
-            
-        print(f'二维码已保存到: {qrcode_path}')
-        print(f'filename: {filename}')
-        # 3. 获取上传链接
-        upload_url = f'https://api.weixin.qq.com/tcb/uploadfile?cloudbase_access_token={access_token}'
-        upload_params = {
-            'env': 'prod-9gd4jllic76d4842',
-            'path': f'/qrcodes/{filename}',
-        }
-        response = requests.post(upload_url, json=upload_params)
-        print(f'返回的数据: {response.json()}')
+            print(f"二维码已保存到: {filepath}")
 
-        # 4. 上传文件到云存储
-        upload_url = response.json()['url']
-        print(f'上传地址: {upload_url}')
-        # 构建multipart/form-data请求
-        files = {
-            'file': ('qrcode.png', open(qrcode_path, 'rb'), 'image/png')
-        }
-        # 构建form数据
-        form_data = {
-            'key': f'/qrcode/{filename}',
-            'Signature': response.json()['token'],
-            'x-cos-security-token': response.json()['authorization'],
-            'x-cos-meta-fileid': response.json()['file_id']
-        }
-        
-        # 发送上传请求
-        upload_response = requests.post(upload_url, data=form_data, files=files)
-        print(f'上传文件响应: {upload_response.text}')
-        
-        if upload_response.status_code != 200:
-            print(f'上传文件失败: {upload_response.text}')
+            # 返回相对路径
+            relative_path = f'/static/qrcodes/{filename}'
+            return relative_path
+        else:
+            print(f"生成二维码失败: {response.text}")
             return None
             
-        return response.json()['file_id']
-        
     except Exception as e:
-        print(f"生成二维码过程出错: {str(e)}")
+        print(f"生成二维码出错: {str(e)}")
         return None
 
 def get_access_token():
     """获取小程序 access_token"""
     try:
+        print('='*50)
+        print('开始获取小程序access_token')
+        print('='*50)
         
-        # 1. 首先尝试从请求头获取
-        if request:
-            wx_token = request.headers.get('X-Wx-Cloudbase-Access-Token')
-            if wx_token:
-                print('\n从请求头获取access_token成功')
-                return wx_token
+        print('\n配置信息:')
+        print(f'- APPID: {WECHAT_APPID}')
+        print(f'- SECRET: {"*" * len(WECHAT_SECRET)}')  # 不输出实际的SECRET
         
-        if request:
-            wx_token = request.headers.get('X-Cloudbase-Sessiontoken')
-            if wx_token:
-                print('\n从请求头获取X-Cloudbase-Sessiontoken成功')
-                return wx_token
+        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
+        print(f'\n请求URL: {url}')
         
-        # 2. 尝试从环境变量获取
-        env_token = os.environ.get('WX_TOKEN')
-        if env_token:
-            print('\n从环境变量获取access_token成功')
-            return env_token
-
-        # 3. 最后才使用API获取
-        print('\n从环境变量和请求头都未获取到token，尝试通过API获取...')
-        url = f'http://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
-        
-        # 禁用证书验证警告
-        import urllib3
-        urllib3.disable_warnings()
-        
-        response = requests.get(url, verify=False)
+        print('\n发送请求到微信服务器...')
+        response = requests.get(url)
+        print(f'接收到响应，状态码: {response.status_code}')
         
         if response.status_code == 200:
             data = response.json()
             print('\n接口响应数据:')
+            # 处理响应数据时隐藏实际的access_token
             safe_data = data.copy()
             if 'access_token' in safe_data:
                 safe_data['access_token'] = safe_data['access_token'][:10] + '...'
@@ -3261,11 +3206,17 @@ def get_access_token():
             if 'access_token' in data:
                 print('\n成功获取access_token')
                 return data['access_token']
-
+                
+        print('\n获取access_token失败')
+        print('错误响应:')
+        print(response.text)
         raise Exception('获取 access_token 失败')
         
     except Exception as e:
-        print(f'获取access_token失败: {str(e)}')
+        print('\n获取access_token时发生错误:')
+        print(f'- 错误类型: {type(e).__name__}')
+        print(f'- 错误信息: {str(e)}')
+        print(f'- 错误追踪:\n{traceback.format_exc()}')
         raise
 
 
@@ -5240,7 +5191,7 @@ def test_qrcode():
         filename = f"qr_{int(time.time())}_{uuid.uuid4().hex[:8]}.jpg"
 
         # 1. 获取access_token
-        url = 'https://api.weixin.qq.com/cgi-bin/token'
+        url = 'http://api.weixin.qq.com/cgi-bin/token'
         params = {
             'grant_type': 'client_credential',
             'appid': "wxa17a5479891750b3",
@@ -5261,7 +5212,7 @@ def test_qrcode():
         access_token = token_data['access_token']
         
         # 2. 生成小程序码
-        qrcode_url = 'http://api.weixin.qq.com/wxa/getwxacode'
+        qrcode_url = 'http://api.weixin.qq.com/wxa/getwxacodeunlimit'
         params = {
             "path": f"pages/share/share?share_code=123456",
             "env_version": "trial",
@@ -5293,7 +5244,7 @@ def test_qrcode():
         print(f'二维码已保存到: {qrcode_path}')
         
         # 3. 获取上传链接
-        upload_url = f'https://api.weixin.qq.com/tcb/uploadfile?access_token={access_token}'
+        upload_url = f'http://api.weixin.qq.com/tcb/uploadfile?access_token={access_token}'
         upload_params = {
             'env': 'prod-9gd4jllic76d4842',
             'path': f'/qrcodes/{filename}'
@@ -5369,6 +5320,61 @@ def test_qrcode():
         return jsonify({
             'code': 500,
             'message': '生成二维码过程出错',
+            'error': {
+                'type': type(e).__name__,
+                'message': str(e),
+                'traceback': traceback.format_exc()
+            }
+        }), 500
+
+#获取云存储上传链接
+@app.route('/get_cloud_upload_url', methods=['GET'])    
+def get_cloud_upload_url():
+    try:
+        # 获取小程序配置
+        appid = config.WECHAT_APPID
+        secret = config.WECHAT_SECRET
+        if not appid or not secret:
+            return jsonify({
+                'code': 500,
+                'message': '未配置小程序信息',
+                'data': {}
+            }), 500
+        
+        # 获取access_token
+        token_url = f"http://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
+        token_response = requests.get(token_url)
+        token_data = token_response.json()
+        
+        if 'access_token' not in token_data:
+            return jsonify({
+                'code': 500,
+                'message': '获取access_token失败',
+                'data': token_data
+            }), 500
+        
+        access_token = token_data['access_token']
+        
+        # 获取云存储上传链接
+        upload_url = f"https://api.weixin.qq.com/tcb/uploadfile?access_token={access_token}"
+        upload_params = {
+            'env': config.CLOUD_ENV_ID,
+            'path': '/test/upload'
+        }
+        response = requests.post(upload_url, json=upload_params)
+        upload_data = response.json()
+        
+        return jsonify({
+            'code': 200,
+            'message': '获取云存储上传链接成功',
+            'data': upload_data
+        })
+        
+    except Exception as e:
+        print(f"获取云存储上传链接失败: {str(e)}")
+        return jsonify({
+            'code': 500,
+            'message': '获取云存储上传链接失败',
             'error': {
                 'type': type(e).__name__,
                 'message': str(e),
