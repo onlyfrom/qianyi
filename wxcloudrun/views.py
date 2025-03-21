@@ -3188,9 +3188,9 @@ def generate_qrcode(page, scene):
                 'data': qr_response.text
             }), qr_response.status_code
 
-        # 2. 上传到云存储
+        # 2. 获取到上传链接
         try:
-            upload_url = 'http://api.weixin.qq.com/tcb/uploadfile'
+            upload_url = 'http://api.weixin.qq.com/tcb/uploadfile' 
             upload_params = {
                 'env': 'prod-9gd4jllic76d4842',
                 'path': f'qrcodes/{filename}'
