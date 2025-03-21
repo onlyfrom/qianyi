@@ -5290,18 +5290,6 @@ def test_qrcode():
                 }
             }), upload_response.status_code
             
-        # 5. 获取文件访问链接
-        download_url = f'https://api.weixin.qq.com/tcb/batchdownloadfile?access_token={access_token}'
-        download_params = {
-            'env': 'prod-9gd4jllic76d4842',
-            'file_list': [{
-                'fileid': upload_data['file_id'],
-                'max_age': 7200  # 链接有效期2小时
-            }]
-        }
-        
-        download_response = requests.post(download_url, json=download_params)
-        download_info = download_response.json()
         
         # 返回成功结果
         return jsonify({
@@ -5310,7 +5298,6 @@ def test_qrcode():
             'data': {
                 'file_id': upload_data['file_id'],
                 'local_path': qrcode_path,
-                'download_info': download_info,
                 'upload_response': upload_response.text
             }
         })
