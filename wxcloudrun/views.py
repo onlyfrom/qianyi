@@ -3328,22 +3328,9 @@ def generate_qrcode(page, scene):
 
 def get_access_token():
     """获取小程序 access_token"""
-    try:
-        print('='*50)
-        print('开始获取小程序access_token')
-        print('='*50)
-        
-        print('\n配置信息:')
-        print(f'- APPID: {WECHAT_APPID}')
-        print(f'- SECRET: {"*" * len(WECHAT_SECRET)}')  # 不输出实际的SECRET
-        
+    try:        
         url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
-        print(f'\n请求URL: {url}')
-        
-        print('\n发送请求到微信服务器...')
-        response = requests.get(url)
-        print(f'接收到响应，状态码: {response.status_code}')
-        
+        response = requests.get(url)    
         if response.status_code == 200:
             data = response.json()
             print('\n接口响应数据:')
@@ -5541,5 +5528,73 @@ def get_cloud_upload_url():
                 'type': type(e).__name__,
                 'message': str(e),
                 'traceback': traceback.format_exc()
+            }
+        }), 500
+
+def get_access_token_from_wechat():
+    token_url = f"http://api.weixin.qq.com/cgi-bin/token"
+    token_response = requests.get(token_url)
+    token_data = token_response.json()
+    return token_data['access_token']
+
+@app.route('/api/cloud/upload/url', methods=['POST'])
+def get_cloud_upload_url():
+    try:  
+        data = request.json
+        filename = data.get('filename')
+        # 2. 获取上传链接
+        print('\n[步骤2] 获取云存储上传链接')
+        upload_url = 'http://api.weixin.qq.com/tcb/uploadfile'
+        upload_params = {
+            'env': 'prod-9gd4jllic76d4842',
+            'path': f'uploads/{filename}'
+        }
+
+        print(f'请求参数: {upload_params}')
+        
+        upload_response = requests.post(
+            upload_url, 
+            json=upload_params,
+            headers={
+                'content-type': 'application/json'
+            }
+        )
+        upload_data = upload_response.json()
+        print(f'获取上传链接响应: {upload_data}')
+        
+        if upload_data.get('errcode', 0) != 0:
+            print(f"[错误] 获取上传链接失败: {upload_data}")
+            return jsonify({
+                'code': 500,
+                'message': '获取上传链接失败',
+                'data': upload_data,
+                'error_location': '获取云存储上传链接步骤'
+            }), 500
+            
+        print('\n[成功] 获取上传链接完成')
+        return jsonify({
+            'code': 200,
+            'message': '获取上传链接成功',
+            'data': {
+                'upload_url': upload_data['url'],
+                'authorization': upload_data['authorization'],
+                'token': upload_data['token'],
+                'file_id': upload_data['file_id'],
+                'cos_file_id': upload_data['cos_file_id'],
+                'key': f'uploads/{filename}'
+            }
+        })
+        
+    except Exception as e:
+        print(f"[错误] 获取上传链接过程出错: {str(e)}")
+        print(f"错误追踪:\n{traceback.format_exc()}")
+        return jsonify({
+            'code': 500,
+            'message': '获取上传链接过程出错',
+            'error': {
+                'type': type(e).__name__,
+                'message': str(e),
+                'traceback': traceback.format_exc(),
+                'error_location': '整体流程'
             }
         }), 500
