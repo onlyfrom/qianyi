@@ -3135,47 +3135,167 @@ def generate_qrcode_api():
 
 def generate_qrcode(page, scene):
     try:
-        # 确保存储目录存在
-        qrcode_dir = os.path.join(app.static_folder, 'qrcodes')
-        if not os.path.exists(qrcode_dir):
-            os.makedirs(qrcode_dir)
-            
         # 生成唯一的文件名
         filename = f"qr_{int(time.time())}_{uuid.uuid4().hex[:8]}.jpg"
-        filepath = os.path.join(qrcode_dir, filename)
         
-        # 调用微信接口生成小程序码
-        access_token = get_access_token()
-        url = f'https://api.weixin.qq.com/wxa/getwxacode?access_token={access_token}'
+        # 0. 获取access_token (云存储操作需要)
+        token_url = 'http://api.weixin.qq.com/cgi-bin/token'
+        token_params = {
+            'grant_type': 'client_credential',
+            'appid': WECHAT_APPID,
+            'secret': WECHAT_SECRET
+        }
+        token_response = requests.get(token_url, params=token_params)
+        token_data = token_response.json()
         
+        if 'access_token' not in token_data:
+            print(f"获取access_token失败: {token_data}")
+            return jsonify({
+                'code': 401,
+                'message': '获取access_token失败',
+                'data': token_data
+            }), 401
+            
+        access_token = token_data['access_token']
+        
+        # 1. 生成小程序码
+        qrcode_url = 'http://api.weixin.qq.com/wxa/getwxacodeunlimit'
         params = {
-            "path": f"{page}?{scene}",
-            "width": 430,
+            "scene": scene,  # 改用scene参数
+            "page": page,    # 单独传入page
             "env_version": "trial",
+            "width": 430,
             "auto_color": False,
             "line_color": {"r": 0, "g": 0, "b": 0},
             "is_hyaline": False
         }
         
-        response = requests.post(url, json=params)
+        # 在云托管环境中调用接口的通用headers
+        headers = {
+            'X-WX-SERVICE': 'qy',  # 云托管服务名
+            'content-type': 'application/json',
+            'access_token': f'{access_token}'  # 添加token到header
+        }
         
-        if response.status_code == 200:
-            # 保存文件
-            with open(filepath, 'wb') as f:
-                f.write(response.content)
-            
-            print(f"二维码已保存到: {filepath}")
+        qr_response = requests.post(qrcode_url, json=params, headers=headers)
+        print(f'生成二维码响应状态码: {qr_response.status_code}')
+        
+        if qr_response.status_code != 200:
+            print(f"生成二维码失败: {qr_response.text}")
+            return jsonify({
+                'code': qr_response.status_code,
+                'message': '生成二维码失败',
+                'data': qr_response.text
+            }), qr_response.status_code
 
-            # 返回相对路径
-            relative_path = f'/static/qrcodes/{filename}'
-            return relative_path
-        else:
-            print(f"生成二维码失败: {response.text}")
-            return None
+        # 2. 上传到云存储
+        try:
+            upload_url = 'http://api.weixin.qq.com/tcb/uploadfile'
+            upload_params = {
+                'env': 'prod-9gd4jllic76d4842',
+                'path': f'qrcodes/{filename}'
+            }
+            print(f'准备获取上传链接')
+            
+            # 使用带有Authorization header的请求
+            upload_response = requests.post(
+                upload_url, 
+                json=upload_params,
+                headers={
+                    'content-type': 'application/json',
+                    'access_token': f'{access_token}'
+                }
+            )
+            upload_data = upload_response.json()
+            print(f'获取上传链接响应: {upload_data}')
+            
+            if upload_data.get('errcode', 0) != 0:
+                print(f"获取上传链接失败: {upload_data}")
+                return jsonify({
+                    'code': 500,
+                    'message': '获取上传链接失败',
+                    'data': upload_data
+                }), 500
+
+            # 3. 上传文件到云存储
+            cos_url = upload_data['url']
+            files = {
+                'file': ('qrcode.jpg', qr_response.content, 'image/jpeg')
+            }
+            form_data = {
+                'key': f'qrcodes/{filename}',
+                'Signature': upload_data['authorization'],
+                'x-cos-security-token': upload_data['token'],
+                'x-cos-meta-fileid': upload_data['file_id']
+            }
+            
+            # 上传到对象存储
+            upload_result = requests.post(cos_url, data=form_data, files=files)
+            
+            if upload_result.status_code != 200:
+                print(f"上传文件失败: {upload_result.text}")
+                return jsonify({
+                    'code': upload_result.status_code,
+                    'message': '上传文件失败',
+                    'data': upload_result.text
+                }), upload_result.status_code
+
+            # 4. 获取文件访问链接
+            download_url = 'http://api.weixin.qq.com/tcb/batchdownloadfile'
+            download_params = {
+                'env': 'prod-9gd4jllic76d4842',
+                'file_list': [{
+                    'fileid': upload_data['file_id'],
+                    'max_age': 7200  # 链接有效期2小时
+                }]
+            }
+            
+            # 使用带有Authorization header的请求
+            download_response = requests.post(
+                download_url, 
+                json=download_params,
+                headers={
+                    'content-type': 'application/json',
+                    'Authorization': f'Bearer {access_token}'
+                }
+            )
+            download_info = download_response.json()
+            
+            if download_info.get('errcode', 0) == 0 and download_info.get('file_list'):
+                return jsonify({
+                    'code': 200,
+                    'message': '二维码生成成功',
+                    'data': {
+                        'url': download_info['file_list'][0]['download_url'],
+                        'file_id': upload_data['file_id']
+                    }
+                })
+            
+            return jsonify({
+                'code': 500,
+                'message': '获取下载链接失败',
+                'data': download_info
+            }), 500
+            
+        except Exception as e:
+            print(f"上传文件过程出错: {str(e)}")
+            return jsonify({
+                'code': 500,
+                'message': '上传文件过程出错',
+                'error': str(e)
+            }), 500
             
     except Exception as e:
-        print(f"生成二维码出错: {str(e)}")
-        return None
+        print(f"生成二维码过程出错: {str(e)}")
+        return jsonify({
+            'code': 500,
+            'message': '生成二维码过程出错',
+            'error': {
+                'type': type(e).__name__,
+                'message': str(e),
+                'traceback': traceback.format_exc()
+            }
+        }), 500
 
 def get_access_token():
     """获取小程序 access_token"""
