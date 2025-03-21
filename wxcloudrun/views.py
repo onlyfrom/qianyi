@@ -3151,6 +3151,7 @@ def generate_qrcode(page, scene):
         params = {
             "path": f"{page}?{scene}",
             "width": 430,
+            "env_version": "trial",
             "auto_color": False,
             "line_color": {"r": 0, "g": 0, "b": 0},
             "is_hyaline": False
