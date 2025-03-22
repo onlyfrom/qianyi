@@ -24,6 +24,7 @@ import random
 from sqlalchemy import inspect, text, func, desc, distinct, case, Text
 from sqlalchemy.sql import literal, literal_column
 from wxcloudrun.response import *
+#from .decorators import admin_required, permission_required
 
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
@@ -3133,77 +3134,89 @@ def generate_qrcode_api():
             'message': str(e)
         }), 500
 
+def generate_qrcode_old(page, scene):
+    try:
+        # 确保存储目录存在
+        qrcode_dir = os.path.join(app.static_folder, 'qrcodes')
+        if not os.path.exists(qrcode_dir):
+            os.makedirs(qrcode_dir)
+            
+        # 生成唯一的文件名
+        filename = f"qr{scene}.jpg"
+        filepath = os.path.join(qrcode_dir, filename)
+        
+        # 调用微信接口生成小程序码
+        access_token = get_access_token()
+        url = f'https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token={access_token}'
+        
+        params = {
+            "scene": scene,
+            "page": page,
+            "env_version": "trial",  #体验版
+            "check_path": False
+        }
+        
+        response = requests.post(url, json=params)
+        
+        if response.status_code == 200:
+            # 保存文件
+            with open(filepath, 'wb') as f:
+                f.write(response.content)
+            
+            print(f"二维码已保存到: {filepath}")
+
+            # 返回相对路径
+            relative_path = f'/static/qrcodes/{filename}'
+            return relative_path
+        else:
+            print(f"生成二维码失败: {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"生成二维码出错: {str(e)}")
+        return None
+        
+
+
 def generate_qrcode(page, scene):
     try:
-        print('='*50)
-        print('开始生成二维码')
-        print('='*50)
-        
-        # 生成唯一的文件名
-        filename = f"qr_{int(time.time())}_{uuid.uuid4().hex[:8]}.jpg"
-        print(f'生成文件名: {filename}')
-        
-        # 0. 获取access_token (云存储操作需要)
-        print('\n[步骤1] 获取access_token')
-        token_url = 'http://api.weixin.qq.com/cgi-bin/token'
-        token_params = {
-            'grant_type': 'client_credential',
-            'appid': WECHAT_APPID,
-            'secret': WECHAT_SECRET
-        }
-        token_response = requests.get(token_url, params=token_params)
-        token_data = token_response.json()
-        print(f'获取access_token响应: {token_data}')
-        
-        if 'access_token' not in token_data:
-            print(f"[错误] 获取access_token失败: {token_data}")
-            return jsonify({
-                'code': 401,
-                'message': '获取access_token失败',
-                'data': token_data,
-                'error_location': '获取access_token步骤'
-            }), 401
+        qrcode_dir = os.path.join(app.static_folder, 'qrcodes')
+        if not os.path.exists(qrcode_dir):
+            os.makedirs(qrcode_dir)
             
-        access_token = token_data['access_token']
-        print(f'成功获取access_token: {access_token[:10]}...')
+        # 生成唯一的文件名
+        filename = f"qr{scene}.jpg"
+        filepath = os.path.join(qrcode_dir, filename)
         
-        # 1. 生成小程序码
-        print('\n[步骤2] 生成小程序码')
-        qrcode_url = 'http://api.weixin.qq.com/wxa/getwxacodeunlimit'
+        # 调用微信接口生成小程序码
+        access_token = get_access_token()
+        url = f'https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token={access_token}'
+        
         params = {
-            "scene": scene,  # 改用scene参数
-            "page": page,    # 单独传入page
-            "env_version": "trial",
-            "width": 430,
-            "auto_color": False,
-            "line_color": {"r": 0, "g": 0, "b": 0},
-            "is_hyaline": False
-        }
-        print(f'请求参数: {params}')
-        
-        # 在云托管环境中调用接口的通用headers
-        headers = {
-            'X-WX-SERVICE': 'qy',  # 云托管服务名
-            'content-type': 'application/json',
-            'access_token': f'{access_token}'  # 添加token到header
+            "scene": scene,
+            "page": page,
+            "env_version": "trial",  #体验版
+            "check_path": False
         }
         
-        qr_response = requests.post(qrcode_url, json=params, headers=headers)
-        print(f'生成二维码响应状态码: {qr_response.status_code}')
+        response = requests.post(url, json=params)
         
-        if qr_response.status_code != 200:
-            print(f"[错误] 生成二维码失败: {qr_response.text}")
-            return jsonify({
-                'code': qr_response.status_code,
-                'message': '生成二维码失败',
-                'data': qr_response.text,
-                'error_location': '生成小程序码步骤'
-            }), qr_response.status_code
+        if response.status_code == 200:
+            # 保存文件
+            with open(filepath, 'wb') as f:
+                f.write(response.content)
+            
+            print(f"二维码已保存到: {filepath}")
+            # 返回相对路径
+            relative_path = f'/static/qrcodes/{filename}'
+        else:
+            print(f"生成二维码失败: {response.text}")
+            return None       
 
         # 2. 获取到上传链接
         print('\n[步骤3] 获取云存储上传链接')
         try:
-            upload_url = 'http://api.weixin.qq.com/tcb/uploadfile' 
+            upload_url = 'https://api.weixin.qq.com/tcb/uploadfile?access_token=' + access_token
             upload_params = {
                 'env': 'prod-9gd4jllic76d4842',
                 'path': f'qrcodes/{filename}'
@@ -3213,11 +3226,7 @@ def generate_qrcode(page, scene):
             # 使用带有Authorization header的请求
             upload_response = requests.post(
                 upload_url, 
-                json=upload_params,
-                headers={
-                    'content-type': 'application/json',
-                    'access_token': f'{access_token}'
-                }
+                json=upload_params
             )
             upload_data = upload_response.json()
             print(f'获取上传链接响应: {upload_data}')
@@ -3230,76 +3239,6 @@ def generate_qrcode(page, scene):
                     'data': upload_data,
                     'error_location': '获取云存储上传链接步骤'
                 }), 500
-
-            # 3. 上传文件到云存储
-            print('\n[步骤4] 上传文件到云存储')
-            cos_url = upload_data['url']
-            files = {
-                'file': ('qrcode.jpg', qr_response.content, 'image/jpeg')
-            }
-            form_data = {
-                'key': f'qrcodes/{filename}',
-                'Signature': upload_data['authorization'],
-                'x-cos-security-token': upload_data['token'],
-                'x-cos-meta-fileid': upload_data['file_id']
-            }
-            print(f'上传参数: {form_data}')
-            
-            # 上传到对象存储
-            upload_result = requests.post(cos_url, data=form_data, files=files)
-            print(f'上传响应状态码: {upload_result.status_code}')
-            
-            if upload_result.status_code != 200:
-                print(f"[错误] 上传文件失败: {upload_result.text}")
-                return jsonify({
-                    'code': upload_result.status_code,
-                    'message': '上传文件失败',
-                    'data': upload_result.text,
-                    'error_location': '上传文件到云存储步骤'
-                }), upload_result.status_code
-
-            # 4. 获取文件访问链接
-            print('\n[步骤5] 获取文件访问链接')
-            download_url = 'http://api.weixin.qq.com/tcb/batchdownloadfile'
-            download_params = {
-                'env': 'prod-9gd4jllic76d4842',
-                'file_list': [{
-                    'fileid': upload_data['file_id'],
-                    'max_age': 7200  # 链接有效期2小时
-                }]
-            }
-            print(f'请求参数: {download_params}')
-            
-            # 使用带有Authorization header的请求
-            download_response = requests.post(
-                download_url, 
-                json=download_params,
-                headers={
-                    'content-type': 'application/json',
-                    'Authorization': f'Bearer {access_token}'
-                }
-            )
-            download_info = download_response.json()
-            print(f'获取下载链接响应: {download_info}')
-            
-            if download_info.get('errcode', 0) == 0 and download_info.get('file_list'):
-                print('\n[成功] 二维码生成并上传完成')
-                return jsonify({
-                    'code': 200,
-                    'message': '二维码生成成功',
-                    'data': {
-                        'url': download_info['file_list'][0]['download_url'],
-                        'file_id': upload_data['file_id']
-                    }
-                })
-            
-            print(f"[错误] 获取下载链接失败: {download_info}")
-            return jsonify({
-                'code': 500,
-                'message': '获取下载链接失败',
-                'data': download_info,
-                'error_location': '获取文件访问链接步骤'
-            }), 500
             
         except Exception as e:
             print(f"[错误] 上传文件过程出错: {str(e)}")
@@ -3311,7 +3250,38 @@ def generate_qrcode(page, scene):
                 'error_location': '上传文件过程',
                 'traceback': traceback.format_exc()
             }), 500
+        
+        # 3. 上传文件到云存储
+        try:
+            print('\n[步骤4] 上传文件到云存储')
+            cos_url = upload_data['url']
+            with open(filepath, 'rb') as f:
+                files = {
+                   'file': (filename, f, 'image/jpeg')
+                }
+                form_data = {
+                    'key': f'qrcodes/{filename}',
+                    'Signature': upload_data['authorization'],
+                    'x-cos-security-token': upload_data['token'],
+                    'x-cos-meta-fileid': upload_data['file_id']
+                }
+                print(f'上传参数: {form_data}')            
+                # 上传到对象存储
+                upload_result = requests.post(cos_url, data=form_data, files=files)
+                print(f'上传响应状态码: {upload_result.status_code}')
             
+            return upload_data['file_id']
+              
+        except Exception as e:
+            print(f"[错误] 上传文件到云存储失败: {str(e)}")
+            print(f"错误追踪:\n{traceback.format_exc()}")
+            return jsonify({
+                'code': 500,
+                'message': '上传文件到云存储失败',
+                'error': str(e)
+            })
+        
+        
     except Exception as e:
         print(f"[错误] 生成二维码过程出错: {str(e)}")
         print(f"错误追踪:\n{traceback.format_exc()}")
@@ -5476,71 +5446,13 @@ def test_qrcode():
             }
         }), 500
 
-#获取云存储上传链接
-@app.route('/get_cloud_upload_url', methods=['GET'])    
-def get_cloud_upload_url():
-    try:
-        # 获取小程序配置
-        appid = config.WECHAT_APPID
-        secret = config.WECHAT_SECRET
-        if not appid or not secret:
-            return jsonify({
-                'code': 500,
-                'message': '未配置小程序信息',
-                'data': {}
-            }), 500
-        
-        # 获取access_token
-        token_url = f"http://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
-        token_response = requests.get(token_url)
-        token_data = token_response.json()
-        
-        if 'access_token' not in token_data:
-            return jsonify({
-                'code': 500,
-                'message': '获取access_token失败',
-                'data': token_data
-            }), 500
-        
-        access_token = token_data['access_token']
-        
-        # 获取云存储上传链接
-        upload_url = f"https://api.weixin.qq.com/tcb/uploadfile?access_token={access_token}"
-        upload_params = {
-            'env': config.CLOUD_ENV_ID,
-            'path': '/test/upload'
-        }
-        response = requests.post(upload_url, json=upload_params)
-        upload_data = response.json()
-        
-        return jsonify({
-            'code': 200,
-            'message': '获取云存储上传链接成功',
-            'data': upload_data
-        })
-        
-    except Exception as e:
-        print(f"获取云存储上传链接失败: {str(e)}")
-        return jsonify({
-            'code': 500,
-            'message': '获取云存储上传链接失败',
-            'error': {
-                'type': type(e).__name__,
-                'message': str(e),
-                'traceback': traceback.format_exc()
-            }
-        }), 500
 
-def get_access_token_from_wechat():
-    token_url = f"http://api.weixin.qq.com/cgi-bin/token"
-    token_response = requests.get(token_url)
-    token_data = token_response.json()
-    return token_data['access_token']
 
 @app.route('/api/cloud/upload/url', methods=['POST'])
 def get_cloud_upload_url():
     try:  
         data = request.json
+        wx_headers =   dict(request.headers)
         filename = data.get('filename')
         # 2. 获取上传链接
         print('\n[步骤2] 获取云存储上传链接')
@@ -5568,7 +5480,8 @@ def get_cloud_upload_url():
                 'code': 500,
                 'message': '获取上传链接失败',
                 'data': upload_data,
-                'error_location': '获取云存储上传链接步骤'
+                'error_location': '获取云存储上传链接步骤',
+                'alldata':wx_headers
             }), 500
             
         print('\n[成功] 获取上传链接完成')
@@ -5581,7 +5494,8 @@ def get_cloud_upload_url():
                 'token': upload_data['token'],
                 'file_id': upload_data['file_id'],
                 'cos_file_id': upload_data['cos_file_id'],
-                'key': f'uploads/{filename}'
+                'key': f'uploads/{filename}',
+                'alldata':wx_headers
             }
         })
         
@@ -5595,6 +5509,191 @@ def get_cloud_upload_url():
                 'type': type(e).__name__,
                 'message': str(e),
                 'traceback': traceback.format_exc(),
-                'error_location': '整体流程'
+                'error_location': '整体流程',
+                'alldata':wx_headers  
             }
+        }), 500
+
+@app.route('/api/users', methods=['POST'])
+@admin_required
+def create_user(user_id):
+    """创建用户"""
+    try:
+        data = request.get_json()
+        
+        # 验证必要参数
+        required_fields = ['username', 'password', 'role']
+        if not all(field in data for field in required_fields):
+            return jsonify({
+                'code': 400,
+                'message': '缺少必要参数'
+            }), 400
+            
+        # 验证用户角色
+        if data['role'] not in [UserRole.ADMIN, UserRole.STAFF, UserRole.CUSTOMER]:
+            return jsonify({
+                'code': 400,
+                'message': '无效的用户角色'
+            }), 400
+            
+        # 如果是客户，验证客户类型
+        if data['role'] == UserRole.CUSTOMER:
+            if 'customer_type' not in data or data['customer_type'] not in [CustomerType.TYPE_A, CustomerType.TYPE_B, CustomerType.TYPE_C]:
+                return jsonify({
+                    'code': 400,
+                    'message': '客户必须指定有效的客户类型'
+                }), 400
+                
+        # 创建用户
+        user = User(
+            username=data['username'],
+            password=data['password'],  # 注意：实际应用中需要对密码进行加密
+            role=data['role'],
+            customer_type=data.get('customer_type')
+        )
+        
+        # 如果是员工，设置权限
+        if data['role'] == UserRole.STAFF and 'permissions' in data:
+            for permission in data['permissions']:
+                if permission in [Permission.PUSH_ORDER, Permission.DELIVERY_ORDER, Permission.PRODUCT_MANAGE]:
+                    user.permissions.append(permission)
+                    
+        db.session.add(user)
+        db.session.commit()
+        
+        return jsonify({
+            'code': 200,
+            'message': '用户创建成功',
+            'data': user.to_dict()
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'code': 500,
+            'message': f'创建用户失败：{str(e)}'
+        }), 500
+
+@app.route('/api/users/<int:target_user_id>', methods=['PUT'])
+@admin_required
+def update_user(user_id, target_user_id):
+    """更新用户信息"""
+    try:
+        user = User.query.get(target_user_id)
+        if not user:
+            return jsonify({
+                'code': 404,
+                'message': '用户不存在'
+            }), 404
+            
+        data = request.get_json()
+        
+        # 更新基本信息
+        if 'username' in data:
+            user.username = data['username']
+        if 'password' in data:
+            user.password = data['password']  # 注意：实际应用中需要对密码进行加密
+            
+        # 更新角色
+        if 'role' in data:
+            if data['role'] not in [UserRole.ADMIN, UserRole.STAFF, UserRole.CUSTOMER]:
+                return jsonify({
+                    'code': 400,
+                    'message': '无效的用户角色'
+                }), 400
+            user.role = data['role']
+            
+        # 更新客户类型
+        if 'customer_type' in data:
+            if user.role != UserRole.CUSTOMER:
+                return jsonify({
+                    'code': 400,
+                    'message': '只能为客户设置客户类型'
+                }), 400
+            if data['customer_type'] not in [CustomerType.TYPE_A, CustomerType.TYPE_B, CustomerType.TYPE_C]:
+                return jsonify({
+                    'code': 400,
+                    'message': '无效的客户类型'
+                }), 400
+            user.customer_type = data['customer_type']
+            
+        # 更新员工权限
+        if 'permissions' in data and user.role == UserRole.STAFF:
+            user.permissions.clear()
+            for permission in data['permissions']:
+                if permission in [Permission.PUSH_ORDER, Permission.DELIVERY_ORDER, Permission.PRODUCT_MANAGE]:
+                    user.permissions.append(permission)
+                    
+        db.session.commit()
+        
+        return jsonify({
+            'code': 200,
+            'message': '用户信息更新成功',
+            'data': user.to_dict()
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'code': 500,
+            'message': f'更新用户信息失败：{str(e)}'
+        }), 500
+
+@app.route('/api/users/<int:target_user_id>', methods=['GET'])
+@admin_required
+def get_user(user_id, target_user_id):
+    """获取用户信息"""
+    try:
+        user = User.query.get(target_user_id)
+        if not user:
+            return jsonify({
+                'code': 404,
+                'message': '用户不存在'
+            }), 404
+            
+        return jsonify({
+            'code': 200,
+            'message': '获取用户信息成功',
+            'data': user.to_dict()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'code': 500,
+            'message': f'获取用户信息失败：{str(e)}'
+        }), 500
+
+@app.route('/api/users', methods=['GET'])
+@admin_required
+def list_users(user_id):
+    """获取用户列表"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        role = request.args.get('role')
+        
+        query = User.query
+        
+        # 按角色筛选
+        if role:
+            query = query.filter(User.role == role)
+            
+        # 分页
+        pagination = query.paginate(page=page, per_page=per_page)
+        
+        return jsonify({
+            'code': 200,
+            'message': '获取用户列表成功',
+            'data': {
+                'items': [user.to_dict() for user in pagination.items],
+                'total': pagination.total,
+                'pages': pagination.pages,
+                'current_page': page
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'code': 500,
+            'message': f'获取用户列表失败：{str(e)}'
         }), 500

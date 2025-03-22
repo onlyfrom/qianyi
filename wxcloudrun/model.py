@@ -2,6 +2,42 @@ from datetime import datetime
 
 from wxcloudrun import db
 
+# 从models.py导入的枚举类
+class UserRole:
+    ADMIN = 'admin'  # 管理员
+    STAFF = 'staff'  # 员工
+    CUSTOMER = 'customer'  # 客户
+
+class CustomerType:
+    TYPE_A = 'A'  # A类客户
+    TYPE_B = 'B'  # B类客户
+    TYPE_C = 'C'  # C类客户
+
+# 用户权限关联表
+user_permissions = db.Table('user_permissions',
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
+    db.Column('permission_id', db.Integer, db.ForeignKey('permissions.id'), primary_key=True)
+)
+
+# 权限模型
+class Permission(db.Model):
+    __tablename__ = 'permissions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    description = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    
+    def __init__(self, name, description=None):
+        self.name = name
+        self.description = description
+
+# 权限常量
+class PermissionEnum:
+    PUSH_ORDER = 'push_order'  # 发送推送单
+    DELIVERY_ORDER = 'delivery_order'  # 发送发货单
+    PRODUCT_MANAGE = 'product_manage'  # 商品管理
+    ALL = 'all'  # 所有权限
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -21,6 +57,66 @@ class User(db.Model):
     login_attempts = db.Column(db.Integer, default=0)
     last_login_attempt = db.Column(db.DateTime)
     last_login = db.Column(db.DateTime)
+    
+    # 新增字段
+    role = db.Column(db.String(20), nullable=False, default=UserRole.CUSTOMER)  # 用户角色
+    customer_type = db.Column(db.String(1))  # 客户类型（仅对客户角色有效）
+    
+    # 修改权限关系定义
+    permissions = db.relationship('Permission', 
+                                secondary=user_permissions,
+                                backref=db.backref('users', lazy='dynamic'),
+                                lazy='dynamic')
+    
+    # 新增方法
+    def has_permission(self, permission_name):
+        """检查用户是否拥有指定权限"""
+        if self.role == UserRole.ADMIN:
+            return True
+        return self.permissions.filter(
+            Permission.name == permission_name
+        ).first() is not None
+
+    def add_permission(self, permission_name):
+        """添加权限"""
+        permission = Permission.query.filter_by(name=permission_name).first()
+        if permission and permission not in self.permissions:
+            self.permissions.append(permission)
+
+    def remove_permission(self, permission_name):
+        """移除权限"""
+        permission = Permission.query.filter_by(name=permission_name).first()
+        if permission and permission in self.permissions:
+            self.permissions.remove(permission)
+
+    def get_price_rate(self):
+        """获取用户对应的价格系数"""
+        if self.role != UserRole.CUSTOMER:
+            return 1.0
+            
+        # 根据商品的不同价格字段返回对应价格
+        price_rates = {
+            CustomerType.TYPE_A: lambda p: p.price_b/p.price if p.price_b else 0,  # A类客户使用price_b,若无则8折
+            CustomerType.TYPE_B: lambda p: p.price_c/p.price if p.price_c else 0,  # B类客户使用price_c,若无则9折 
+            CustomerType.TYPE_C: lambda p: p.price_d/p.price if p.price_d else 0  # C类客户使用price_d,若无则95折
+        }
+        return price_rates.get(self.customer_type, 1.0)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'role': self.role,
+            'customer_type': self.customer_type,
+            'permissions': [p.name for p in self.permissions],
+            'avatar': self.avatar,
+            'nickname': self.nickname,
+            'phone': self.phone,
+            'address': self.address,
+            'contact': self.contact,
+            'status': self.status,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        }
 
 class Product(db.Model):
     __tablename__ = 'products'

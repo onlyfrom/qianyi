@@ -298,39 +298,6 @@ def is_login_attempts_exceeded(username):
         print(f'检查登录频率时出错: {str(e)}')
 
 
-def get_access_token():
-    """获取小程序 access_token"""
-    try:
-        # 在云托管环境中，可以直接从环境变量获取
-        access_token = os.environ.get('WX_TOKEN')
-        if access_token:
-            print('\n从环境变量获取access_token成功')
-            return access_token
-
-        appid = "wxa17a5479891750b3"
-        secret = "33359853cfee1dc1e2b6e535249e351d"
-        # 如果环境变量中没有，才使用传统方式获取
-        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}'   
-        response = requests.get(url)        
-        if response.status_code == 200:
-            data = response.json()
-            print('\n接口响应数据:')
-            # 处理响应数据时隐藏实际的access_token
-            safe_data = data.copy()
-            if 'access_token' in safe_data:
-                safe_data['access_token'] = safe_data['access_token'][:10] + '...'
-            print(json.dumps(safe_data, ensure_ascii=False, indent=2))            
-            if 'access_token' in data:
-                print('\n成功获取access_token')
-                return data['access_token']               
-
-        raise Exception('获取 access_token 失败')
-        
-    except Exception as e:
-        print(f'获取access_token失败: {str(e)}')
-        raise
-
-
 # 修改权限检查函数
 def check_push_order_permission(cursor, user_id, order_id):
     """检查用户是否有权限操作该推送单"""
