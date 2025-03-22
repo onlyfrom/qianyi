@@ -3865,30 +3865,46 @@ def update_system_settings():
 @login_required
 def get_user_statistics(user_id):
     try:
-        # 获取用户的推送单
-        push_orders = PushOrder.query.filter_by(user_id=user_id).all()
-        orders_data = []
-        for order in push_orders:
-            products = [
-                {
-                    'id': p.product_id,
-                    'name': Product.query.filter_by(id=p.product_id).first().name,
-                    'price': float(p.price)
-                } for p in order.products.all()
-            ]
-            orders_data.append({
-                'id': order.id,
-                'order_number': order.order_number,
-                'products': products,
-                'created_at': order.created_at.isoformat()
-            })
+        # 检查用户类型
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': '用户不存在'}), 404
+            
+        user_type = user.user_type
+        
+        # 构建基础查询条件
+        base_query = PurchaseOrder.query
+        
+        # 非管理员只能看到自己的数据
+        if user_type != 1:
+            base_query = base_query.filter_by(user_id=user_id)
+            
+        # 获取今日待办事项数量（未完成的采购单）
+        today_tasks = base_query.filter(
+            PurchaseOrder.status == 0,
+            func.date(PurchaseOrder.created_at) == func.curdate()
+        ).count()
+        
+        # 获取未确认采购单数量（所有未确认的采购单）
+        unconfirmed_orders = base_query.filter(
+            PurchaseOrder.status == 0
+        ).count()
+        
+        # 获取今日总采购单数量
+        today_orders = base_query.filter(
+            func.date(PurchaseOrder.created_at) == func.curdate()
+        ).count()
         
         return jsonify({
-            'push_orders': orders_data
+            'today_tasks': today_tasks,
+            'unconfirmed_orders': unconfirmed_orders,
+            'today_orders': today_orders,
+            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }), 200
             
     except Exception as e:
         print(f'获取用户统计数据失败: {str(e)}')
+        print(f'错误类型: {type(e).__name__}')
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '获取统计数据失败'}), 500
 
