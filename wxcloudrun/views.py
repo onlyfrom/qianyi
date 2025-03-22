@@ -4185,6 +4185,7 @@ def share_push_order(user_id):
         print(f"错误追踪:\n{traceback.format_exc()}")
         return jsonify({'error': '分享失败'}), 500
 
+
 @app.route('/push_orders/bind/<share_code>', methods=['POST'])
 @login_required
 def bind_push_order(user_id, share_code):
@@ -5670,3 +5671,136 @@ def check_push_order_permission(user_id, order_id):
     except Exception as e:
         print(f"检查推送单权限失败: {str(e)}")
         return False
+
+@app.route('/push_orders/bind/guest', methods=['POST'])
+def bind_push_order_guest():
+    """无需登录的推送单绑定接口"""
+    try:
+        data = request.get_json()
+        if not data or 'share_code' not in data or 'name' not in data or 'openid' not in data:
+            return jsonify({
+                'code': 400,
+                'message': '缺少必要参数'
+            }), 400
+            
+        share_code = data['share_code']
+        name = data['name']
+        openid = request.headers.get('X-WX-OPENID')
+        
+        print(f"开始绑定推送单 - 分享码: {share_code}, 姓名: {name}, openid: {openid}")
+        
+        # 查找对应的推送单
+        order = PushOrder.query.filter_by(share_code=share_code, target_name=name).first()
+        
+        if not order:
+            print(f"绑定失败 - 分享码无效: {share_code}")
+            return jsonify({
+                'code': 400,
+                'message': '无效的分享码'
+            }), 400
+            
+        # 检查是否已被绑定
+        if order.target_user_id is not None:
+            print(f"绑定失败 - 推送单已被绑定 - 订单号: {order.order_number}")
+            return jsonify({
+                'code': 400,
+                'message': '该推送单已被绑定'
+            }), 400
+            
+        print(f"找到推送单 - 订单ID: {order.id}, 订单号: {order.order_number}")
+        
+        # 查找或创建用户
+        user = User.query.filter_by(openid=openid).first()
+        if not user:
+            # 生成随机用户名和密码
+            random_username = f"user_{int(time.time())}"
+            random_password = ''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=12))
+            
+            # 创建新用户
+            user = User(
+                username=random_username,
+                password=generate_password_hash(random_password),
+                nickname=name,
+                openid=openid,
+                role='CUSTOMER',
+                status='active',
+                user_type = 0
+            )
+            
+            try:
+                db.session.add(user)
+                db.session.commit()
+                print(f"创建新用户成功 - 用户ID: {user.id}, 昵称: {name}")
+            except Exception as e:
+                db.session.rollback()
+                print(f"创建用户失败: {str(e)}")
+                return jsonify({
+                    'code': 500,
+                    'message': '创建用户失败'
+                }), 500
+        else:
+            print(f"找到已存在用户 - 用户ID: {user.id}, 昵称: {user.nickname}")
+            
+        # 更新推送单信息
+        order.target_user_id = user.id
+        order.target_name = name
+        order.openid = openid
+        order.share_code = None
+        
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"绑定失败 - 更新推送单失败: {str(e)}")
+            return jsonify({
+                'code': 500,
+                'message': '绑定失败，请重试'
+            }), 500
+            
+        print(f"已更新推送单 - 订单ID: {order.id} 绑定到用户: {name}")
+            
+        # 构建返回数据
+        order_data = {
+            'id': order.id,
+            'order_number': order.order_number,
+            'created_at': order.created_at.isoformat(),
+            'target_name': name,
+            'target_user_id': user.id,
+            'openid': openid,
+            'products': []
+        }
+        
+        # 获取推送单商品信息
+        product_count = 0
+        for item in order.products:
+            product = Product.query.get(item.product_id)
+            if product:
+                try:
+                    product_data = {
+                        'id': product.id,
+                        'name': product.name,
+                        'price': float(item.price) if item.price else 0,
+                        'images': json.loads(product.images)[0] if product.images else '',
+                        'specs_info': json.loads(item.specs_info) if item.specs_info else {},
+                        'specs': json.loads(item.specs) if item.specs else []
+                    }
+                    order_data['products'].append(product_data)
+                    product_count += 1
+                except (ValueError, json.JSONDecodeError) as e:
+                    print(f"处理商品数据出错 - 商品ID: {product.id}, 错误: {str(e)}")
+                    continue
+        
+        print(f"推送单绑定成功 - 订单ID: {order.id}, 订单号: {order_data['order_number']}")
+        return jsonify({
+            'code': 200,
+            'message': '推送单绑定成功',
+            'data': order_data
+        }), 200
+            
+    except Exception as e:
+        print(f"绑定推送单失败 - 分享码: {share_code}, 错误信息: {str(e)}")
+        print(f"错误追踪:\n{traceback.format_exc()}")
+        return jsonify({
+            'code': 500,
+            'message': '绑定失败'
+        }), 500
