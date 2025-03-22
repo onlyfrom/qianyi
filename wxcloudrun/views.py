@@ -5686,6 +5686,8 @@ def bind_push_order_guest():
         share_code = data['share_code']
         name = data['name']
         openid = request.headers.get('X-WX-OPENID')
+        if not openid:
+            openid = data['openid']
         
         print(f"开始绑定推送单 - 分享码: {share_code}, 姓名: {name}, openid: {openid}")
         
@@ -5722,8 +5724,8 @@ def bind_push_order_guest():
                 password=generate_password_hash(random_password),
                 nickname=name,
                 openid=openid,
-                role='CUSTOMER',
-                status='active',
+                role='customer',
+                status=1,
                 user_type = 0
             )
             
