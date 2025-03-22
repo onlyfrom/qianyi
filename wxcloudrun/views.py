@@ -5677,7 +5677,7 @@ def bind_push_order_guest():
     """无需登录的推送单绑定接口"""
     try:
         data = request.get_json()
-        if not data or 'share_code' not in data or 'name' not in data or 'openid' not in data:
+        if not data or 'share_code' not in data or 'name' not in data :
             return jsonify({
                 'code': 400,
                 'message': '缺少必要参数'
