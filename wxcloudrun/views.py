@@ -3118,9 +3118,7 @@ def generate_qrcode_api():
         openid = request.headers.get('X-WX-OPENID')
 
         # 构建scene参数
-        scene = f'{share_code}'
-        if target_name:
-            scene += f'&{target_name}'
+        scene = f'{share_code}&1'
         
         if openid:
             print('使用微信云托管方式生成二维码')
@@ -5672,6 +5670,50 @@ def check_push_order_permission(user_id, order_id):
         print(f"检查推送单权限失败: {str(e)}")
         return False
 
+import base64
+import urllib.parse
+
+def encode_chinese_name(name):
+    """将中文名称编码为URL安全的字符串"""
+    try:
+        # 限制中文字符数量为6个
+        if len(name) > 6:
+            name = name[:6]
+            
+        # 将中文转换为UTF-8字节
+        name_bytes = name.encode('utf-8')
+        # 使用Base64编码
+        base64_str = base64.b64encode(name_bytes).decode('utf-8')
+        # 替换Base64中的特殊字符为URL安全字符
+        safe_str = base64_str.replace('+', '-').replace('/', '_').replace('=', '')
+        
+        # 验证编码后的长度是否超过32个字符
+        if len(safe_str) > 32:
+            print(f"警告：编码后的名称超过32个字符: {safe_str}")
+            # 如果超过32个字符，截断到32个字符
+            safe_str = safe_str[:32]
+            
+        return safe_str
+    except Exception as e:
+        print(f"编码中文名称失败: {str(e)}")
+        return name
+
+def decode_chinese_name(encoded_name):
+    """将编码后的名称解码为中文"""
+    try:
+        # 还原Base64特殊字符
+        base64_str = encoded_name.replace('-', '+').replace('_', '/')
+        # 补充Base64填充
+        padding = 4 - (len(base64_str) % 4)
+        if padding != 4:
+            base64_str += '=' * padding
+        # Base64解码
+        name_bytes = base64.b64decode(base64_str)
+        return name_bytes.decode('utf-8')
+    except Exception as e:
+        print(f"解码名称失败: {str(e)}")
+        return encoded_name
+
 @app.route('/push_orders/bind/guest', methods=['POST'])
 def bind_push_order_guest():
     """无需登录的推送单绑定接口"""
@@ -5698,7 +5740,7 @@ def bind_push_order_guest():
             print(f"绑定失败 - 分享码无效: {share_code}")
             return jsonify({
                 'code': 400,
-                'message': '无效的分享码'
+                'message': '无效的分享码,或姓名不正确'
             }), 400
             
         # 检查是否已被绑定
@@ -5726,7 +5768,7 @@ def bind_push_order_guest():
                 openid=openid,
                 role='customer',
                 status=1,
-                user_type = 0
+                user_type=0
             )
             
             try:
