@@ -5722,7 +5722,7 @@ def bind_push_order_guest():
         if not data or 'share_code' not in data or 'name' not in data :
             return jsonify({
                 'code': 400,
-                'message': '缺少必要参数'
+                'error': '缺少必要参数'
             }), 400
             
         share_code = data['share_code']
@@ -5739,7 +5739,7 @@ def bind_push_order_guest():
         if not order:
             print(f"绑定失败 - 分享码无效: {share_code}")
             return jsonify({
-                'code': 400,
+                'code': 401,
                 'message': '无效的分享码,或姓名不正确'
             }), 400
             
@@ -5747,7 +5747,7 @@ def bind_push_order_guest():
         if order.target_user_id is not None:
             print(f"绑定失败 - 推送单已被绑定 - 订单号: {order.order_number}")
             return jsonify({
-                'code': 400,
+                'code': 402,
                 'message': '该推送单已被绑定'
             }), 400
             
@@ -5757,7 +5757,7 @@ def bind_push_order_guest():
         user = User.query.filter_by(openid=openid).first()
         if not user:
             # 生成随机用户名和密码
-            random_username = f"user_{int(time.time())}"
+            random_username = f"qyfs_{int(time.time())}"
             random_password = ''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=12))
             
             # 创建新用户
@@ -5779,9 +5779,9 @@ def bind_push_order_guest():
                 db.session.rollback()
                 print(f"创建用户失败: {str(e)}")
                 return jsonify({
-                    'code': 500,
+                    'code': 403,
                     'message': '创建用户失败'
-                }), 500
+                }), 403
         else:
             print(f"找到已存在用户 - 用户ID: {user.id}, 昵称: {user.nickname}")
             
@@ -5797,9 +5797,9 @@ def bind_push_order_guest():
             db.session.rollback()
             print(f"绑定失败 - 更新推送单失败: {str(e)}")
             return jsonify({
-                'code': 500,
+                'code': 404,
                 'message': '绑定失败，请重试'
-            }), 500
+            }), 404
             
         print(f"已更新推送单 - 订单ID: {order.id} 绑定到用户: {name}")
             
