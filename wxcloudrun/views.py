@@ -3093,6 +3093,7 @@ def generate_qrcode_api():
     try:
         data = request.get_json()
         page = data.get('page')
+        target_name= data.get('target_name')
         
         # 生成唯一的分享码
         max_attempts = 10  # 最大尝试次数
@@ -3115,13 +3116,18 @@ def generate_qrcode_api():
         # 使用分享码生成二维码
         # 检查请求头中是否有openid
         openid = request.headers.get('X-WX-OPENID')
+
+        # 构建scene参数
+        scene = f'{share_code}'
+        if target_name:
+            scene += f'&{target_name}'
         
         if openid:
             print('使用微信云托管方式生成二维码')
-            qrcode_path = generate_qrcode_wx(page, f'code={share_code}')
+            qrcode_path = generate_qrcode_wx(page, scene)
         else:
             print('使用普通方式生成二维码') 
-            qrcode_path = generate_qrcode(page, f'code={share_code}')
+            qrcode_path = generate_qrcode(page, scene)
 
         if qrcode_path:
             return jsonify({
@@ -3208,7 +3214,7 @@ def generate_qrcode(page, scene):
         }
         
         response = requests.post(url, json=params)
-        
+        print(f'生成二维码响应: {response.text,response.status_code}')
         if response.status_code == 200:
             # 保存文件
             with open(filepath, 'wb') as f:
@@ -3693,28 +3699,43 @@ def update_push_order(user_id, order_id):
 @app.route('/push_orders/<int:order_id>', methods=['DELETE'])
 @login_required
 def delete_push_order(user_id, order_id):
+    """删除推送单"""
     try:
         # 检查权限
         if not check_push_order_permission(user_id, order_id):
-            return jsonify({'error': '无权限操作此推送单'}), 403
-
-        # 删除推送单商品
-        db.session.query(PushOrderProduct).filter_by(push_order_id=order_id).delete()
-
+            return jsonify({
+                'code': 403,
+                'message': '没有权限删除此推送单'
+            }), 403
+            
+        # 获取推送单
+        push_order = PushOrder.query.get(order_id)
+        if not push_order:
+            return jsonify({
+                'code': 404,
+                'message': '推送单不存在'
+            }), 404
+            
+        # 删除推送单商品关联
+        PushOrderProduct.query.filter_by(push_order_id=order_id).delete()   
+             
         # 删除推送单
-        db.session.query(PushOrder).filter_by(id=order_id).delete()
-
+        db.session.delete(push_order)
         db.session.commit()
-
+        
         return jsonify({
-            'message': '推送单删除成功',
-            'order_id': order_id
+            'code': 200,
+            'message': '推送单删除成功'
         })
-
+        
     except Exception as e:
         db.session.rollback()
-        print(f'删除推送单失败: {str(e)}')
-        return jsonify({'error': '删除推送单失败'}), 500
+        print(f"删除推送单失败: {str(e)}")
+        print(f"错误追踪:\n{traceback.format_exc()}")
+        return jsonify({
+            'code': 500,
+            'message': f'删除推送单失败：{str(e)}'
+        }), 500
 
 
 # 获取推送单详情
@@ -4810,10 +4831,15 @@ def reset_database():
             
         # 删除所有表的数据
         try:
+            # 先删除关联表数据
+            db.session.query(user_permissions).delete()
+            db.session.query(Permission).delete()
+            
+            # 删除其他表数据
             db.session.query(PushOrderProduct).delete()
             db.session.query(PushOrder).delete()
             db.session.query(DeliveryOrder).delete()
-            db.session.query(DeliveryItem).delete()  # 添加配送订单项表
+            db.session.query(DeliveryItem).delete()
             db.session.query(PurchaseOrderItem).delete()
             db.session.query(PurchaseOrder).delete()
             db.session.query(ProductView).delete()
@@ -4830,19 +4856,32 @@ def reset_database():
             print(f'清空数据失败: {str(e)}')
             return jsonify({'error': '清空数据失败'}), 500
             
-        # 创建新的管理员用户
         try:
+            # 创建默认权限
+            permissions = [
+                Permission(name='admin', description='管理员权限'),
+                Permission(name='user', description='普通用户权限'),
+                Permission(name='customer', description='客户权限')
+            ]
+            db.session.add_all(permissions)
+            db.session.flush()  # 刷新session获取权限ID
+            
+            # 创建新的管理员用户
             admin_user = User(
                 username=admin_username,
                 password=admin_password,
-                user_type=1,  # 管理员类型
-                status=1,     # 启用状态
+                role='admin',           # 新增：角色为admin
+                customer_type='normal', # 新增：默认客户类型
+                status=1,              # 启用状态
                 created_at=datetime.now(),
                 updated_at=datetime.now()
             )
             db.session.add(admin_user)
-            db.session.commit()
-            print(f'创建管理员用户成功: {admin_username}')
+            db.session.flush()  # 刷新session获取用户ID
+            
+            # 为管理员分配所有权限
+            admin_permission = next(p for p in permissions if p.name == 'admin')
+            admin_user.permissions.append(admin_permission)
             
             # 创建默认系统设置
             default_settings = SystemSettings(
@@ -4852,22 +4891,23 @@ def reset_database():
             )
             db.session.add(default_settings)
             db.session.commit()
-            print('创建默认系统设置成功')
+            print('创建默认系统设置和权限成功')
             
             return jsonify({
                 'message': '数据库重置成功',
                 'admin': {
                     'id': admin_user.id,
                     'username': admin_user.username,
-                    'user_type': admin_user.user_type,
+                    'role': admin_user.role,
+                    'customer_type': admin_user.customer_type,
                     'created_at': admin_user.created_at.isoformat()
                 }
             }), 200
             
         except Exception as e:
             db.session.rollback()
-            print(f'创建管理员用户失败: {str(e)}')
-            return jsonify({'error': '创建管理员用户失败'}), 500
+            print(f'创建管理员用户和权限失败: {str(e)}')
+            return jsonify({'error': '创建管理员用户和权限失败'}), 500
             
     except Exception as e:
         print(f'重置数据库失败: {str(e)}')
@@ -5414,228 +5454,6 @@ def test_headers():
             }
         }), 500
 
-@app.route('/test/qrcode', methods=['POST'])
-def test_qrcode():
-    try:
-        print('='*50)
-        print('开始测试二维码生成')
-        print('='*50)
-        
-        # 生成唯一的文件名
-        filename = f"qr_{int(time.time())}_{uuid.uuid4().hex[:8]}.jpg"
-        print(f'生成文件名: {filename}')
-
-        # 1. 获取access_token
-        print('\n[步骤1] 获取access_token')
-        url = 'http://api.weixin.qq.com/cgi-bin/token'
-        params = {
-            'grant_type': 'client_credential',
-            'appid': "wxa17a5479891750b3",
-            'secret': "33359853cfee1dc1e2b6e535249e351d"
-        }
-     
-        token_response = requests.get(url,params)
-        token_data = token_response.json()
-        print(f'获取access_token响应: {token_data}')
-        
-        if 'access_token' not in token_data:
-            print(f"[错误] 获取access_token失败: {token_data}")
-            return jsonify({
-                'code': 401,
-                'message': '获取access_token失败',
-                'data': token_data,
-                'error_location': '获取access_token步骤'
-            }), 401
-            
-        access_token = token_data['access_token']
-        print(f'成功获取access_token: {access_token[:10]}...')
-        
-        # 2. 生成小程序码
-        print('\n[步骤2] 生成小程序码')
-        qrcode_url = 'http://api.weixin.qq.com/wxa/getwxacodeunlimit'
-        params = {
-            "path": f"pages/share/share?share_code=123456",
-            "env_version": "trial",
-            "width": 430,
-            "auto_color": False,
-            "line_color": {"r": 0, "g": 0, "b": 0},
-            "is_hyaline": False
-        }
-        print(f'请求参数: {params}')
-        
-        qr_response = requests.post(qrcode_url, json=params)
-        print(f'生成二维码响应: {qr_response.text}')
-        
-        if qr_response.status_code != 200:
-            print(f"[错误] 生成二维码失败: {qr_response.text}")
-            return jsonify({
-                'code': qr_response.status_code,
-                'message': '生成二维码失败',
-                'data': qr_response.text,
-                'error_location': '生成小程序码步骤'
-            }), qr_response.status_code
-
-        # 保存二维码内容到文件
-        print('\n[步骤3] 保存二维码到本地')
-        qrcode_dir = os.path.join(app.root_path, 'uploads', 'qrcodes')
-        if not os.path.exists(qrcode_dir):
-            os.makedirs(qrcode_dir)
-            
-        qrcode_path = os.path.join(qrcode_dir, filename)
-        with open(qrcode_path, 'wb') as f:
-            f.write(qr_response.content)
-            
-        print(f'二维码已保存到: {qrcode_path}')
-        
-        # 3. 获取上传链接
-        print('\n[步骤4] 获取云存储上传链接')
-        upload_url = f'http://api.weixin.qq.com/tcb/uploadfile'
-        upload_params = {
-            'env': 'prod-9gd4jllic76d4842',
-            'path': f'/qrcodes/{filename}'
-        }
-        print(f'请求参数: {upload_params}')
-        
-        response = requests.post(upload_url, json=upload_params)
-        upload_data = response.json()
-        print(f'获取上传链接响应: {upload_data}')
-        
-        if upload_data.get('errcode', 0) != 0:
-            print(f"[错误] 获取上传链接失败: {upload_data}")
-            return jsonify({
-                'code': 500,
-                'message': '获取上传链接失败',
-                'data': upload_data,
-                'error_location': '获取云存储上传链接步骤'
-            }), 500
-
-        # 4. 上传文件到云存储
-        print('\n[步骤5] 上传文件到云存储')
-        upload_url = upload_data['url']
-        print(f'上传地址: {upload_url}')
-        
-        # 构建multipart/form-data请求
-        files = {
-            'file': ('qrcode.png', open(qrcode_path, 'rb'), 'image/png')
-        }
-        # 构建form数据
-        form_data = {
-            'key': f'/qrcode/{filename}',
-            'Signature': upload_data['authorization'],
-            'x-cos-security-token': upload_data['token'],
-            'x-cos-meta-fileid': upload_data['file_id']
-        }
-        print(f'上传参数: {form_data}')
-        
-        # 发送上传请求
-        upload_response = requests.post(upload_url, data=form_data, files=files)
-        print(f'上传文件响应: {upload_response.text}')
-        
-        if upload_response.status_code != 200:
-            print(f"[错误] 上传文件失败: {upload_response.text}")
-            return jsonify({
-                'code': upload_response.status_code,
-                'message': '上传文件失败',
-                'data': {
-                    'response': upload_response.text,
-                    'file_path': qrcode_path
-                },
-                'error_location': '上传文件到云存储步骤'
-            }), upload_response.status_code
-            
-        print('\n[成功] 二维码生成并上传完成')
-        # 返回成功结果
-        return jsonify({
-            'code': 200,
-            'message': '二维码生成并上传成功',
-            'data': {
-                'file_id': upload_data['file_id'],
-                'local_path': qrcode_path,
-                'upload_response': upload_response.text
-            }
-        })
-        
-    except Exception as e:
-        print(f"[错误] 生成二维码过程出错: {str(e)}")
-        print(f"错误追踪:\n{traceback.format_exc()}")
-        return jsonify({
-            'code': 500,
-            'message': '生成二维码过程出错',
-            'error': {
-                'type': type(e).__name__,
-                'message': str(e),
-                'traceback': traceback.format_exc(),
-                'error_location': '整体流程'
-            }
-        }), 500
-
-
-
-@app.route('/api/cloud/upload/url', methods=['POST'])
-def get_cloud_upload_url():
-    try:  
-        data = request.json
-        wx_headers =   dict(request.headers)
-        filename = data.get('filename')
-        # 2. 获取上传链接
-        print('\n[步骤2] 获取云存储上传链接')
-        upload_url = 'http://api.weixin.qq.com/tcb/uploadfile'
-        upload_params = {
-            'env': 'prod-9gd4jllic76d4842',
-            'path': f'uploads/{filename}'
-        }
-
-        print(f'请求参数: {upload_params}')
-        
-        upload_response = requests.post(
-            upload_url, 
-            json=upload_params,
-            headers={
-                'content-type': 'application/json'
-            }
-        )
-        upload_data = upload_response.json()
-        print(f'获取上传链接响应: {upload_data}')
-        
-        if upload_data.get('errcode', 0) != 0:
-            print(f"[错误] 获取上传链接失败: {upload_data}")
-            return jsonify({
-                'code': 500,
-                'message': '获取上传链接失败',
-                'data': upload_data,
-                'error_location': '获取云存储上传链接步骤',
-                'alldata':wx_headers
-            }), 500
-            
-        print('\n[成功] 获取上传链接完成')
-        return jsonify({
-            'code': 200,
-            'message': '获取上传链接成功',
-            'data': {
-                'upload_url': upload_data['url'],
-                'authorization': upload_data['authorization'],
-                'token': upload_data['token'],
-                'file_id': upload_data['file_id'],
-                'cos_file_id': upload_data['cos_file_id'],
-                'key': f'uploads/{filename}',
-                'alldata':wx_headers
-            }
-        })
-        
-    except Exception as e:
-        print(f"[错误] 获取上传链接过程出错: {str(e)}")
-        print(f"错误追踪:\n{traceback.format_exc()}")
-        return jsonify({
-            'code': 500,
-            'message': '获取上传链接过程出错',
-            'error': {
-                'type': type(e).__name__,
-                'message': str(e),
-                'traceback': traceback.format_exc(),
-                'error_location': '整体流程',
-                'alldata':wx_headers  
-            }
-        }), 500
 
 @app.route('/api/users', methods=['POST'])
 @admin_required
@@ -5820,3 +5638,35 @@ def list_users(user_id):
             'code': 500,
             'message': f'获取用户列表失败：{str(e)}'
         }), 500
+
+def check_push_order_permission(user_id, order_id):
+    """检查用户是否有权限操作推送单"""
+    try:
+        # 获取用户和推送单
+        user = User.query.get(user_id)
+        push_order = PushOrder.query.get(order_id)
+        
+        if not user or not push_order:
+            return False
+            
+        # 管理员拥有所有权限
+        if user.role == UserRole.ADMIN:
+            return True
+            
+        # 员工需要检查具体权限
+        if user.role == UserRole.STAFF:
+            # 检查是否有推送单管理权限
+            if not user.has_permission(PermissionEnum.PUSH_ORDER):
+                return False
+            # 只能操作自己创建的推送单
+            return push_order.user_id == user_id
+            
+        # 客户只能查看自己的推送单
+        if user.role == UserRole.CUSTOMER:
+            return push_order.user_id == user_id or push_order.target_user_id == user_id
+            
+        return False
+        
+    except Exception as e:
+        print(f"检查推送单权限失败: {str(e)}")
+        return False
