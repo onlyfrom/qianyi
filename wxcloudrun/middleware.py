@@ -60,7 +60,7 @@ def check_staff_permission(permission):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             try:
-                user_id = kwargs.get('user_id')
+                user_id = verify_token(token)
                 if not user_id:
                     return jsonify({
                         'code': 401,

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from flask import render_template, request, jsonify, send_from_directory, abort, make_response, send_file, current_app
+from flask import render_template, request, jsonify, send_from_directory, abort, make_response, send_file, current_app, g
 from run import app
 from wxcloudrun.model import *
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -24,7 +24,6 @@ import random
 from sqlalchemy import inspect, text, func, desc, distinct, case, Text
 from sqlalchemy.sql import literal, literal_column
 from wxcloudrun.response import *
-from wxcloudrun.middleware import staff_required ,check_staff_permission
 #from .decorators import admin_required, permission_required
 
 WECHAT_APPID = "wxa17a5479891750b3"
@@ -112,6 +111,112 @@ def admin_required(f):
 
     return decorated_function
 
+def staff_required(f):
+    """员工权限验证装饰器"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            # 从请求头获取用户ID
+            auth_header = request.headers.get('Authorization')
+            if not auth_header:
+                return jsonify({'error': '未提供认证令牌'}), 401
+
+            token = auth_header.split(' ')[1] if len(auth_header.split(' ')) > 1 else auth_header
+
+            # 验证 token
+            user_id = verify_token(token)
+            if not user_id:
+                return jsonify({
+                    'code': 401,
+                    'message': '未登录'
+                }), 401
+
+            # 查询用户信息
+            user = User.query.get(user_id)
+            if not user:
+                return jsonify({
+                    'code': 401,
+                    'message': '用户不存在'
+                }), 401
+
+            # 验证用户类型和状态
+            if user.user_type != 2 or user.role != 'STAFF':
+                return jsonify({
+                    'code': 403,
+                    'message': '无员工权限'
+                }), 403
+
+            if user.status != 1:
+                return jsonify({
+                    'code': 403,
+                    'message': '账号已禁用'
+                }), 403
+
+            # 将用户信息存储在g对象中，方便后续使用
+            g.staff_user = user
+            return f(*args, **kwargs)
+
+        except Exception as e:
+            print(f"员工权限验证失败: {str(e)}")
+            print(f"错误追踪:\n{traceback.format_exc()}")
+            return jsonify({
+                'code': 500,
+                'message': '权限验证失败'
+            }), 500
+
+    return decorated_function
+
+def check_staff_permission(permission):
+    """
+    检查员工特定权限的装饰器
+    :param permission: 权限标识符，例如：'product.view', 'order.edit' 等
+    """
+    def decorator(f):
+        @wraps(f)
+        @login_required  # 添加登录验证装饰器
+        def decorated_function(*args, **kwargs):
+            try:
+                user_id = kwargs.get('user_id')
+                user = User.query.get(user_id)
+                
+                # 管理员拥有所有权限
+                if user.user_type == 1:
+                    # 将用户信息存储在请求上下文中
+                    setattr(g, 'admin_user', user)
+                    return f(*args, **kwargs)
+
+                # 验证员工权限
+                if user.user_type != 5 or user.role != 'STAFF':
+                    return jsonify({
+                        'code': 403,
+                        'message': '无员工权限'
+                    }), 403
+
+                if user.status != 1:
+                    return jsonify({
+                        'code': 403,
+                        'message': '账号已禁用'
+                    }), 403
+
+                # TODO: 这里可以添加更细粒度的权限检查
+                # 例如：检查用户是否拥有特定的权限标识符
+                # if not has_permission(user, permission):
+                #     return jsonify({'code': 403, 'message': f'无{permission}权限'}), 403
+
+                # 将员工信息存储在请求上下文中
+                setattr(g, 'staff_user', user)
+                return f(*args, **kwargs)
+
+            except Exception as e:
+                print(f"权限检查失败: {str(e)}")
+                print(f"错误追踪:\n{traceback.format_exc()}")
+                return jsonify({
+                    'code': 500,
+                    'message': '权限检查失败'
+                }), 500
+
+        return decorated_function
+    return decorator
 
 @app.route('/api/test/db', methods=['GET'])
 def test_db():
@@ -4040,7 +4145,8 @@ def search_users(user_id):
 
 # 获取商品列表（需要管理员登录）
 @app.route('/products', methods=['GET'])
-@admin_required
+#@admin_required
+@check_staff_permission('product.view')
 def get_products(user_id):  # 添加 user_id 参数来接收装饰器传入的值
     try:
         # 获取查询参数
