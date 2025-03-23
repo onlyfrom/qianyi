@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 
 from wxcloudrun import db
 
@@ -256,4 +257,34 @@ class SystemSettings(db.Model):
     setting_value = db.Column(db.Text, nullable=False)
     setting_type = db.Column(db.String(20), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.now)
-    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now) 
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+class CartItem(db.Model):
+    """购物车项目"""
+    __tablename__ = 'cart_items'
+    
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    product_id = db.Column(db.String(100), db.ForeignKey('products.id'), nullable=False)
+    quantity = db.Column(db.Integer, default=1)  # 数量
+    selected = db.Column(db.Boolean, default=True)  # 是否选中
+    specs_info = db.Column(db.Text)  # 规格信息，JSON格式
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+    
+    # 关联关系
+    user = db.relationship('User', backref=db.backref('cart_items', lazy=True))
+    product = db.relationship('Product', backref=db.backref('cart_items', lazy=True))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'product_id': self.product_id,
+            'quantity': self.quantity,
+            'selected': self.selected,
+            'specs_info': json.loads(self.specs_info) if self.specs_info else {},
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'product': self.product.to_dict() if self.product else None
+        } 

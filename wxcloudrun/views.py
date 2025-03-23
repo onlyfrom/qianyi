@@ -78,6 +78,7 @@ def admin_required(f):
             # 获取 token
             auth_header = request.headers.get('Authorization')
             if not auth_header:
+                print('未提供认证令牌')
                 return jsonify({'error': '未提供认证令牌'}), 401
 
             token = auth_header.split(' ')[1] if len(auth_header.split(' ')) > 1 else auth_header
@@ -85,15 +86,27 @@ def admin_required(f):
             # 验证 token
             user_id = verify_token(token)
             if not user_id:
+                print('无效或已过期的认证令牌')
                 return jsonify({'error': '无效或已过期的认证令牌'}), 401
 
             # 检查用户是否是管理员
             user = User.query.get(user_id)
-            if not user or user.user_type != 1 or user.user_type != 5:
+            if not user:
+                print('用户不存在')
+                return jsonify({'error': '用户不存在'}), 404
+                
+            # 验证用户类型和角色
+            if user.user_type != 1 or user.role != 'admin':
+                print(f"当前用户信息: ID={user.id}, 用户名={user.username}, 角色={user.role}, 用户类型={user.user_type}")
+                print('需要管理员权限')
                 return jsonify({'error': '需要管理员权限'}), 403
 
-            if user.status == 0:
+            if user.status != 1:
+                print('账号已被禁用')
                 return jsonify({'error': '账号已被禁用'}), 403
+
+            # 将管理员信息存储在请求上下文中
+            setattr(g, 'admin_user', user)
 
             # 延长 token 有效期
             new_token = extend_token_expiry(token)
@@ -105,9 +118,9 @@ def admin_required(f):
             return f(*args, user_id=user_id, **kwargs)
 
         except Exception as e:
-            print(f'管理员认证过程发生错误: {str(e)}')
-            print(f'错误追踪:\n{traceback.format_exc()}')
-            return jsonify({'error': '认证失败'}), 401
+            print(f"管理员权限验证失败: {str(e)}")
+            print(f"错误追踪:\n{traceback.format_exc()}")
+            return jsonify({'error': '权限验证失败'}), 500
 
     return decorated_function
 
@@ -179,8 +192,9 @@ def check_staff_permission(permission):
                 user_id = kwargs.get('user_id')
                 user = User.query.get(user_id)
                 
+                print(f'当前用户信息: {user.user_type}, {user.role}')
                 # 管理员拥有所有权限
-                if user.user_type == 1:
+                if user.user_type == 1 or user.role == 'admin':
                     # 将用户信息存储在请求上下文中
                     setattr(g, 'admin_user', user)
                     return f(*args, **kwargs)
@@ -1526,15 +1540,25 @@ def import_products(user_id):
                 
                 product_data['description'] = '\n'.join(description_parts)
 
-                product_data['specs_info'] = json.dumps(description_parts)
+                # 创建一个字典来存储规格信息
+                specs_info = {}
+
+                if product_data['material']:
+                    specs_info['yarn'] = product_data['material']
+                if product_data['composition']:
+                    specs_info['composition'] = product_data['composition']
+                if product_data['size']:
+                    specs_info['size'] = product_data['size']
+                if product_data['weight']:
+                    specs_info['weight'] = product_data['weight']
+
+                # 将字典转换为JSON字符串
+                product_data['specs_info'] = json.dumps(specs_info)
                 
                 # 设置默认规格
                 specs = [{'color': '默认', 'stock': 999999}]
                 product_data['specs'] = json.dumps(specs)
-                
-                # 设置默认标签
-                product_data['tags'] = json.dumps([])
-
+         
                 # 设置默认类型
                 product_data['type'] = 5
 
@@ -1552,11 +1576,10 @@ def import_products(user_id):
                     id=product_data['id'],
                     name=product_data['name'],
                     description=product_data['description'],
-                    price=product_data['price'],
+                    price_b=product_data['price'],
                     specs=product_data['specs'],
                     specs_info=product_data['specs_info'],
                     type=product_data['type'],
-                    tags=product_data['tags'],
                     created_at=product_data['created_at']
                 )
                 db.session.add(new_product)
@@ -4177,15 +4200,18 @@ def get_products(user_id):  # 添加 user_id 参数来接收装饰器传入的�
         # 格式化返回数据
         products = []
         for product in paginated_products.items:
+            # 安全地获取基础价格
+            base_price = float(product.price) if product.price is not None else 0
+            
             products.append({
                 'id': product.id,
                 'name': product.name,
                 'description': product.description,
-                'price': float(product.price) if product.price else 0,
-                'price_b': float(product.price_b) if product.price_b else float(product.price),
-                'price_c': float(product.price_c) if product.price_c else float(product.price),
-                'price_d': float(product.price_d) if product.price_d else float(product.price),
-                'cost_price': float(product.cost_price) if product.cost_price else float(product.price),
+                'price': base_price,
+                'price_b': float(product.price_b) if product.price_b is not None else base_price,
+                'price_c': float(product.price_c) if product.price_c is not None else base_price,
+                'price_d': float(product.price_d) if product.price_d is not None else base_price,
+                'cost_price': float(product.cost_price) if product.cost_price is not None else base_price,
                 'type': product.type,
                 'created_at': product.created_at.isoformat() if product.created_at else None,
                 'specs_info': json.loads(product.specs_info) if product.specs_info else {},
@@ -5965,4 +5991,256 @@ def bind_push_order_guest():
         return jsonify({
             'code': 500,
             'message': '绑定失败'
+        }), 500
+
+# 添加商品到购物车
+@app.route('/cart/add', methods=['POST'])
+@login_required
+def add_to_cart(user_id):
+    try:
+        data = request.get_json()
+        if not data or 'product_id' not in data:
+            return jsonify({
+                'code': 400,
+                'message': '缺少必要参数'
+            }), 400
+            
+        product_id = data['product_id']
+        quantity = data.get('quantity', 1)
+        specs_info = data.get('specs_info', {})
+        
+        # 检查商品是否存在
+        product = Product.query.get(product_id)
+        if not product:
+            return jsonify({
+                'code': 404,
+                'message': '商品不存在'
+            }), 404
+            
+        # 检查是否已在购物车中
+        cart_item = CartItem.query.filter_by(
+            user_id=user_id,
+            product_id=product_id,
+            specs_info=json.dumps(specs_info) if specs_info else None
+        ).first()
+        
+        if cart_item:
+            # 更新数量
+            cart_item.quantity += quantity
+            cart_item.updated_at = datetime.now()
+        else:
+            # 创建新的购物车项
+            cart_item = CartItem(
+                user_id=user_id,
+                product_id=product_id,
+                quantity=quantity,
+                specs_info=json.dumps(specs_info) if specs_info else None
+            )
+            db.session.add(cart_item)
+            
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"保存购物车失败: {str(e)}")
+            return jsonify({
+                'code': 500,
+                'message': '添加到购物车失败'
+            }), 500
+            
+        return jsonify({
+            'code': 200,
+            'message': '添加成功',
+            'data': cart_item.to_dict()
+        })
+        
+    except Exception as e:
+        print(f"添加购物车失败: {str(e)}")
+        print(f"错误追踪:\n{traceback.format_exc()}")
+        return jsonify({
+            'code': 500,
+            'message': '系统错误'
+        }), 500
+
+# 获取购物车列表
+@app.route('/cart', methods=['GET'])
+@login_required
+def get_cart_items(user_id):
+    try:
+        cart_items = CartItem.query.filter_by(user_id=user_id).all()
+        return jsonify({
+            'code': 200,
+            'message': '获取成功',
+            'data': [item.to_dict() for item in cart_items]
+        })
+        
+    except Exception as e:
+        print(f"获取购物车失败: {str(e)}")
+        print(f"错误追踪:\n{traceback.format_exc()}")
+        return jsonify({
+            'code': 500,
+            'message': '系统错误'
+        }), 500
+
+# 更新购物车商品数量
+@app.route('/cart/<int:item_id>', methods=['PUT'])
+@login_required
+def update_cart_item(user_id, item_id):
+    try:
+        data = request.get_json()
+        if not data or 'quantity' not in data:
+            return jsonify({
+                'code': 400,
+                'message': '缺少必要参数'
+            }), 400
+            
+        quantity = data['quantity']
+        selected = data.get('selected', None)
+        
+        # 检查购物车项是否存在
+        cart_item = CartItem.query.filter_by(id=item_id, user_id=user_id).first()
+        if not cart_item:
+            return jsonify({
+                'code': 404,
+                'message': '购物车项不存在'
+            }), 404
+            
+        # 更新数量
+        cart_item.quantity = quantity
+        if selected is not None:
+            cart_item.selected = selected
+            
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"更新购物车失败: {str(e)}")
+            return jsonify({
+                'code': 500,
+                'message': '更新失败'
+            }), 500
+            
+        return jsonify({
+            'code': 200,
+            'message': '更新成功',
+            'data': cart_item.to_dict()
+        })
+        
+    except Exception as e:
+        print(f"更新购物车失败: {str(e)}")
+        print(f"错误追踪:\n{traceback.format_exc()}")
+        return jsonify({
+            'code': 500,
+            'message': '系统错误'
+        }), 500
+
+# 删除购物车商品
+@app.route('/cart/<int:item_id>', methods=['DELETE'])
+@login_required
+def delete_cart_item(user_id, item_id):
+    try:
+        # 检查购物车项是否存在
+        cart_item = CartItem.query.filter_by(id=item_id, user_id=user_id).first()
+        if not cart_item:
+            return jsonify({
+                'code': 404,
+                'message': '购物车项不存在'
+            }), 404
+            
+        try:
+            db.session.delete(cart_item)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"删除购物车项失败: {str(e)}")
+            return jsonify({
+                'code': 500,
+                'message': '删除失败'
+            }), 500
+            
+        return jsonify({
+            'code': 200,
+            'message': '删除成功'
+        })
+        
+    except Exception as e:
+        print(f"删除购物车项失败: {str(e)}")
+        print(f"错误追踪:\n{traceback.format_exc()}")
+        return jsonify({
+            'code': 500,
+            'message': '系统错误'
+        }), 500
+
+# 清空购物车
+@app.route('/cart/clear', methods=['POST'])
+@login_required
+def clear_cart(user_id):
+    try:
+        try:
+            CartItem.query.filter_by(user_id=user_id).delete()
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"清空购物车失败: {str(e)}")
+            return jsonify({
+                'code': 500,
+                'message': '清空失败'
+            }), 500
+            
+        return jsonify({
+            'code': 200,
+            'message': '清空成功'
+        })
+        
+    except Exception as e:
+        print(f"清空购物车失败: {str(e)}")
+        print(f"错误追踪:\n{traceback.format_exc()}")
+        return jsonify({
+            'code': 500,
+            'message': '系统错误'
+        }), 500
+
+# 选择/取消选择购物车商品
+@app.route('/cart/select', methods=['POST'])
+@login_required
+def select_cart_items(user_id):
+    try:
+        data = request.get_json()
+        if not data or 'item_ids' not in data or 'selected' not in data:
+            return jsonify({
+                'code': 400,
+                'message': '缺少必要参数'
+            }), 400
+            
+        item_ids = data['item_ids']
+        selected = data['selected']
+        
+        try:
+            CartItem.query.filter(
+                CartItem.user_id == user_id,
+                CartItem.id.in_(item_ids)
+            ).update({
+                CartItem.selected: selected
+            }, synchronize_session=False)
+            
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"更新购物车选择状态失败: {str(e)}")
+            return jsonify({
+                'code': 500,
+                'message': '更新失败'
+            }), 500
+            
+        return jsonify({
+            'code': 200,
+            'message': '更新成功'
+        })
+        
+    except Exception as e:
+        print(f"更新购物车选择状态失败: {str(e)}")
+        print(f"错误追踪:\n{traceback.format_exc()}")
+        return jsonify({
+            'code': 500,
+            'message': '系统错误'
         }), 500
