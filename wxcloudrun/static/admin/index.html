@@ -73,8 +73,8 @@
             data() {
                 return {
                     loginForm: {
-                        username: '',
-                        password: ''
+                        username: 'qy00001',
+                        password: 'qy123456'
                     },
                     rules: {
                         username: [
@@ -108,11 +108,12 @@
                                 // 保存用户信息
                                 localStorage.setItem('userInfo', JSON.stringify(response.data.user))
                                 // 检查用户类型，只有管理员可以登录后台
-                                if (response.data.user.user_type === 1) {
+                                console.log('用户类型:', response.data.user.user_type)
+                                //if (response.data.user.user_type === 1 || response.data.user.user_type === 5) {
                                     window.location.href = '/admin/dashboard.html'
-                                } else {
-                                    ElementPlus.ElMessage.error('您没有管理员权限')
-                                }
+                                //} else {
+                                //     ElementPlus.ElMessage.error('您没有管理员权限')
+                                //}
                             } else {
                                 ElementPlus.ElMessage.error(response.data.error || '登录失败')
                             }

@@ -543,7 +543,12 @@ def wechat_login():
                     'phone': user.phone,
                     'address': user.address,
                     'contact': user.contact,
-                    'user_type': user.user_type
+                    'user_type': user.user_type,
+                    'status': user.status,
+                    'created_at': user.created_at,
+                    'last_login': user.last_login,
+                    'role': user.role,                    
+
                 }
             }
         })
@@ -772,7 +777,10 @@ def login():
                 'phone': user.phone,
                 'address': user.address,
                 'contact': user.contact,
-                'user_type': user.user_type
+                'user_type': user.user_type,
+                'status': user.status,
+                'role': user.role,
+
             }
         }
         
@@ -943,17 +951,23 @@ def delete_product(user_id, product_id):
 
 # 获取商品详情
 @app.route('/products/<product_id>', methods=['GET'])
-def get_product_detail(product_id):
+@check_staff_permission('product.view')
+def get_product_detail(user_id, product_id):
     try:
         product = Product.query.get(product_id)
         if not product:
             return jsonify({'error': '商品不存在'}), 404
 
+        base_price = float(product.price) if product.price is not None else 0
         product_detail = {
             'id': product.id,
             'name': product.name,
             'description': product.description,
-            'price': float(product.price),
+            'price': base_price,
+            'price_b': float(product.price_b) if product.price_b is not None else base_price,
+            'price_c': float(product.price_c) if product.price_c is not None else base_price,
+            'price_d': float(product.price_d) if product.price_d is not None else base_price,
+            'cost_price': float(product.cost_price) if product.cost_price is not None else base_price,
             'specs': json.loads(product.specs) if product.specs else [],
             'images': json.loads(product.images) if product.images else [],
             'type': product.type,
@@ -3546,12 +3560,79 @@ def generate_qrcode_wx(page, scene):
             }
         }), 500
 
+@app.route('/get_access_token', methods=['GET'])
+def get_access_token_api():
+    """获取小程序 access_token"""
+    try:        
+        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
+        response = requests.get(url)    
+        if response.status_code == 200:
+            data = response.json()
+            print('\n接口响应数据:')
+            # 处理响应数据时隐藏实际的access_token
+            safe_data = data.copy()
+            if 'access_token' in safe_data:
+                safe_data['access_token'] = safe_data['access_token'][:10] + '...'
+            print(json.dumps(safe_data, ensure_ascii=False, indent=2))
+            
+            if 'access_token' in data:
+                print('\n成功获取access_token')
+                return jsonify({
+                    'code': 200,
+                    'message': '获取access_token成功',
+                    'data': data['access_token']
+                })
+                
+        print('\n获取access_token失败')
+        print('错误响应:')
+        print(response.text)
+        return jsonify({
+            'code': 500,
+            'message': '获取access_token失败',
+            'error': response.text
+        })
+        
+    except Exception as e:
+        print('\n获取access_token时发生错误:')
+        print(f'- 错误类型: {type(e).__name__}')
+        print(f'- 错误信息: {str(e)}')
+        print(f'- 错误追踪:\n{traceback.format_exc()}')
+        return jsonify({
+            'code': 500,
+            'message': '获取access_token失败',
+            'error': str(e)
+        })
+
+@app.route('/get_uploadfileUrl', methods=['POST'])
+def get_uploadfileUrl():
+    try:
+        data = request.json
+        access_token = get_access_token()
+        print(f'获取access_token: {access_token}')
+        env = 'prod-9gd4jllic76d4842'
+        path = data.get('path')
+        
+        url = f'https://api.weixin.qq.com/tcb/uploadfile?access_token={access_token}'
+        params = {
+            'env': env,
+            'path': path
+        }   
+        response = requests.post(url, json=params)
+        print(f'获取上传文件URL响应: {response.json()}')
+        return response.json()
+    except Exception as e:
+        return jsonify({
+            'code': 500,
+            'message': '获取上传文件URL失败',
+            'error': str(e)
+        })
 
 def get_access_token():
     """获取小程序 access_token"""
     try:        
         url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
         response = requests.get(url)    
+        print(f'获取access_token响应: {response.json()}')
         if response.status_code == 200:
             data = response.json()
             print('\n接口响应数据:')
@@ -6244,3 +6325,40 @@ def select_cart_items(user_id):
             'code': 500,
             'message': '系统错误'
         }), 500
+
+@app.route('/', methods=['GET', 'POST'])
+def upload_handler():
+    # 添加CORS头
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        return response
+
+    # 获取上传路径
+    path = request.args.get('path', 'web/test')
+    
+    try:
+        # 获取access token
+        access_token = get_access_token()
+        
+        # 获取上传链接
+        upload_url = f"https://api.weixin.qq.com/tcb/uploadfile?access_token={access_token}"
+        data = {
+            "env": "prod-9ed41111c76d4842",
+            "path": path
+        }
+        response = requests.post(upload_url, json=data)
+        result = response.json()
+        
+        if result.get('errcode') != 0:
+            return jsonify({"error": "获取上传链接失败"}), 500
+            
+        # 添加CORS头
+        response = jsonify(result)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

@@ -305,13 +305,13 @@
                                 <el-table-column label="图片" width="100">
                                     <template #default="scope">
                                         <el-image v-if="scope.row.images && scope.row.images.length > 0"
-                                            style="width: 50px; height: 50px" :src="scope.row.images[0]"
+                                            style="width: 50px; height: 50px" :src="handleImageUrl(scope.row.images[0])"
                                             :preview-src-list="scope.row.images" fit="cover">
                                         </el-image>
                                     </template>
                                 </el-table-column>
                                 <el-table-column prop="name" label="商品名称"></el-table-column>
-                                <el-table-column prop="price" label="价格" width="80">
+                                <el-table-column prop="price" label="建议零售价" width="80">
                                     <template #default="scope">
                                         {{ scope.row.price === 0 ? '讯价' : '¥' + scope.row.price }}
                                     </template>
@@ -352,16 +352,6 @@
                                         </el-tag>
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="tags" label="标签" width="120">
-                                    <template #default="scope">
-                                        <el-tag v-for="tag in scope.row.tags" :key="tag" size="small" type="info"
-                                            style="margin: 2px">
-                                            {{ tag }}
-                                        </el-tag>
-                                    </template>
-                                </el-table-column>
-                                
-
                                 <el-table-column prop="created_at" label="创建日期" width="180">
                                     <template #default="scope">
                                         {{ formatDate(scope.row.created_at) }}
@@ -401,43 +391,25 @@
                                         <el-input v-model="productForm.name" placeholder="请输入商品名称"></el-input>
                                     </el-form-item>
 
-                                    <el-form-item label="价格设置">
-                                        <el-row :gutter="20">
-                                            <el-col :span="8">
-                                                <el-form-item label="商品价格" prop="price" label-width="80px">
-                                                    <el-input-number v-model="productForm.price" :precision="2" :step="1"
-                                                        :min="0" style="width: 100%"></el-input-number>
-                                                </el-form-item>
-                                            </el-col>
-                                            <el-col :span="8">
-                                                <el-form-item label="成本价" prop="cost_price" label-width="80px">
-                                                    <el-input-number v-model="productForm.cost_price" :precision="2" :step="1"
-                                                        :min="0" style="width: 100%"></el-input-number>
-                                                </el-form-item>
-                                            </el-col>
-                                            
-                                        </el-row>
-                                        <el-row :gutter="20">
-                                            <el-col :span="8">
-                                                <el-form-item label="价格A" prop="price_b" label-width="80px">
-                                                    <el-input-number v-model="productForm.price_b" :precision="2" :step="1"
-                                                        :min="0" style="width: 100%"></el-input-number>
-                                                </el-form-item>
-                                            </el-col>
-                                            <el-col :span="8">
-                                                <el-form-item label="价格B" prop="price_c" label-width="80px">
-                                                    <el-input-number v-model="productForm.price_c" :precision="2" :step="1"
-                                                        :min="0" style="width: 100%"></el-input-number>
-                                                </el-form-item>
-                                            </el-col>
-                                            <el-col :span="8">
-                                                <el-form-item label="价格C" prop="price_d" label-width="80px">
-                                                    <el-input-number v-model="productForm.price_d" :precision="2" :step="1"
-                                                        :min="0" style="width: 100%"></el-input-number>
-                                                </el-form-item>
-                                            </el-col>
-                                        </el-row>
+                                    <el-form-item label="建议零售价" prop="price">
+                                        <el-input-number v-model="productForm.price" :precision="2" :step="0.1" :min="0"></el-input-number>
                                     </el-form-item>
+
+                                    <!-- 只有管理员(user_type=1)才显示这些价格设置 -->
+                                    <template v-if="userInfo.user_type === 1">
+                                        <el-form-item label="A类价格" prop="price_b">
+                                            <el-input-number v-model="productForm.price_b" :precision="2" :step="0.1" :min="0"></el-input-number>
+                                        </el-form-item>
+                                        <el-form-item label="B类价格" prop="price_c">
+                                            <el-input-number v-model="productForm.price_c" :precision="2" :step="0.1" :min="0"></el-input-number>
+                                        </el-form-item>
+                                        <el-form-item label="C类价格" prop="price_d">
+                                            <el-input-number v-model="productForm.price_d" :precision="2" :step="0.1" :min="0"></el-input-number>
+                                        </el-form-item>
+                                        <el-form-item label="成本价" prop="cost_price">
+                                            <el-input-number v-model="productForm.cost_price" :precision="2" :step="0.1" :min="0"></el-input-number>
+                                        </el-form-item>
+                                    </template>
 
                                     <el-form-item label="款式" prop="style">
                                         <el-select v-model="productForm.style" placeholder="请选择款式">
@@ -484,16 +456,16 @@
                                     </el-form-item>
 
                                     <el-form-item label="商品图片" prop="images">
-                                        <el-upload ref="uploadRef" action="/upload" list-type="picture-card" :limit="9"
-                                            :auto-upload="false" :multiple="true" :headers="uploadHeaders"
-                                            :on-success="handleUploadSuccess" :on-remove="handleRemove"
-                                            :on-error="handleUploadError" :on-exceed="handleExceed"
-                                            :data="{product_id: productForm.id}" :before-upload="handleBeforeUpload"
-                                            :file-list="fileList" @change="handleFileChange">
-                                            <el-icon>
-                                                <Plus />
-                                            </el-icon>
+                                        <el-upload 
+                                            ref="uploadRef"
+                                            :auto-upload="true"
+                                            :before-upload="uploadSingleFile"
+                                            :show-file-list="true"
+                                            list-type="picture-card"
+                                            multiple>
+                                            <el-icon><Plus /></el-icon>
                                         </el-upload>
+                                        <el-button type="primary" @click="submitUpload">开始上传</el-button>
                                     </el-form-item>
 
                                     <el-form-item label="商品描述" prop="description">
@@ -1429,6 +1401,7 @@
                         { label: '三角巾', value: 4 },
                         { label: '其他', value: 5 }
                     ],
+                    tempUploadData:[],
                     productForm: {
                         id: '',
                         name: '',
@@ -1443,7 +1416,6 @@
                             { color: '灰色', stock: 0 },
                             { color: '黑色', stock: 0 }
                         ],
-                        tags: ['羊毛', '浣熊'],
                         images: [],
                         description: '暂时没有',
                         stock: 0,
@@ -1519,7 +1491,7 @@
                             { max: 500, message: '成分长度不能超过500个字符', trigger: 'blur' }
                         ]
                     },
-                    presetTags: ['新品', '热销', '促销', '限量', '预售', '特价'],
+                    presetTags: [],
                     selectedPresetTags: [],
                     presetColors: ['黑色', '白色', '灰色', '红色', '蓝色', '粉色', '米色', '卡其色', '藏青色', '酒红色'],
                     selectedPresetColors: [],
@@ -1663,6 +1635,13 @@
                     },
                     pushDetailVisible: false,
                     currentPushOrder: null,
+                    uploadUrl: '', // 存储上传URL
+                    uploadKey: '', // 存储cos key
+                    uploadSignature: '', // 存储cos security token
+                    uploadxcossecuritytoken: '', // 存储cos key time
+                    uploadFileId: '', // 存储file id
+                    cloudBaseUrl: 'https://7072-prod-9ed41111c76d4842-1348936510.cos.ap-shanghai.myqcloud.com', // 替换为您的云存储域名
+                    uploadProgress: 0, // 上传进度
                 }
             },
             computed: {
@@ -1728,6 +1707,39 @@
                         this.productLoading = false;
                     }
                 },
+                async beforeUpload(file){
+                    console.log("步骤1")
+                    const  data  = await axios('/get_uploadfileUrl', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({
+                                        path: `products/${this.productForm.name}/${file.name}`
+                                    })
+                                });
+
+                                console.log('获取到上传链接:', data);
+                        if (!data.url) {
+                            console.error("获取上传 URL 失败");
+                            return false;
+                        }
+
+
+                        // 2. 直接上传到腾讯云 COS
+                        const uploadResponse = await fetch(data.url, {
+                            method: "PUT",
+                            body: file,
+                        });
+
+                        if (uploadResponse.ok) {
+                            console.log("上传成功:", data.fileKey);
+                            return false; // 阻止 `el-upload` 默认行为
+                        } else {
+                            console.error("上传失败:", uploadResponse);
+                            return false;
+                        }
+                },
                 showAddProductDialog() {
                     this.dialogType = 'add'
                     this.productForm = {
@@ -1744,7 +1756,6 @@
                             { color: '灰色', stock: 0 },
                             { color: '黑色', stock: 0 }
                         ],
-                        tags: ['羊毛', '浣熊'],
                         images: [],
                         description: '暂时没有',
                         stock: 0,
@@ -1761,10 +1772,9 @@
                         this.$refs.uploadRef.clearFiles()
                     }
                     this.dialogVisible = true
-                    this.selectedPresetTags = [];
-                    this.customTagInput = [];
-                    this.customTagOptions = [];
-                    this.productForm.tags = ['羊毛', '浣熊'];
+                    this.selectedPresetColors = [];
+                    this.customColorInput = [];
+                    this.customColorOptions = [];
                 },
 
                 showCreateDeliveryDialog() {
@@ -1896,24 +1906,63 @@
                         .map(tag => tag.trim())
                         .filter(tag => tag !== '');
                 },
+                
 
-                handleBeforeUpload(file) {
-                    this.totalFiles++;
-                    console.log('准备上传文件:', file);
-                    return true;
+                // 添加图片压缩方法
+                async compressImage(file) {
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.readAsDataURL(file);
+                        reader.onload = (event) => {
+                            const img = new Image();
+                            img.src = event.target.result;
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                const ctx = canvas.getContext('2d');
+                                
+                                // 计算压缩后的尺寸
+                                let width = img.width;
+                                let height = img.height;
+                                const maxSize = 1920; // 最大尺寸
+                                
+                                if (width > height && width > maxSize) {
+                                    height = Math.round((height * maxSize) / width);
+                                    width = maxSize;
+                                } else if (height > maxSize) {
+                                    width = Math.round((width * maxSize) / height);
+                                    height = maxSize;
+                                }
+                                
+                                canvas.width = width;
+                                canvas.height = height;
+                                
+                                // 绘制图片
+                                ctx.drawImage(img, 0, 0, width, height);
+                                
+                                // 转换为Blob
+                                canvas.toBlob((blob) => {
+                                    // 创建新的File对象
+                                    const compressedFile = new File([blob], file.name, {
+                                        type: 'image/jpeg',
+                                        lastModified: Date.now()
+                                    });
+                                    resolve(compressedFile);
+                                }, 'image/jpeg', 0.7); // 0.7是压缩质量
+                            };
+                            img.onerror = reject;
+                        };
+                        reader.onerror = reject;
+                    });
                 },
+
                 handleFileChange(file, fileList) {
-                    // 如果是新添加的文件,则触发上传
-                    if (file.raw && this.dialogType === 'add') {
-                        console.log('新添加的文件:', file);
-                    }
+                    this.fileList = fileList;
                 },
 
-                handleExceed(files, uploadFiles) {
-                    ElementPlus.ElMessage.warning(
-                        `最多只能上传 9 张图片，本次选择了 ${files.length} 张，共选择了 ${files.length + uploadFiles.length} 张`
-                    );
+                handleExceed(files, fileList) {
+                    this.$message.warning(`最多只能上传 9 张图片`);
                 },
+
                 checkUploadComplete() {
                     console.log('this.uploadedFiles:', this.uploadedFiles);
                     console.log('this.totalFiles:', this.totalFiles);
@@ -1928,44 +1977,20 @@
                 },
 
                 handleUploadSuccess(response, file) {
-                    console.log('response:', response);
-                    if (response.url) {
-                        this.uploadedFiles++;
-                        this.productForm.images.push(response.url);
-                        console.log('文件上传成功:', response.url);
+                    if (response.code === 0) {
+                        this.$message.success('上传成功');
+                    } else {
+                        this.$message.error(response.message || '上传失败');
                     }
-                    this.checkUploadComplete();
                 },
 
-                handleUploadError(error, file) {
+                handleUploadError(error) {
                     console.error('上传失败:', error);
-                    ElementPlus.ElMessage.error(`文件 ${file.name} 上传失败`);
+                    this.$message.error('上传失败');
                 },
 
-                handleRemove(file) {
-                    try {
-                        const filename = file.url.split('/').pop();
-                        const response = axios.delete(`/upload/${filename}`);
-
-                        if (response.status === 200) {
-                            // 从 productForm.images 中移除图片 URL
-                            if (file.url && this.productForm.images) {
-                                const index = this.productForm.images.indexOf(file.url);
-                                if (index !== -1) {
-                                    this.productForm.images.splice(index, 1);
-                                }
-                            }
-                            ElementPlus.ElMessage.success('图片删除成功');
-                            console.log('图片删除成功:', filename);
-                        }
-                    } catch (error) {
-                        console.error('删除图片失败:', error);
-                        ElementPlus.ElMessage.error(
-                            error.response?.data?.error || error.message || '删除图片失败，请重试'
-                        );
-                        // 删除失败时，阻止移除预览
-                        return false;
-                    }
+                handleRemove(file, fileList) {
+                    this.fileList = fileList;
                 },
 
                 handlePictureCardPreview(file) {
@@ -1989,7 +2014,6 @@
                             { color: '灰色', stock: 0 },
                             { color: '黑色', stock: 0 }
                         ],
-                        tags: ['羊毛', '浣熊'],
                         images: [],
                         description: '暂时没有',
                         stock: 0,
@@ -2008,7 +2032,6 @@
                     }
                     
                     // 重置其他相关状态
-                    this.selectedPresetTags = [];
                     this.selectedPresetColors = [];
                     this.customColorInput = [];
                     this.customColorOptions = [];
@@ -2025,6 +2048,10 @@
                             color: spec.color,
                             stock: parseInt(spec.stock) || 0
                         }));
+
+                        console.log("图片数量 ",this.fileList.length)
+
+                        this.submitForm();
 
                         const submitData = {
                             id: this.productForm.id,
@@ -2059,10 +2086,10 @@
                             ElementPlus.ElMessage.success(this.dialogType === 'add' ? '添加成功' : '更新成功');
 
                             // 如果有待上传的图片，处理上传
-                            const uploadComponent = this.$refs.uploadRef;
-                            this.totalFiles = 0;
-                            this.uploadedFiles = 0;
-                            uploadComponent.submit();
+                            //const uploadComponent = this.$refs.uploadRef;
+                            //this.totalFiles = 0;
+                            //this.uploadedFiles = 0;
+                            //uploadComponent.submit();
                             
 
                             this.dialogVisible = false;
@@ -2381,7 +2408,7 @@
                             localStorage.setItem('userInfo', JSON.stringify(response.data.user));
 
                             // 检查是否是管理员
-                            if (this.userInfo.user_type !== 1) {
+                            if (this.userInfo.user_type != 1 && this.userInfo.user_type != 5) {
                                 ElementPlus.ElMessage.error('您没有管理员权限');
                                 window.location.href = '/admin/index.html';
                                 return;
@@ -2987,11 +3014,170 @@
                         return false;
                     }
                     return true;
+                },                
+             
+                // 处理图片链接
+                handleImageUrl(url) {
+                    if (!url) return '';
+                    console.log('url:', url);
+                    if (url.startsWith('cloud://')) {
+                        // 移除 cloud:// 前缀和环境ID部分
+                        const cloudPath = url.replace(/^cloud:\/\/[^/]+\//, '');
+                        console.log('cloudPath:', `${this.cloudBaseUrl}/${cloudPath}`);
+                        return `${this.cloudBaseUrl}/${cloudPath}`;
+                    }
+                    return url;
                 },
-                
-                // 修改上传前的钩子方法
-                beforeUpload(file) {
-                    return this.checkFileSize(file);
+
+                // 修改文件列表的显示方法
+                handleFilePreview(file) {
+                    const url = this.handleImageUrl(file.url);
+                    window.open(url);
+                },
+                // 处理文件选择前的验证
+                async handleBeforeUpload(file) {
+                    console.log('handleBeforeUpload被触发了:', file);
+                    // 只进行验证，不上传
+                    const isImage = file.type.startsWith('image/');
+                    const isLt2M = file.size / 1024 / 1024 < 2;
+                    
+                    if (!isImage) {
+                        this.$message.error('只能上传图片文件!');
+                        return false;
+                    }
+                    if (!isLt2M) {
+                        this.$message.error('图片大小不能超过 2MB!');
+                        return false;
+                    }
+                    console.log('文件验证通过');
+                    return true;
+                },
+
+                // 处理文件变化
+                handleFileChange(file, fileList) {
+                    console.log('handleFileChange被触发了:', file, fileList);
+                    this.fileList = fileList;
+                },
+
+                // 处理超出限制
+                handleExceed(files, fileList) {
+                    this.$message.warning(`最多只能上传 9 张图片`);
+                },
+
+                // 处理移除文件
+                handleRemove(file, fileList) {
+                    this.fileList = fileList;
+                },
+
+                // 处理上传错误
+                handleUploadError(err) {
+                    console.error('上传失败:', err);
+                    this.$message.error('上传失败');
+                },
+
+                // 处理上传成功
+                handleUploadSuccess(response, file) {
+                    if (response.code === 0) {
+                        this.$message.success('上传成功');
+                    } else {
+                        this.$message.error(response.message || '上传失败');
+                    }
+                },
+
+                // 上传单个文件
+                async uploadSingleFile(file) {
+                    try {
+                        // 如果需要压缩
+                        console.log('上传的文件:', file);
+                        let processedFile = file;
+                        if (file.size > 1024 * 1024) {
+                            processedFile = await this.compressImage(file);
+                        }
+                        const uploadResponse = await axios.post('/get_uploadfileUrl', {
+                            path: `products/${this.productForm.name}/${file.name}`
+                        });                 
+                        const uploadData = uploadResponse.data;
+                        console.log('获取到上传链接:', uploadData);
+                        if (uploadData.errcode !== 0) {
+                            throw new Error('获取上传链接失败');
+                        }
+                        // 3. 构建上传数据
+                        const formData = new FormData();
+                        formData.append('key', uploadData.key);
+                        formData.append('Signature', uploadData.authorization);
+                        formData.append('x-cos-security-token', uploadData.token);
+                        formData.append('x-cos-meta-fileid', uploadData.cos_file_id);
+                        formData.append('file', processedFile);
+
+                        // 4. 上传到腾讯云
+                        const xhr = new XMLHttpRequest();
+                        await new Promise((resolve, reject) => {
+                            xhr.upload.onprogress = (event) => {
+                                if (event.lengthComputable) {
+                                    const percent = Math.round((event.loaded / event.total) * 100);
+                                    this.uploadProgress = percent;
+                                }
+                            };
+
+                            xhr.onload = () => {
+                                if (xhr.status === 204) {
+                                    resolve(uploadData.cos_file_id);
+                                } else {
+                                    reject(new Error('上传失败'));
+                                }
+                            };
+
+                            xhr.onerror = () => reject(new Error('网络错误'));
+                            xhr.open('POST', uploadData.url);
+                            xhr.send(formData);
+                        });
+
+                        return uploadData.cos_file_id;
+                    } catch (error) {
+                        console.error('上传失败:', error);
+                        throw error;
+                    }
+                },
+
+                // 提交表单时上传所有文件
+                async submitForm() {
+                    try {
+                        // 如果有文件需要上传
+                        console.log('提交表单:', this.fileList);
+                        if (this.fileList.length > 0) {
+                            const uploadPromises = this.fileList
+                                .filter(file => !file.url) // 只上传新添加的文件
+                                .map(file => this.uploadSingleFile(file.raw));
+
+                            // 等待所有文件上传完成
+                            const uploadedFileIds = await Promise.all(uploadPromises);
+                            
+                            // 合并已有的图片和新上传的图片
+                            const existingImages = this.fileList
+                                .filter(file => file.url)
+                                .map(file => file.url);
+                            
+                            this.productForm.images = [...existingImages, ...uploadedFileIds];
+                        }
+
+                        // 继续提交表单的其他数据
+                        // ... 其他表单提交逻辑 ...
+                        
+                    } catch (error) {
+                        this.$message.error('上传失败：' + error.message);
+                    }
+                },
+                // 处理文件移除
+                handleRemove(file) {
+                    const index = this.fileList.indexOf(file);
+                    if (index !== -1) {
+                        this.fileList.splice(index, 1);
+                    }
+                },
+
+                // 处理超出限制
+                handleExceed() {
+                    this.$message.warning('最多只能上传9张图片');
                 },
             }
         })
