@@ -7,6 +7,7 @@ class UserRole:
     ADMIN = 'admin'  # 管理员
     STAFF = 'staff'  # 员工
     CUSTOMER = 'customer'  # 客户
+    STAFF_PRODUCT_EDIT = 'staff_product_edit'  # 员工产品编辑
 
 class CustomerType:
     TYPE_A = 'A'  # A类客户

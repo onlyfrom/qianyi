@@ -24,6 +24,7 @@ import random
 from sqlalchemy import inspect, text, func, desc, distinct, case, Text
 from sqlalchemy.sql import literal, literal_column
 from wxcloudrun.response import *
+from wxcloudrun.middleware import staff_required ,check_staff_permission
 #from .decorators import admin_required, permission_required
 
 WECHAT_APPID = "wxa17a5479891750b3"
@@ -89,7 +90,7 @@ def admin_required(f):
 
             # 检查用户是否是管理员
             user = User.query.get(user_id)
-            if not user or user.user_type != 1:
+            if not user or user.user_type != 1 or user.user_type != 5:
                 return jsonify({'error': '需要管理员权限'}), 403
 
             if user.status == 0:
@@ -671,7 +672,7 @@ def login():
 
 # 新增或更新商品（需要登录）
 @app.route('/products', methods=['POST'])
-@admin_required
+@check_staff_permission('product.edit')
 def add_or_update_product(user_id):
     try:
         data = request.get_json()
@@ -1373,23 +1374,33 @@ def import_products(user_id):
         for index, row in df.iterrows():
             try:
                 print(f'\n处理第 {index + 2} 行数据...')
-                # 验证必要字段
-                if pd.isna(row['款号']) or pd.isna(row['商品名称']):
-                    error_msg = f'第 {index + 2} 行：款号或商品名称不能为空'
+                
+                # 验证商品名称（必填）
+                if pd.isna(row['商品名称']):
+                    error_msg = f'第 {index + 2} 行：商品名称不能为空'
                     print(f'错误: {error_msg}')
                     errors.append(error_msg)
                     continue
+                
+                # 生成商品ID（使用时间戳+随机数）
+                product_id = f"P{int(time.time())}{random.randint(1000, 9999)}"
                 
                 # 打印行数据用于调试    
                 print(f'行数据: {dict(row)}')
                     
                 try:
+                    # 构建商品数据，使用默认值处理空值
                     product_data = {
-                        'id': str(row['款号']).strip(),
+                        'id': product_id,
                         'name': str(row['商品名称']).strip(),
-                        'price': float(row['价格']) if not pd.isna(row['价格']) else 0,
-                        'description': str(row['描述']).strip() if not pd.isna(row['描述']) else '',
-                        'type': int(float(row['款式'])) if not pd.isna(row['款式']) else 1
+                        'material': str(row['材质']).strip() if not pd.isna(row.get('材质', '')) else '',  # 材质
+                        'composition': str(row['成份']).strip() if not pd.isna(row.get('成份', '')) else '',  # 成份
+                        'size': str(row['尺寸']).strip() if not pd.isna(row.get('尺寸', '')) else '',  # 尺寸
+                        'weight': str(row['克重']).strip() if not pd.isna(row.get('克重', '')) else '',  # 克重
+                        'price': float(row['A类售价']) if not pd.isna(row.get('A类售价', '')) else 0,  # A类售价
+                        'description': str(row['备注']).strip() if not pd.isna(row.get('备注', '')) else '',  # 备注
+                        'type': 1,  # 默认类型
+                        'created_at': datetime.now().isoformat()
                     }
                 except ValueError as e:
                     error_msg = f'第 {index + 2} 行：数据格式错误 - {str(e)}'
@@ -1397,75 +1408,54 @@ def import_products(user_id):
                     errors.append(error_msg)
                     continue
                 
-                # 处理颜色和库存
-                colors = str(row['颜色']).split(',') if not pd.isna(row['颜色']) else []
-                stocks = str(row['库存']).split(',') if not pd.isna(row['库存']) else []
-                print(f'解析的颜色: {colors}')
-                print(f'解析的库存: {stocks}')
+                # 构建商品描述
+                description_parts = []
+                if product_data['material']:
+                    description_parts.append(f"yarn：{product_data['material']}")
+                if product_data['composition']:
+                    description_parts.append(f"composition：{product_data['composition']}")
+                if product_data['size']:
+                    description_parts.append(f"size：{product_data['size']}")
+                if product_data['weight']:
+                    description_parts.append(f"weight：{product_data['weight']}")
                 
-                # 确保颜色和库存数量匹配
-                if len(colors) != len(stocks):
-                    error_msg = f'第 {index + 2} 行：颜色和库存数量不匹配'
-                    print(f'错误: {error_msg}')
-                    errors.append(error_msg)
-                    continue
+                product_data['description'] = '\n'.join(description_parts)
+
+                product_data['specs_info'] = json.dumps(description_parts)
                 
-                # 处理可能的空字符串
-                colors = [c.strip() for c in colors if c.strip()]
-                stocks = [s.strip() for s in stocks if s.strip()]
-                
-                specs = []
-                for color, stock in zip(colors, stocks):
-                    try:
-                        stock_value = int(float(stock)) if stock.strip() else 0
-                        if stock_value < 0:
-                            print(f'警告: 第 {index + 2} 行，颜色 {color} 的库存为负数，已设为0')
-                            stock_value = 0
-                        specs.append({
-                            'color': color.strip(),
-                            'stock': stock_value
-                        })
-                    except ValueError:
-                        print(f'警告: 第 {index + 2} 行，颜色 {color} 的库存 "{stock}" 无效，已设为0')
-                        specs.append({
-                            'color': color.strip(),
-                            'stock': 0
-                        })
-                
+                # 设置默认规格
+                specs = [{'color': '默认', 'stock': 999999}]
                 product_data['specs'] = json.dumps(specs)
                 
-                # 处理标签
-                tags = [tag.strip() for tag in str(row['标签']).split(',')] if not pd.isna(row['标签']) else []
-                product_data['tags'] = json.dumps(tags)
-                print(f'解析的标签: {tags}')
+                # 设置默认标签
+                product_data['tags'] = json.dumps([])
+
+                # 设置默认类型
+                product_data['type'] = 5
+
+                if product_data['name'].startswith('披肩'):
+                    product_data['type'] = 1
+                if product_data['name'].startswith('围巾'):
+                    product_data['type'] = 2
+                if product_data['name'].startswith('帽子'):
+                    product_data['type'] = 3
+                if product_data['name'].startswith('三角巾'):
+                    product_data['type'] = 4
                 
-                product_data['created_at'] = datetime.now().isoformat()
-                
-                # 检查商品是否已存在
-                existing_product = Product.query.get(product_data['id'])
-                if existing_product:
-                    print('更新现有商品...')
-                    existing_product.name = product_data['name']
-                    existing_product.description = product_data['description']
-                    existing_product.price = product_data['price']
-                    existing_product.specs = product_data['specs']
-                    existing_product.type = product_data['type']
-                    existing_product.tags = product_data['tags']
-                    db.session.commit()
-                else:
-                    print('插入新商品...')
-                    new_product = Product(
-                        id=product_data['id'],
-                        name=product_data['name'],
-                        description=product_data['description'],
-                        price=product_data['price'],
-                        specs=product_data['specs'],
-                        type=product_data['type'],
-                        tags=product_data['tags'],
-                        created_at=product_data['created_at']
-                    )
-                    db.session.add(new_product)
-                    db.session.commit()
+                print('插入新商品...')
+                new_product = Product(
+                    id=product_data['id'],
+                    name=product_data['name'],
+                    description=product_data['description'],
+                    price=product_data['price'],
+                    specs=product_data['specs'],
+                    specs_info=product_data['specs_info'],
+                    type=product_data['type'],
+                    tags=product_data['tags'],
+                    created_at=product_data['created_at']
+                )
+                db.session.add(new_product)
+                db.session.commit()
                 
                 imported_count += 1
                 print(f'成功处理第 {index + 2} 行数据')
@@ -1474,19 +1464,25 @@ def import_products(user_id):
                 error_msg = f'第 {index + 2} 行：{str(e)}'
                 print(f'错误: {error_msg}')
                 errors.append(error_msg)
+                db.session.rollback()
                 
         print(f'\n导入完成: 成功导入 {imported_count} 条数据，失败 {len(errors)} 条')
             
         return jsonify({
-            'success': True,
-            'imported': imported_count,
-            'errors': errors if errors else None
+            'code': 200,
+            'message': '导入成功',
+            'data': {
+                'imported': imported_count,
+                'errors': errors if errors else None
+            }
         })
         
     except Exception as e:
         print(f'导入过程发生错误: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({
-            'success': False,
+            'code': 500,
+            'message': '导入失败',
             'error': str(e)
         }), 500
 
