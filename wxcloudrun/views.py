@@ -3608,6 +3608,21 @@ def get_uploadfileUrl():
     try:
         data = request.json
         access_token = get_access_token()
+        env = 'prod-9gd4jllic76d4842'
+        path = data.get('path')
+        
+        url = f'http://api.weixin.qq.com/tcb/uploadfile'
+        params = {
+            'env': env,
+            'path': path
+        }   
+        response = requests.post(url, json=params)
+        return response.json()
+    except Exception as e:
+        print(f'获取上传文件URL失败: {str(e)}')
+    try:
+        data = request.json
+        access_token = get_access_token()
         print(f'获取access_token: {access_token}')
         env = 'prod-9gd4jllic76d4842'
         path = data.get('path')
@@ -3629,6 +3644,20 @@ def get_uploadfileUrl():
 
 def get_access_token():
     """获取小程序 access_token"""
+    try:        
+        url = f'http://api.weixin.qq.com/cgi-bin/token'
+        response = requests.get(url) 
+        if response.status_code == 200:
+            data = response.json()
+            # 处理响应数据时隐藏实际的access_token
+            if 'access_token' in data:
+                print('\n成功获取access_token')
+                return data['access_token']
+        raise Exception('获取 access_token 失败')
+        
+    except Exception as e:
+        print('\n获取access_token时发生错误:')     
+
     try:        
         url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
         response = requests.get(url)    
