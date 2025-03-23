@@ -1,6 +1,6 @@
 from functools import wraps
 from flask import request, jsonify, g
-from models import User
+from wxcloudrun.model import User
 import traceback
 
 def staff_required(f):
