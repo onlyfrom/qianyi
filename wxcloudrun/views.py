@@ -3624,7 +3624,7 @@ def get_access_token():
         print('\n获取access_token时发生错误:')     
 
     try:        
-        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
+        url = f'http://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
         response = requests.get(url)    
         print(f'获取access_token响应: {response.json()}')
         if response.status_code == 200:

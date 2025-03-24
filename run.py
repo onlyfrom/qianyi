@@ -36,7 +36,7 @@ def list_routes():
 # 启动Flask Web服务
 if __name__ == '__main__':
     try:
-        # 初始化数据库
+        # 初始化数据库6
         init_database()
         
         # 打印路由列表
