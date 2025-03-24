@@ -34,13 +34,6 @@ EXPOSE 80
 
 # Python requests 指定环境变量
 # Java 手动导入根证书
-RUN keytool -importcert -file /app/cert/certificate.crt -alias apiweixin -keystore $JAVA_HOME/jre/lib/security/cacerts
-
-# Node 指定根证书环境变量
-ENV NODE_EXTRA_CA_CERTS=/app/cert/certificate.crt
-
-# Python requests 指定环境变量
-ENV REQUESTS_CA_BUNDLE=/app/cert/certificate.crt
 # 执行启动命令
 # 写多行独立的CMD命令是错误写法！只有最后一行CMD命令会被执行，之前的都会被忽略，导致业务报错。
 # 请参考[Docker官方文档之CMD命令](https://docs.docker.com/engine/reference/builder/#cmd)
