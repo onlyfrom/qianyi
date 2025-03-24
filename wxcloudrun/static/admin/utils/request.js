@@ -3,7 +3,7 @@ const isDevelopment = window.location.hostname === 'localhost' ||
                      window.location.hostname === '127.0.0.1';
 
 const request = axios.create({
-    baseURL: isDevelopment ? 'http://127.0.0.1:5005' : ''
+    baseURL: isDevelopment ? 'http://127.0.0.1' : ''
 });
 
 // 请求拦截器

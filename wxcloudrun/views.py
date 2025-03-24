@@ -3284,49 +3284,6 @@ def generate_qrcode_api():
             'message': str(e)
         }), 500
 
-def generate_qrcode_old(page, scene):
-    try:
-        # 确保存储目录存在
-        qrcode_dir = os.path.join(app.static_folder, 'qrcodes')
-        if not os.path.exists(qrcode_dir):
-            os.makedirs(qrcode_dir)
-            
-        # 生成唯一的文件名
-        filename = f"qr{scene}.jpg"
-        filepath = os.path.join(qrcode_dir, filename)
-        
-        # 调用微信接口生成小程序码
-        access_token = get_access_token()
-        url = f'https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token={access_token}'
-        
-        params = {
-            "scene": scene,
-            "page": page,
-            "env_version": "trial",  #体验版
-            "check_path": False
-        }
-        
-        response = requests.post(url, json=params)
-        
-        if response.status_code == 200:
-            # 保存文件
-            with open(filepath, 'wb') as f:
-                f.write(response.content)
-            
-            print(f"二维码已保存到: {filepath}")
-
-            # 返回相对路径
-            relative_path = f'/static/qrcodes/{filename}'
-            return relative_path
-        else:
-            print(f"生成二维码失败: {response.text}")
-            return None
-            
-    except Exception as e:
-        print(f"生成二维码出错: {str(e)}")
-        return None
-        
-
 
 def generate_qrcode(page, scene):
     try:
@@ -3608,21 +3565,6 @@ def get_uploadfileUrl():
     try:
         data = request.json
         access_token = get_access_token()
-        env = 'prod-9gd4jllic76d4842'
-        path = data.get('path')
-        
-        url = f'http://api.weixin.qq.com/tcb/uploadfile'
-        params = {
-            'env': env,
-            'path': path
-        }   
-        response = requests.post(url, json=params)
-        return response.json()
-    except Exception as e:
-        print(f'获取上传文件URL失败: {str(e)}')
-    try:
-        data = request.json
-        access_token = get_access_token()
         print(f'获取access_token: {access_token}')
         env = 'prod-9gd4jllic76d4842'
         path = data.get('path')
@@ -3647,13 +3589,15 @@ def get_access_token():
     try:        
         url = f'http://api.weixin.qq.com/cgi-bin/token'
         response = requests.get(url) 
+        header = request.headers
+        print(f'header: {header}')
         if response.status_code == 200:
             data = response.json()
             # 处理响应数据时隐藏实际的access_token
             if 'access_token' in data:
-                print('\n成功获取access_token')
+                print('\n云调用access_token获取成功')
                 return data['access_token']
-        raise Exception('获取 access_token 失败')
+        raise Exception('获取 access_token 失败')  
         
     except Exception as e:
         print('\n获取access_token时发生错误:')     
@@ -3678,14 +3622,14 @@ def get_access_token():
         print('\n获取access_token失败')
         print('错误响应:')
         print(response.text)
-        raise Exception('获取 access_token 失败')
+        return None
         
     except Exception as e:
         print('\n获取access_token时发生错误:')
         print(f'- 错误类型: {type(e).__name__}')
         print(f'- 错误信息: {str(e)}')
         print(f'- 错误追踪:\n{traceback.format_exc()}')
-        raise
+        return None
 
 
 @app.route('/push_orders', methods=['POST'])
@@ -4214,9 +4158,9 @@ def get_user_push_products(user_id):
         products = []
         for product, push_price, specs, specs_info, push_time in pagination.items:
             products.append({
-                'id': product.id,
-                'name': product.name,
-                'description': product.description,
+            'id': product.id,
+            'name': product.name,
+            'description': product.description,
                 'price': float(push_price) if push_price else 0,
                 'images': json.loads(product.images) if product.images else [],
                 'type': product.type,
@@ -4325,8 +4269,8 @@ def get_products(user_id):  # 添加 user_id 参数来接收装饰器传入的�
                 'type': product.type,
                 'created_at': product.created_at.isoformat() if product.created_at else None,
                 'specs_info': json.loads(product.specs_info) if product.specs_info else {},
-                'specs': json.loads(product.specs) if product.specs else [],
-                'images': json.loads(product.images) if product.images else [],
+            'specs': json.loads(product.specs) if product.specs else [],
+            'images': json.loads(product.images) if product.images else [],
                 'status': product.status if product.status is not None else 1,  # 默认上架
                 'is_public': product.is_public if product.is_public is not None else 1  # 默认公开
             })

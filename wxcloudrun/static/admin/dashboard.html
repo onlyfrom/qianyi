@@ -437,7 +437,7 @@
                                         </el-select>
                                     </el-form-item>
 
-                                    <el-form-item label="标签">
+                                    <!--el-form-item label="标签">
                                         <div style="margin-bottom: 10px;">
                                             <el-checkbox-group v-model="selectedPresetTags"
                                                 @change="handlePresetTagsChange">
@@ -449,11 +449,11 @@
                                         <el-select v-model="productForm.tags" multiple filterable allow-create
                                             default-first-option :reserve-keyword="false" placeholder="可输入自定义标签"
                                             @change="handleCustomTagChange" style="width: 100%">
-                                            <el-option v-for="tag in allTagOptions" :key="tag" :label="tag"
+                                            <--el-option v-for="tag in allTagOptions" :key="tag" :label="tag"
                                                 :value="tag">
                                             </el-option>
                                         </el-select>
-                                    </el-form-item>
+                                    </el-form-item-->
 
                                     <el-form-item label="商品图片" prop="images">
                                         <el-upload 
@@ -465,7 +465,7 @@
                                             multiple>
                                             <el-icon><Plus /></el-icon>
                                         </el-upload>
-                                        <el-button type="primary" @click="submitUpload">开始上传</el-button>
+                                        <!--el-button type="primary" @click="submitUpload">开始上传</el-button-->
                                     </el-form-item>
 
                                     <el-form-item label="商品描述" prop="description">
@@ -1295,7 +1295,7 @@
         const isDevelopment = window.location.hostname === 'localhost' || 
                              window.location.hostname === '127.0.0.1';
         
-        axios.defaults.baseURL = isDevelopment ? 'http://127.0.0.1:80' : '';
+        axios.defaults.baseURL = isDevelopment ? 'http://127.0.0.1' : '';
         
         // 请求拦截器
         axios.interceptors.request.use(config => {
@@ -1644,11 +1644,11 @@
                     uploadProgress: 0, // 上传进度
                 }
             },
-            computed: {
-                allTagOptions() {
-                    return [...new Set([...this.presetTags, ...this.productForm.tags])]
-                }
-            },
+           // computed: {
+            //    allTagOptions() {
+            //        return [...new Set([...this.presetTags, ...this.productForm.tags])]
+            //    }
+            //},
             created() {
                 // 检查登录状态
                 const token = localStorage.getItem('token');
@@ -2065,7 +2065,6 @@
                             specs: specs,
                             images: this.productForm.images || [],
                             type: parseInt(this.productForm.style) || 1,
-                            tags: this.productForm.tags,
                             stock: specs.reduce((sum, spec) => sum + (parseInt(spec.stock) || 0), 0),
                             stock_warning: parseInt(this.productForm.stock_warning) || 10,
                             created_at: this.dialogType === 'add' ? new Date().toISOString() : this.productForm.created_at,
@@ -3099,7 +3098,7 @@
                         const uploadData = uploadResponse.data;
                         console.log('获取到上传链接:', uploadData);
                         if (uploadData.errcode !== 0) {
-                            throw new Error('获取上传链接失败');
+                            throw new Error(uploadData.errmsg);
                         }
                         // 3. 构建上传数据
                         const formData = new FormData();
