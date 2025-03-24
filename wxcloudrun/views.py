@@ -805,20 +805,9 @@ def add_or_update_product(user_id):
         data = request.get_json()
         
         # 验证必需的字段
-        required_fields = ['name', 'description', 'price', 'type']
-        if not all(field in data for field in required_fields):
-            return jsonify({'error': '缺少必需的字段'}), 400
-        
-        # 获取价格字段，如果未提供则使用price的值
-        price = float(data['price'])
-        price_b = float(data.get('price_b', price))
-        price_c = float(data.get('price_c', price))
-        price_d = float(data.get('price_d', price))
-        cost_price = float(data.get('cost_price', price))
-        
-        # 获取状态字段，设置默认值
-        status = data.get('status', 1)  # 默认上架
-        is_public = data.get('is_public', 1)  # 默认公开
+        if not any(field in data for field in ['name', 'id']):
+            print('缺少的字段: name或id')
+            return jsonify({'error': '缺少必需的字段: name或id'}), 400
         
         # 检查是否提供了商品ID
         product_id = data.get('id')
@@ -826,23 +815,55 @@ def add_or_update_product(user_id):
             # 更新现有商品
             product = Product.query.get(product_id)
             if not product:
-                return jsonify({'error': '商品不存在'}), 404
+                return jsonify({'error': '商品不存在'}), 404                
+            # 只更新传入的字段
+            if 'name' in data:
+                product.name = data['name'].strip()
+            if 'description' in data:
+                product.description = data['description'].strip()
+            if 'price' in data:
+                product.price = float(data['price'])
+            if 'price_b' in data:
+                product.price_b = float(data['price_b'])
+            if 'price_c' in data:
+                product.price_c = float(data['price_c'])
+            if 'price_d' in data:
+                product.price_d = float(data['price_d'])
+            if 'cost_price' in data:
+                product.cost_price = float(data['cost_price'])            
+            if 'type' in data:
+                product.type = data['type']
+            if 'specs_info' in data:
+                product.specs_info = json.dumps(data['specs_info'])
+            if 'specs' in data:
+                product.specs = json.dumps(data['specs'])
+            if 'images' in data:
+                product.images = json.dumps(data['images'])
+            if 'status' in data:
+                product.status = data['status']
+            if 'is_public' in data:
+                product.is_public = data['is_public']
                 
-            product.name = data['name']
-            product.description = data['description']
-            product.price = price
-            product.price_b = price_b
-            product.price_c = price_c
-            product.price_d = price_d
-            product.cost_price = cost_price
-            product.type = data['type']
-            product.specs_info = json.dumps(data.get('specs_info', {}))
             product.updated_at = datetime.now()
-            product.specs = json.dumps(data.get('specs', {}))
-            product.images = json.dumps(data.get('images', []))
-            product.status = status
-            product.is_public = is_public
         else:
+            # 新增商品时的必需字段验证
+            required_fields = ['name']
+            if not all(field in data for field in required_fields):
+                missing_fields = [field for field in required_fields if field not in data]
+                print(f'缺少的字段: {missing_fields}')
+                return jsonify({'error': f'新增商品缺少必需的字段{missing_fields}'}), 400
+                
+            # 获取价格字段，如果未提供则使用price的值
+            price = float(data['price'],0)
+            price_b = float(data.get('price_b', 0))
+            price_c = float(data.get('price_c', price_b +2))
+            price_d = float(data.get('price_d', price_c +2))
+            cost_price = float(data.get('cost_price', 0))
+            
+            # 获取状态字段，设置默认值
+            status = data.get('status', 1)  # 默认上架
+            is_public = data.get('is_public', 1)  # 默认公开
+            
             # 生成新的商品ID
             product_type = str(data['type']).zfill(2)  # 确保类型是两位数
             
@@ -852,7 +873,6 @@ def add_or_update_product(user_id):
             ).order_by(Product.id.desc()).first()
             
             if latest_product:
-                # 从最后一个商品ID中提取编号
                 try:
                     last_number = int(latest_product.id[4:])  # 跳过 'qyXX' 前缀
                     new_number = str(last_number + 1).zfill(4)  # 确保是4位数
@@ -867,14 +887,14 @@ def add_or_update_product(user_id):
             # 创建新商品
             product = Product(
                 id=new_product_id,
-                name=data['name'],
-                description=data['description'],
+                name=data['name'].strip(),
+                description=data['description'].strip(),
                 price=price,
                 price_b=price_b,
                 price_c=price_c,
                 price_d=price_d,
                 cost_price=cost_price,
-                type=data['type'],
+                type=data.get('type', 1),
                 specs_info=json.dumps(data.get('specs_info', {})),
                 specs=json.dumps(data.get('specs', {})),
                 images=json.dumps(data.get('images', [])),
@@ -889,7 +909,8 @@ def add_or_update_product(user_id):
             db.session.commit()
             return jsonify({
                 'message': '商品保存成功',
-                'product_id': product.id
+                'product_id': product.id,
+                'product_images': json.loads(product.images)
             }), 200
         except Exception as e:
             db.session.rollback()
@@ -4220,6 +4241,56 @@ def search_users(user_id):
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '搜索用户失败'}), 500
 
+
+@app.route('/products/batch-update', methods=['POST'])
+@check_staff_permission('product.update')
+def batch_update_product_type_api(user_id):
+    """
+    批量更新商品类型
+    """
+    try:
+        # 获取请求数据
+        data = request.get_json()
+        if not data or 'ids' not in data or 'type' not in data:
+            return jsonify({'code': -1, 'message': '缺少必要参数'}), 400
+
+        product_ids = data['ids']
+        new_type = data['type']
+
+        # 验证参数
+        if not isinstance(product_ids, list) or not product_ids:
+            return jsonify({'code': -1, 'message': '商品ID列表不能为空'}), 400
+        
+        if not isinstance(new_type, int):
+            return jsonify({'code': -1, 'message': '商品类型必须是整数'}), 400
+
+        updated_count = 0
+        for product_id in product_ids:
+            product = Product.query.get(product_id)
+            if product:
+                product.type = new_type
+                db.session.commit()
+                updated_count += 1
+        print(f'成功更新{updated_count}个商品的类型')
+        
+        if updated_count > 0:
+            return jsonify({
+                'code': 0,
+                'message': f'成功更新{updated_count}个商品的类型',
+                'data': {
+                    'updated_count': updated_count
+                }
+            })
+        else:
+            return jsonify({'code': -1, 'message': '更新失败或没有符合条件的商品'}), 400
+
+    except Exception as e:
+        print(f'批量更新商品类型失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'code': -1, 'message': str(e)}), 500
+
+
+
 # 获取商品列表（需要管理员登录）
 @app.route('/products', methods=['GET'])
 #@admin_required
@@ -4232,6 +4303,7 @@ def get_products(user_id):  # 添加 user_id 参数来接收装饰器传入的�
         keyword = request.args.get('keyword', '')
         product_type = request.args.get('type')
         
+        print(f'获取商品列表参数: page={page}, page_size={page_size}, keyword={keyword}, product_type={product_type}')
         # 构建基础查询
         query = Product.query
         
