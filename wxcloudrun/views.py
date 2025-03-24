@@ -3590,7 +3590,7 @@ def get_uploadfileUrl():
         env = 'prod-9gd4jllic76d4842'
         path = data.get('path')
         
-        url = f'https://api.weixin.qq.com/tcb/uploadfile?access_token={access_token}'
+        url = f'http://api.weixin.qq.com/tcb/uploadfile?access_token={access_token}'
         params = {
             'env': env,
             'path': path
