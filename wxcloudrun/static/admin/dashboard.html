@@ -440,7 +440,7 @@
                                 <el-pagination
                                     v-model:current-page="pagination.currentPage"
                                     v-model:page-size="pagination.pageSize"
-                                    :page-sizes="[10, 20, 50, 100]"
+                                    :page-sizes="[20, 30, 50, 100]"
                                     :total="pagination.total"
                                     layout="total, sizes, prev, pager, next, jumper"
                                     @size-change="handleSizeChange"
@@ -455,9 +455,9 @@
                                 @close="handleDialogClose">
                                 <el-form :model="productForm" :rules="productRules" ref="productFormRef"
                                     label-width="100px">
-                                    <el-form-item label="款号" prop="id">
-                                        <el-input v-model="productForm.id" :disabled="dialogType === 'edit'"
-                                            placeholder="请输入款号">
+                                    <el-form-item label="款号" >
+                                        <el-input v-model="productForm.id" :disabled="true"
+                                            placeholder="自动生成">
                                         </el-input>
                                     </el-form-item>
 
@@ -486,8 +486,8 @@
                                         </el-form-item>
                                     </template>
 
-                                    <el-form-item label="商品款式" prop="type">
-                                        <el-select v-model="productForm.type" placeholder="请选择商品款式">
+                                    <el-form-item label="商品款式" prop="style">
+                                        <el-select v-model="productForm.style" placeholder="请选择商品款式">
                                             <el-option
                                                 v-for="item in styleOptions"
                                                 :key="item.id"
@@ -555,7 +555,7 @@
                                         </el-upload>
                                     </el-form-item>
 
-                                    <el-form-item label="商品描述" prop="description">
+                                    <el-form-item label="商品描述" >
                                         <el-input type="textarea" v-model="productForm.description"
                                             placeholder="请输入商品描述"></el-input>
                                     </el-form-item>
@@ -1367,7 +1367,7 @@
                 </el-main>
             </el-container>
         </el-container>
-        
+
     <!-- 个人信息编辑对话框 -->
     <el-dialog v-model="profileDialogVisible" title="编辑个人信息" width="50%">
         <el-form :model="profileForm" :rules="profileFormRules" ref="profileFormRef" label-width="100px">
@@ -1452,7 +1452,7 @@
 
     </div>
 
-   
+
 
     <!-- 引入依赖 -->
     <script src="//unpkg.com/vue@3"></script>
@@ -1478,7 +1478,7 @@
 
             const token = localStorage.getItem('token');
             if (token) {
-                console.log('添加token到请求头:', `Bearer ${token}`);
+            //    console.log('添加token到请求头:', `Bearer ${token}`);
                 config.headers['Authorization'] = `Bearer ${token}`;
             } else {
                 console.warn('未找到token');
@@ -1491,11 +1491,11 @@
 
         // 响应拦截器
         axios.interceptors.response.use(response => {
-            console.log('收到响应:', {
-                url: response.config.url,
-                status: response.status,
-                data: response.data
-            });
+            // console.log('收到响应:', {
+            //     url: response.config.url,
+            //     status: response.status,
+            //     data: response.data
+            // });
             return response;
         }, error => {
             console.group('请求失败详情');
@@ -1553,7 +1553,7 @@
                     products: [],
                     pagination: {
                         currentPage: 1,
-                        pageSize: 10,
+                        pageSize: 20,
                         total: 0
                     },
                     pageSizeOptions: [10, 25, 50],
@@ -1662,6 +1662,7 @@
                             { max: 500, message: '成分长度不能超过500个字符', trigger: 'blur' }
                         ]
                     },
+                    tempProductId: '',
                     presetTags: [],
                     selectedPresetTags: [],
                     presetColors: ['黑色', '白色', '灰色', '红色', '蓝色', '粉色', '米色', '卡其色', '藏青色', '酒红色'],
@@ -1731,7 +1732,7 @@
                     purchaseOrders: [],
                     purchasePagination: {
                         currentPage: 1,
-                        pageSize: 10,
+                        pageSize: 15,
                         total: 0
                     },
                     purchaseDetailVisible: false,
@@ -1745,7 +1746,7 @@
                     deliveryOrders: [],
                     deliveryPagination: {
                         currentPage: 1,
-                        pageSize: 10,
+                        pageSize: 15,
                         total: 0
                     },
                     createDeliveryVisible: false,
@@ -1779,6 +1780,7 @@
                         mode: 'set',
                         value: 0
                     },
+                    imagesLoading: null,
                     selectedProducts: [],
                     deliveryStats: {
                         total: 0,
@@ -1801,7 +1803,7 @@
                     pushLoading: false,
                     pushPagination: {
                         currentPage: 1,
-                        pageSize: 10,
+                        pageSize: 15,
                         total: 0
                     },
                     pushDetailVisible: false,
@@ -2113,7 +2115,12 @@
 
                 async handleBeforeUpload(file) {
                     this.totalFiles++;
-                    console.log('准备上传文件:', file);
+                    this.imagesLoading = ElementPlus.ElLoading.service({
+                        lock: true,
+                        text: '图片上传中...',
+                        background: 'rgba(0, 0, 0, 0.7)'
+                    });
+                   // console.log('准备上传文件:', file);
                     try {
                         let processedFile = file;
                         if (file.size > 1024 * 1024) {
@@ -2130,7 +2137,7 @@
                             path: path
                         });                 
                         const uploadData = uploadResponse.data;
-                        console.log('获取到上传链接:', uploadData);
+                        //console.log('获取到上传链接:', uploadData);
                         if (uploadData.errcode !== 0) {
                             throw new Error(uploadData.errmsg);
                         }
@@ -2162,7 +2169,7 @@
                     }
                 },
 
-                
+
                 handleUploadSuccess(response, file) {
                     console.log('response:', response);
                     if (response.url) {
@@ -2173,10 +2180,6 @@
                     this.checkUploadComplete();
                 },
 
-                handleUploadError(error) {
-                    console.error('上传失败:', error);
-                    this.$message.error('上传失败');
-                },
 
                 handlePictureCardPreview(file) {
                     this.dialogImageUrl = file.url
@@ -2238,12 +2241,7 @@
                         }));
 
                          //如果有待上传的图片，处理上传
-                        if (this.dialogType === 'add') {
-                            const uploadComponent = this.$refs.uploadRef;
-                            this.totalFiles = 0;
-                            this.uploadedFiles = 0;
-                            await uploadComponent.submit();   
-                        }
+                        
                         const submitData = {
                             id: this.productForm.id,
                             name: this.productForm.name.trim(),
@@ -2268,12 +2266,21 @@
                         };
                         const url = `/products`;
                         const method = 'post';
-                        console.log('提交的数据:', submitData);
                         const response = await axios[method](url, submitData);
+                        
 
                         if (response.status === 200 || response.status === 201) {
                             ElementPlus.ElMessage.success(this.dialogType === 'add' ? '添加成功' : '更新成功');                                                   
-
+                            if (this.dialogType === 'add') {
+                            const uploadComponent = this.$refs.uploadRef;
+                            this.totalFiles = 0;
+                            this.uploadedFiles = 0;
+                            console.log('商品创建/更新成功返回:', response.data.product_id);
+                            this.tempProductId = response.data.product_id;
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                            await uploadComponent.submit();   
+                            console.log('商品创建/更新成功返回:', this.tempProductId);
+                        }
                             this.dialogVisible = false;
                             this.loadProducts();
                         }
@@ -2283,9 +2290,8 @@
                 },
 
                 getStyleLabel(styleValue) {
-                    
-                    const style = this.styleOptions.find(option => option.value === styleValue);
-                    return style ? style.label : '未知';
+                    const style = this.styleOptions.find(option => option.id === styleValue);
+                    return style ? style.name : '未知';
                 },
                 
                 getSpecs(specs) {
@@ -3224,8 +3230,9 @@
 
                 // 处理文件变化
                 handleFileChange(file, fileList) {
-                    console.log('handleFileChange被触发了:', file, fileList);
-                    this.fileList = fileList;
+                    console.log('文件改变:', file, fileList);
+                    this.fileList = fileList;                 
+                    
                 },
 
                 // 处理超出限制
@@ -3313,15 +3320,9 @@
                     }
                 },
                 async customUpload({ file }) {
-                    const loading = ElementPlus.ElLoading.service({
-                        lock: true,
-                        text: '图片上传中...',
-                        background: 'rgba(0, 0, 0, 0.7)'
-                    });
                     try {
                         const uploadInfo = this.fileUploadInfo.get(file.uid);
                         if (!uploadInfo) {
-                            loading.close();
                             ElementPlus.ElMessage.error('未找到文件上传信息');
                             throw new Error('未找到文件上传信息');
                         }
@@ -3343,16 +3344,29 @@
                         // 更新productForm.images数组
                         if (!this.productForm.images) { this.productForm.images = []; }
                         this.productForm.images.push(uploadInfo.file_id);
-
-                        const productsResponse = await axios.post('/products', {
-                            id: this.productForm.id,  // 商品ID
-                            images: this.productForm.images  // 图片列表
-                        });
-                        
-                        if (productsResponse.status === 200 || productsResponse.status === 201) {
-                            console.log('更新商品图片成功:', productsResponse);
-                            loading.close();
-                            ElementPlus.ElMessage.success('图片上传成功');
+                        if (this.productForm.id) {
+                            this.tempProductId = this.productForm.id;
+                        }
+                        if (this.tempProductId) {
+                            const productsResponse = await axios.post('/products', {
+                                id: this.tempProductId,  // 商品ID
+                                images: this.productForm.images  // 图片列表
+                            });
+                            
+                            if (productsResponse.status === 200 || productsResponse.status === 201) {
+                                console.log('更新商品图片成功:', productsResponse);   
+                                this.uploadedFiles++;
+                                console.log('已上传文件数:', this.uploadedFiles);
+                                if (this.uploadedFiles >= this.totalFiles) {
+                                    this.imagesLoading.close();
+                                    this.loadProducts();
+                                }
+                                ElementPlus.ElMessage.success('图片上传成功');
+                            }
+                        }else{
+                            ElementPlus.ElMessage.error('未找到商品ID');
+                            
+                            throw new Error('未找到商品ID');
                         }
                         
                         return {
@@ -3360,7 +3374,6 @@
                         };
                     } catch (error) {
                         console.error('上传失败:', error);
-                        loading.close();
                         ElementPlus.ElMessage.error('图片上传失败：' + error.message);
                         throw error;
                     }
@@ -3488,6 +3501,7 @@
                         const response = await axios.get('/system/settings');
                         if (response.status === 200) {
                             this.styleOptions = response.data.product_types || [];
+                            this.styleOptions.unshift({ value: '', name: '全部' });
                             console.log('加载款式选项成功:', this.styleOptions);
                         }
                     } catch (error) {
@@ -3495,6 +3509,50 @@
                         this.handleAxiosError(error, '加载款式选项失败');
                     }
                 },
+                // 上传成功的回调
+                handleUploadSuccess(response, file, fileList) {
+                    console.log('上传成功:', response);
+                    this.fileList = fileList;
+                    
+                    // 检查是否所有文件都上传完成
+                    const allFilesUploaded = fileList.every(file => 
+                        file.status === 'success' || file.status === 'fail'
+                    );
+                    
+                    if (allFilesUploaded) {
+                        this.closeLoading(); // 所有文件上传完成，关闭 loading
+                    }
+                },
+                // 上传出错的回调
+                handleUploadError(error, file, fileList) {
+                    console.error('上传出错:', error);
+                    this.$message.error('上传失败');
+                    
+                    // 检查是否所有文件都处理完成
+                    const allFilesProcessed = fileList.every(file => 
+                        file.status === 'success' || file.status === 'fail'
+                    );
+                    
+                    if (allFilesProcessed) {
+                        this.closeLoading(); // 所有文件处理完成，关闭 loading
+                    }
+                },
+                // 显示 loading
+                showLoading() {
+                    this.imagesLoading = ElementPlus.ElLoading.service({
+                        lock: true,
+                        text: '图片上传中...',
+                        background: 'rgba(0, 0, 0, 0.7)'
+                    });
+                },
+                
+                // 关闭 loading
+                closeLoading() {
+                    if (this.imagesLoading) {
+                        this.imagesLoading.close();
+                        this.imagesLoading = null;
+                    }
+                }
             }
         })
         app.component('el-icon', ElementPlus.ElIcon)

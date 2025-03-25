@@ -28,6 +28,8 @@ from wxcloudrun.response import *
 
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
+WX_ENV = 'prod-9gd4jllic76d4842'
+API_URL = 'https://api.weixin.qq.com'
 
 # 用户认证中间件
 def login_required(f):
@@ -854,7 +856,7 @@ def add_or_update_product(user_id):
                 return jsonify({'error': f'新增商品缺少必需的字段{missing_fields}'}), 400
                 
             # 获取价格字段，如果未提供则使用price的值
-            price = float(data['price'],0)
+            price = float(data.get('price', 0))
             price_b = float(data.get('price_b', 0))
             price_c = float(data.get('price_c', price_b +2))
             price_d = float(data.get('price_d', price_c +2))
@@ -3080,8 +3082,8 @@ def delete_user(user_id):
 
 # 批量删除商品接口
 @app.route('/products/batch/delete', methods=['POST'])
-@login_required
-def batch_delete_products(current_user_id):
+@check_staff_permission('product.delete')
+def batch_delete_products(user_id):
     try:
         data = request.json
         product_ids = data.get('product_ids', [])
@@ -3089,42 +3091,72 @@ def batch_delete_products(current_user_id):
         if not product_ids:
             return jsonify({'error': '未选择要删除的商品'}), 400
             
-            # 检查权限
-        current_user = User.query.get(current_user_id)
-        if not current_user or current_user.user_type != 1:
-                return jsonify({'error': '没有权限执行此操作'}), 403
-            
         # 获取要删除的商品
         products = Product.query.filter(Product.id.in_(product_ids)).all()
         
-        # 删除相关的图片文件
+        # 收集所有需要删除的图片文件路径
+        file_list = []
         for product in products:
             if product.images:
                 images = json.loads(product.images)
                 for image_url in images:
                     try:
-                        filename = image_url.split('/')[-1]
-                        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                        if os.path.exists(file_path):
-                            os.remove(file_path)
+                        # 从URL中提取文件路径
+                        file_list.append(image_url)
                     except Exception as e:
-                        print(f"删除图片文件失败: {str(e)}")
+                        print(f"处理图片URL失败: {str(e)}")
 
-            # 删除相关的库存记录
-            StockRecord.query.filter_by(product_id=product.id).delete()
-            
-            # 删除相关的颜色库存记录
-            ColorStock.query.filter_by(product_id=product.id).delete()
-            
-            # 删除商品
-            db.session.delete(product)
+        # 如果有图片需要删除，调用微信云开发API
+        if file_list:
+            try:
+                # 获取access_token
+                access_token = get_access_token()
+                if not access_token:
+                    return jsonify({'error': '获取access_token失败'}), 500
 
+                # 调用批量删除文件API
+                url = f'https://api.weixin.qq.com/tcb/batchdeletefile?access_token={access_token}'
+                print(f'调用批量删除文件列表: {file_list}')
+                data = {
+                    'env': WX_ENV,
+                    'fileid_list': file_list
+                }
+                response = requests.post(url, json=data)
+                result = response.json()
+                
+                if result.get('errcode') != 0:
+                    print(f"删除图片文件失败: {result}")
+
+            except Exception as e:
+                print(f"调用删除图片API失败: {str(e)}")
+
+        # 开始数据库操作
         try:
+            # 使用原生SQL删除相关记录
+            for product_id in product_ids:
+                # 删除商品浏览记录
+                db.session.execute(text('DELETE FROM product_views WHERE product_id = :product_id'), {'product_id': product_id})
+                
+                # 删除购物车记录
+                db.session.execute(text('DELETE FROM cart_items WHERE product_id = :product_id'), {'product_id': product_id})
+                
+                # 删除库存记录
+                db.session.execute(text('DELETE FROM stock_records WHERE product_id = :product_id'), {'product_id': product_id})
+                
+                # 删除颜色库存记录
+                db.session.execute(text('DELETE FROM color_stocks WHERE product_id = :product_id'), {'product_id': product_id})
+                
+                # 删除商品记录
+                db.session.execute(text('DELETE FROM products WHERE id = :product_id'), {'product_id': product_id})
+            
+            # 提交事务
             db.session.commit()
+            
             return jsonify({
                 'code': 200,
-                'message': f'成功删除 {len(products)} 个商品'
+                'message': f'成功删除 {len(product_ids)} 个商品'
             })
+            
         except Exception as e:
             db.session.rollback()
             print(f'批量删除商品失败: {str(e)}')
@@ -3352,7 +3384,7 @@ def generate_qrcode(page, scene):
         try:
             upload_url = 'https://api.weixin.qq.com/tcb/uploadfile?access_token=' + access_token
             upload_params = {
-                'env': 'prod-9gd4jllic76d4842',
+                'env': WX_ENV,
                 'path': f'qrcodes/{filename}'
             }
             print(f'请求参数: {upload_params}')
@@ -3466,7 +3498,7 @@ def generate_qrcode_wx(page, scene):
         try:
             upload_url = 'http://api.weixin.qq.com/tcb/uploadfile'
             upload_params = {
-                'env': 'prod-9gd4jllic76d4842',
+                'env': WX_ENV,
                 'path': f'qrcodes/{filename}'
             }
             print(f'请求参数: {upload_params}')
@@ -3593,12 +3625,11 @@ def get_uploadfileUrl():
         data = request.json
         access_token = get_access_token()
         print(f'获取access_token: {access_token}')
-        env = 'prod-9gd4jllic76d4842'
         path = data.get('path')
         
-        url = f'http://api.weixin.qq.com/tcb/uploadfile?access_token={access_token}'
+        url = f'{API_URL}/tcb/uploadfile?access_token={access_token}'
         params = {
-            'env': env,
+            'env': WX_ENV,
             'path': path
         }   
         response = requests.post(url, json=params)
@@ -3630,7 +3661,7 @@ def get_access_token():
         print('\n获取access_token时发生错误:')     
 
     try:        
-        url = f'http://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
+        url = f'{API_URL}/cgi-bin/token?grant_type=client_credential&appid={WECHAT_APPID}&secret={WECHAT_SECRET}'
         response = requests.get(url)    
         print(f'获取access_token响应: {response.json()}')
         if response.status_code == 200:
