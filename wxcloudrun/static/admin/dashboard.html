@@ -293,29 +293,26 @@
                         
                         <div v-if="currentPage === '1'">
                              <!-- 批量修改款式对话框 -->
-                            <el-dialog
-                            v-model="batchStyleDialogVisible"
-                            title="批量修改款式"
-                            width="30%">
-                            <el-form :model="batchStyleForm">
-                                <el-form-item label="选择款式">
-                                    <el-select v-model="batchStyleForm.type" placeholder="请选择款式" style="width: 100%">
-                                        <el-option
-                                            v-for="item in styleOptions"
-                                            :key="item.value"
-                                            :label="item.label"
-                                            :value="item.value">
-                                        </el-option>
-                                    </el-select>
-                                </el-form-item>
-                            </el-form>
-                            <template #footer>
-                                <span class="dialog-footer">
-                                    <el-button @click="batchStyleDialogVisible = false">取消</el-button>
-                                    <el-button type="primary" @click="handleBatchStyleUpdate">确定</el-button>
-                                </span>
-                            </template>
-                        </el-dialog>
+                            <el-dialog title="批量修改款式" v-model="batchStyleDialogVisible" width="400px">
+                                <el-form :model="batchStyleForm" label-width="80px">
+                                    <el-form-item label="款式">
+                                        <el-select v-model="batchStyleForm.type" placeholder="请选择款式">
+                                            <el-option
+                                                v-for="item in styleOptions"
+                                                :key="item.id"
+                                                :label="item.name"
+                                                :value="item.id">
+                                            </el-option>
+                                        </el-select>
+                                    </el-form-item>
+                                </el-form>
+                                <template #footer>
+                                    <span class="dialog-footer">
+                                        <el-button @click="batchStyleDialogVisible = false">取消</el-button>
+                                        <el-button type="primary" @click="handleBatchStyleUpdate">确定</el-button>
+                                    </span>
+                                </template>
+                            </el-dialog>
                             
                             <div class="toolbar">
                                 <div class="left-tools">
@@ -354,9 +351,9 @@
                                         popper-class="my-select-dropdown">
                                         <el-option
                                             v-for="item in styleOptions"
-                                            :key="item.value"
-                                            :label="item.label"
-                                            :value="item.value">
+                                            :key="item.id"
+                                            :label="item.name"
+                                            :value="item.id">
                                         </el-option>
                                     </el-select>
                                 </div>
@@ -489,10 +486,14 @@
                                         </el-form-item>
                                     </template>
 
-                                    <el-form-item label="款式" prop="style">
-                                        <el-select v-model="productForm.style" placeholder="请选择款式">
-                                            <el-option v-for="option in styleOptions" :key="option.value"
-                                                :label="option.label" :value="option.value"></el-option>
+                                    <el-form-item label="商品款式" prop="type">
+                                        <el-select v-model="productForm.type" placeholder="请选择商品款式">
+                                            <el-option
+                                                v-for="item in styleOptions"
+                                                :key="item.id"
+                                                :label="item.name"
+                                                :value="item.id">
+                                            </el-option>
                                         </el-select>
                                     </el-form-item>
 
@@ -590,6 +591,7 @@
                                                         placeholder="库存数量">
                                                     </el-input-number>
                                                 </div>
+                                                <img :src="color.image" alt="颜色图片" style="width: 20px; height: 20px;">
                                             </div>
                                         </div>
                                     </el-form-item>
@@ -709,7 +711,33 @@
                         <!-- 系统设置内容 -->
                         <div v-if="currentPage === '5'" class="content-container">
                             <h2>系统设置</h2>
-                            <!-- 系统设置将在这里实现 -->
+                            <div class="settings-container" style="padding: 20px;">
+                                <el-row :gutter="20">
+                                    <el-col :span="8" >
+                                        <el-card shadow="hover" class="settings-card">
+                                            <template #header>
+                                                <div class="card-header">
+                                                    <span>系统基础设置</span>
+                                                </div>
+                                            </template>
+                                            <div class="card-content">
+                                                <el-button type="primary" @click="showSystemSettings">设置</el-button>
+                                            </div>
+                                        </el-card>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-card shadow="hover" class="settings-card">
+                                            <template #header>
+                                                <div class="card-header">
+                                                    <span>商品款式管理</span>
+                                                </div>
+                                                
+                                            </template>     
+                                            <el-button type="primary" @click="showStyleSettings">管理</el-button>                                      
+                                        </el-card>
+                                    </el-col>
+                                </el-row>
+                            </div>
                         </div>
 
                         <!-- 数据统计内容 -->
@@ -1367,6 +1395,61 @@
         </template>
     </el-dialog>
 
+    <!-- 系统管理对话框 -->
+    <el-dialog title="系统设置" v-model="systemSettingsVisible" width="500px">
+        <el-form :model="systemSettings" label-width="120px">
+            <el-form-item label="系统名称">
+                <el-input v-model="systemSettings.system_name"></el-input>
+            </el-form-item>
+            <el-form-item label="系统描述">
+                <el-input type="textarea" v-model="systemSettings.system_description"></el-input>
+            </el-form-item>
+            <el-form-item label="系统Logo">
+                <el-upload
+                    class="avatar-uploader"
+                    action="/upload"
+                    :show-file-list="false"
+                    :on-success="handleLogoSuccess"
+                    :before-upload="beforeLogoUpload">
+                    <img v-if="systemSettings.logo_url" :src="systemSettings.logo_url" class="avatar">
+                    <i v-else class="el-icon-plus avatar-uploader-icon"></i>
+                </el-upload>
+            </el-form-item>
+        </el-form>
+        <template #footer>
+            <span class="dialog-footer">
+                <el-button @click="systemSettingsVisible = false">取消</el-button>
+                <el-button type="primary" @click="saveSystemSettings">保存</el-button>
+            </span>
+        </template>
+    </el-dialog>
+
+    <!-- 商品款式设置对话框 -->
+    <el-dialog title="商品款式设置" v-model="styleSettingsVisible" width="600px">
+        <el-table :data="product_types" border style="width: 100%">
+            <el-table-column prop="id" label="ID" width="80"></el-table-column>
+            <el-table-column prop="name" label="款式名称">
+                <template #default="scope">
+                    <el-input v-model="scope.row.name" placeholder="请输入款式名称"></el-input>
+                </template>
+            </el-table-column>
+            <el-table-column label="操作" width="100">
+                <template #default="scope">
+                    <el-button type="danger" size="small" @click="handleRemoveStyle(scope.$index)">删除</el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+        <div style="margin-top: 20px;">
+            <el-button type="primary" @click="handleAddStyle">添加款式</el-button>
+        </div>
+        <template #footer>
+            <span class="dialog-footer">
+                <el-button @click="styleSettingsVisible = false">取消</el-button>
+                <el-button type="primary" @click="saveStyleSettings">保存</el-button>
+            </span>
+        </template>
+    </el-dialog>
+
     </div>
 
    
@@ -1740,6 +1823,10 @@
                     batchStyleForm: {
                         type: ''
                     },
+                    systemSettingsVisible: false,
+                    systemSettings: {},
+                    styleSettingsVisible: false,
+                    product_types: [], // 修改为 product_types
                 }
             },
            // computed: {
@@ -1758,6 +1845,8 @@
 
                 // 获取当前用户信息并初始化数据
                 this.getCurrentUserInfo();
+                // 加载款式选项
+                this.loadStyleOptions();
             },
             methods: {
                 handleSelect(index) {
@@ -3326,6 +3415,85 @@
                 handleSelectionChange(selection) {
                     console.log('选中的商品：', selection);
                     this.selectedProducts = selection;
+                },
+                // 系统管理相关方法
+                showSystemSettings() {
+                    this.systemSettingsVisible = true;
+                    this.loadSystemSettings();
+                },
+                async loadSystemSettings() {
+                    try {
+                        const response = await axios.get('/system/settings');
+                        if (response.status === 200) {
+                            this.systemSettings = response.data.settings;
+                        }
+                    } catch (error) {
+                        this.handleAxiosError(error, '加载系统设置失败');
+                    }
+                },
+                async saveSystemSettings() {
+                    try {
+                        const response = await axios.post('/system/settings', this.systemSettings);
+                        if (response.status === 200) {
+                            this.$message.success('保存成功');
+                            this.systemSettingsVisible = false;
+                        }
+                    } catch (error) {
+                        this.handleAxiosError(error, '保存系统设置失败');
+                    }
+                },
+                // 商品款式管理
+                showStyleSettings() {
+                    this.styleSettingsVisible = true;
+                    this.loadStyleSettings();
+                },
+                async loadStyleSettings() {
+                    try {
+                        const response = await axios.get('/system/settings');
+                        if (response.status === 200) {
+                            this.product_types = response.data.product_types || [];
+                        }
+                    } catch (error) {
+                        this.handleAxiosError(error, '加载款式设置失败');
+                    }
+                },
+                async saveStyleSettings() {
+                    try {
+                        const response = await axios.put('/system/settings', {
+                            product_types: this.product_types
+                        });
+                        if (response.status === 200) {
+                            ElementPlus.ElMessage.success('保存成功');
+                            this.styleSettingsVisible = false;
+                            // 重新加载款式选项
+                            await this.loadStyleOptions();
+                        }
+                    } catch (error) {
+                        this.handleAxiosError(error, '保存款式设置失败');
+                    }
+                },
+                handleAddStyle() {
+                    const maxId = Math.max(...this.product_types.map(type => type.id), 0);
+                    this.product_types.push({
+                        id: maxId + 1,
+                        name: ''
+                    });
+                },
+                handleRemoveStyle(index) {
+                    this.product_types.splice(index, 1);
+                },
+                // 加载款式选项
+                async loadStyleOptions() {
+                    try {
+                        const response = await axios.get('/system/settings');
+                        if (response.status === 200) {
+                            this.styleOptions = response.data.product_types || [];
+                            console.log('加载款式选项成功:', this.styleOptions);
+                        }
+                    } catch (error) {
+                        console.error('加载款式选项失败:', error);
+                        this.handleAxiosError(error, '加载款式选项失败');
+                    }
                 },
             }
         })

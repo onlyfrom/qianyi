@@ -1594,17 +1594,23 @@ def import_products(user_id):
                 specs = [{'color': '默认', 'stock': 999999}]
                 product_data['specs'] = json.dumps(specs)
          
-                # 设置默认类型
-                product_data['type'] = 5
+                # 从系统设置获取商品类型配置
+                settings = SystemSettings.query.filter_by(setting_key='product_types').first()
+                product_types = []
+                if settings and settings.setting_value:
+                    try:
+                        product_types = json.loads(settings.setting_value)
+                    except:
+                        print('解析商品类型配置失败')
 
-                if product_data['name'].startswith('披肩'):
-                    product_data['type'] = 1
-                if product_data['name'].startswith('围巾'):
-                    product_data['type'] = 2
-                if product_data['name'].startswith('帽子'):
-                    product_data['type'] = 3
-                if product_data['name'].startswith('三角巾'):
-                    product_data['type'] = 4
+                # 设置默认类型
+                product_data['type'] = 5  # 默认类型
+
+                # 根据商品名称匹配类型
+                for type_config in product_types:
+                    if product_data['name'].startswith(type_config['name']):
+                        product_data['type'] = type_config['id']
+                        break
                 
                 print('插入新商品...')
                 new_product = Product(
@@ -4021,8 +4027,8 @@ def get_system_settings():
 
 # 更新系统设置
 @app.route('/system/settings', methods=['PUT'])
-@admin_required
-def update_system_settings():
+@check_staff_permission('system.settings')
+def update_system_settings(user_id):
     try:
         data = request.json
         if not data:
