@@ -29,7 +29,7 @@ from wxcloudrun.response import *
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
 WX_ENV = 'prod-9gd4jllic76d4842'
-API_URL = 'https://api.weixin.qq.com'
+API_URL = 'http://api.weixin.qq.com'
 
 # 用户认证中间件
 def login_required(f):
@@ -3115,7 +3115,7 @@ def batch_delete_products(user_id):
                     return jsonify({'error': '获取access_token失败'}), 500
 
                 # 调用批量删除文件API
-                url = f'https://api.weixin.qq.com/tcb/batchdeletefile?access_token={access_token}'
+                url = f'{API_URL}/tcb/batchdeletefile?access_token={access_token}'
                 print(f'调用批量删除文件列表: {file_list}')
                 data = {
                     'env': WX_ENV,
