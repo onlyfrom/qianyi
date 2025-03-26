@@ -616,12 +616,60 @@
         }
 
         .editable-cell .el-input-number.is-small {
-            width: 100px;
+            width: 50px;
         }
 
         .el-table .cell {
             padding: 5px;
         }
+
+        /* 添加到已有的 style 标签中 */
+        .spec-form-container {
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: row;
+            gap: 12px;
+        }
+
+        .spec-form-title {
+            font-size: 14px;
+            color: #606266;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+        }
+
+        .spec-form-title::before {
+            content: '';
+            width: 3px;
+            height: 14px;
+            background-color: #409EFF;
+            margin-right: 8px;
+            border-radius: 2px;
+        }
+
+        .spec-form-row {
+            display: flex;
+            width: 200rpx;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+
+        .spec-form-item {
+            display: flex;
+            flex-direction: row;
+            width: 200rpx;
+            gap: 12px;
+        }
+
+        .spec-form-item .el-form-item__label {
+            font-size: 13px;
+            color: #606266;
+            margin-bottom: 4px;
+        }
+
     </style>
 </head>
 
@@ -805,7 +853,7 @@
                                         {{ scope.row.price_b === 0 ? '讯价' : '¥' + scope.row.price_b }}
                                     </template>
                                 </el-table-column>
-                                <el-table-column label="款式" prop="type" width="120" >
+                                <el-table-column label="款式" prop="type" width="80" >
                                     <template #header>
                                         <el-popover placement="bottom" :width="120" trigger="click" v-model:visible="filterVisible.type">
                                             <template #reference>
@@ -833,7 +881,7 @@
                                         <span>{{ styleOptions.find(item => item.id === scope.row.type)?.name || '未知' }}</span>
                                     </template>
                                 </el-table-column>
-                                <el-table-column label="尺寸" prop="specs_info.size" width="120">
+                                <el-table-column label="尺寸" prop="size" width="80">
                                     <template #header>
                                         <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.size">
                                             <template #reference>
@@ -860,16 +908,16 @@
                                     <template #default="{ row }">
                                         <div v-if="isEditMode" class="editable-cell">
                                             <el-input
-                                                v-model="row.specs_info.size"
+                                                v-model="row.size"
                                                 size="small"
                                                 @keyup.enter="handleSpecsSave(row)"
                                                 placeholder="输入尺寸">
                                             </el-input>
                                         </div>
-                                        <span v-else>{{ row.specs_info?.size || '-' }}</span>
+                                        <span v-else>{{ row.size || '-' }}</span>
                                     </template>
                                 </el-table-column>
-                                <el-table-column label="克重" prop="specs_info.weight" width="120">
+                                <el-table-column label="克重" prop="weight" :width="isEditMode ? '135px' : '80px'">
                                     <template #header>
                                         <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.weight">
                                             <template #reference>
@@ -896,7 +944,7 @@
                                     <template #default="{ row }">
                                         <div v-if="isEditMode" class="editable-cell">
                                             <el-input-number
-                                                v-model="row.specs_info.weight"
+                                                v-model="row.weight"
                                                 size="small"
                                                 :min="0"
                                                 :step="1"
@@ -904,10 +952,10 @@
                                                 placeholder="输入克重">
                                             </el-input-number>
                                         </div>
-                                        <span v-else>{{ row.specs_info?.weight || '-' }}</span>
+                                        <span v-else>{{ row.weight || '-' }}</span>
                                     </template>
                                 </el-table-column>
-                                <el-table-column label="材质" prop="specs_info.yarn" width="120">
+                                <el-table-column label="材质" prop="yarn" width="100">
                                     <template #header>
                                         <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.yarn">
                                             <template #reference>
@@ -934,16 +982,16 @@
                                     <template #default="{ row }">
                                         <div v-if="isEditMode" class="editable-cell">
                                             <el-input
-                                                v-model="row.specs_info.yarn"
+                                                v-model="row.yarn"
                                                 size="small"
                                                 @keyup.enter="handleSpecsSave(row)"
                                                 placeholder="输入材质">
                                             </el-input>
                                         </div>
-                                        <span v-else>{{ row.specs_info?.yarn || '-' }}</span>
+                                        <span v-else style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; width: 80px; cursor: pointer;" :title="row.yarn">{{ row.yarn || '-' }}</span>
                                     </template>
                                 </el-table-column>
-                                <el-table-column label="成分" prop="specs_info.composition" width="150">
+                                <el-table-column label="成分" prop="composition" width=100">
                                     <template #header>
                                         <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.composition">
                                             <template #reference>
@@ -970,16 +1018,16 @@
                                     <template #default="{ row }">
                                         <div v-if="isEditMode" class="editable-cell">
                                             <el-input
-                                                v-model="row.specs_info.composition"
+                                                v-model="row.composition"
                                                 size="small"
                                                 @keyup.enter="handleSpecsSave(row)"
                                                 placeholder="输入成分">
                                             </el-input>
                                         </div>
-                                        <span v-else>{{ row.specs_info?.composition || '-' }}</span>
+                                        <span v-else style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; width: 80px; cursor: pointer;" :title="row.composition">{{ row.composition || '-' }}</span>
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="specs" label="颜色/库存" width="250">
+                                <el-table-column prop="specs" label="颜色/库存" width="125">
                                     <template #default="scope">
                                         <el-tag v-for="spec in getSpecs(scope.row.specs)" :key="spec.color" size="small"
                                             style="margin: 2px">
@@ -987,7 +1035,7 @@
                                         </el-tag>
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="created_at" label="创建日期" width="180">
+                                <el-table-column prop="created_at" label="创建日期" width="120">
                                     <template #default="scope">
                                         {{ formatDate(scope.row.created_at) }}
                                     </template>
@@ -1126,28 +1174,95 @@
                                         </el-upload>
                                     </el-form-item>
 
+                                    <el-form-item label="商品视频">
+                                        <div v-if="videoPreviewUrl" class="video-preview-container" style="margin-top: 15px;">
+                                            <video 
+                                                :src="videoPreviewUrl" 
+                                                controls 
+                                                style="max-width: 100%; max-height: 300px; border-radius: 4px;"
+                                                @click="openVideoPreview">
+                                            </video>
+                                            <div class="video-preview-actions" style="margin-top: 10px;">
+                                                <el-button type="primary" size="small" @click="openVideoPreview">
+                                                    <el-icon class="el-icon--left"><VideoPlay /></el-icon>预览视频
+                                                </el-button>
+                                                <el-button type="danger" size="small" @click="removeVideo">
+                                                    <el-icon class="el-icon--left"><Delete /></el-icon>删除视频
+                                                </el-button>
+                                            </div>
+                                        </div>
+                                        <el-upload
+                                            ref="videoUploadRef"
+                                            class="video-uploader"
+                                            :limit="1"
+                                            :auto-upload="true"
+                                            :multiple="false"
+                                            :http-request="customVideoUpload"
+                                            :before-upload="handleBeforeVideoUpload"
+                                            :on-success="handleVideoUploadSuccess"
+                                            :on-remove="handleVideoRemove"
+                                            :on-error="handleUploadError"
+                                            accept=".mp4,.mov,.avi,.webm"
+                                            :file-list="videoFileList">
+                                            <el-button type="primary">
+                                                <el-icon class="el-icon--left"><Upload /></el-icon>上传视频
+                                            </el-button>
+                                            <template #tip>
+                                                <div class="el-upload__tip">仅支持MP4/MOV/AVI/WebM格式，大小不超过50MB</div>
+                                            </template>
+                                        </el-upload>
+                                        
+                                    </el-form-item>
+
                                     <el-form-item label="商品描述" >
                                         <el-input type="textarea" v-model="productForm.description"
                                             placeholder="请输入商品描述"></el-input>
                                     </el-form-item>
 
-                                    <el-form-item label="尺寸" prop="specs_info.size">
-                                        <el-input v-model="productForm.specs_info.size" placeholder="请输入商品尺寸"></el-input>
-                                    </el-form-item>
-
-                                    <el-form-item label="克重" prop="specs_info.weight">
-                                        <el-input-number v-model="productForm.specs_info.weight" :precision="2" :step="0.1"
-                                            :min="0" placeholder="请输入商品克重"></el-input-number>
-                                        <span class="el-form-item__description" style="margin-left: 10px">克(g)</span>
-                                    </el-form-item>
-
-                                    <el-form-item label="材质" prop="specs_info.yarn">
-                                        <el-input v-model="productForm.specs_info.yarn" placeholder="请输入商品材质"></el-input>
-                                    </el-form-item>
-
-                                    <el-form-item label="成分" prop="specs_info.composition">
-                                        <el-input type="textarea" v-model="productForm.specs_info.composition" 
-                                            placeholder="请输入商品成分"></el-input>
+                                    <el-form-item label="商品规格">
+                                        <div class="spec-form-container">
+                                            <el-row :gutter="4" class="spec-form-row">
+                                                <el-col :span="5">
+                                                    <div class="spec-form-item">
+                                                        <label style='width: 50px;' >尺寸</label>
+                                                        <el-input 
+                                                            v-model="productForm.size" 
+                                                            placeholder="请输入尺寸">
+                                                        </el-input>
+                                                    </div>
+                                                </el-col>
+                                                <el-col :span="6">
+                                                    <div class="spec-form-item">
+                                                        <label style='width: 50px;' >克重</label>
+                                                        <el-input-number 
+                                                            v-model="productForm.weight" 
+                                                            :min="0" 
+                                                            :precision="1" 
+                                                            placeholder="请输入克重"
+                                                            style="width: 100%">
+                                                        </el-input-number>
+                                                    </div>
+                                                </el-col>
+                                                <el-col :span="5">
+                                                    <div class="spec-form-item">
+                                                        <label style='width: 50px;' >材质</label>
+                                                        <el-input 
+                                                            v-model="productForm.yarn" 
+                                                            placeholder="请输入材质">
+                                                        </el-input>
+                                                    </div>
+                                                </el-col>
+                                                <el-col :span="5">
+                                                    <div class="spec-form-item">
+                                                        <label style='width: 50px;' >成分</label>
+                                                        <el-input 
+                                                            v-model="productForm.composition" 
+                                                            placeholder="请输入成分">
+                                                        </el-input>
+                                                    </div>
+                                                </el-col>
+                                            </el-row>
+                                        </div>
                                     </el-form-item>
 
                                     <el-form-item label="颜色库存">
@@ -1175,7 +1290,7 @@
                                         </div>
                                     </el-form-item>
 
-                                    <el-form-item label="库存预警值" prop="stock_warning">
+                                    <el-form-item label="库存预警" prop="stock_warning">
                                         <el-input-number v-model="productForm.stock_warning" :min="0" :step="1"
                                             placeholder="库存预警阈值">
                                         </el-input-number>
@@ -2478,6 +2593,9 @@
                     currentColorIndex: -1,
                     isEditMode: false,
                     previewSrcList: [],
+                    videoFileList: [],
+                    videoPreviewUrl: '',
+                    videoPreviewVisible: false,
                 }
             },
            // computed: {
@@ -2635,12 +2753,6 @@
                     const images = typeof row.images === 'string' ? JSON.parse(row.images) : (row.images || []);
                     const specs = typeof row.specs === 'string' ? JSON.parse(row.specs) : (row.specs || []);
                     const tags = typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || []);
-                    const specs_info = typeof row.specs_info === 'string' ? JSON.parse(row.specs_info) : (row.specs_info || {
-                        size: '',
-                        weight: 0,
-                        yarn: '',
-                        composition: ''
-                    });
                     
                     // 设置文件列表
                     this.fileList = images.map(url => ({
@@ -2651,6 +2763,20 @@
                     
                     // 更新预览图片列表
                     this.previewSrcList = this.fileList.map(file => file.url);
+                    
+                    // 处理视频文件
+                    if (row.video_url) {
+                        const videoUrl = this.handleImageUrl(row.video_url);
+                        this.videoPreviewUrl = videoUrl;
+                        this.videoFileList = [{
+                            name: row.video_url.split('/').pop(),
+                            url: videoUrl,
+                            status: 'success'
+                        }];
+                    } else {
+                        this.videoPreviewUrl = '';
+                        this.videoFileList = [];
+                    }
                     
                     // 设置表单数据
                     this.productForm = {
@@ -2667,15 +2793,15 @@
                         specs: specs,  // 保存完整的规格数据（包含库存）
                         tags: tags,
                         images: images,
+                        video_url: row.video_url || '',
                         stock: parseInt(row.stock) || 0,
                         stock_warning: parseInt(row.stock_warning) || 10,
                         created_at: row.created_at,
-                        specs_info: {
-                            size: specs_info.size || '',
-                            weight: parseFloat(specs_info.weight) || 0,
-                            yarn: specs_info.yarn || '',
-                            composition: specs_info.composition || ''
-                        }
+                        // 使用独立字段
+                        size: row.size || '',
+                        weight: parseFloat(row.weight) || 0,
+                        yarn: row.yarn || '',
+                        composition: row.composition || ''
                     };
 
                     // 解析标签数据
@@ -2815,7 +2941,7 @@
                         const random = Math.random().toString(36).substr(2, 6);
                         const ext = file.name.split('.').pop();
                         const fileName = `${timestamp}_${random}.${ext}`;
-                        const path = `products/${fileName}`;
+                        const path = `products/${this.productForm.id}/${fileName}`;
                         
                         const uploadResponse = await axios.post('/get_uploadfileUrl', {
                             path: path
@@ -4296,6 +4422,7 @@
                                 yarns: [{ text: '全部', value: null }, ...response.data.data.yarns],
                                 compositions: [{ text: '全部', value: null }, ...response.data.data.compositions]
                             };
+                            console.log( "规格筛选值：",this.filterOptions);
                         }
                     } catch (error) {
                         console.error('加载筛选选项失败:', error);
@@ -4338,8 +4465,6 @@
                     this.productFilter.weight = this.selectedFilters.weight;
                     this.productFilter.yarn = this.selectedFilters.yarn;
                     this.productFilter.composition = this.selectedFilters.composition;
-           
-                    console.log( "规格筛选值：",this.productFilter.spec_info);
                     // 关闭所有筛选弹窗
                     Object.keys(this.filterVisible).forEach(key => {
                         this.filterVisible[key] = false;
@@ -4402,19 +4527,13 @@
 
                 async handleSpecsSave(row) {
                     try {
-                        // 确保 specs_info 对象存在
-                        if (!row.specs_info) {
-                            row.specs_info = {};
-                        }
 
                         const response = await axios.post(`/products`, {
                             id: row.id,
-                            specs_info: {
-                                size: row.specs_info.size || '',
-                                weight: row.specs_info.weight || null,
-                                yarn: row.specs_info.yarn || '',
-                                composition: row.specs_info.composition || ''
-                            }
+                            size: row.size || '',
+                            weight: row.weight || null,
+                            yarn: row.yarn || '',
+                            composition: row.composition || '',                           
                         });
                         console.log('保存规格', response);
 
@@ -4464,6 +4583,399 @@
                             });
                         }
                     });
+                },
+                async handleBeforeVideoUpload(file) {
+                    // 检查文件类型
+                    const isVideo = ['video/mp4', 'video/quicktime', 'video/avi', 'video/webm'].includes(file.type);
+                    if (!isVideo) {
+                        ElementPlus.ElMessage.error('请上传MP4/MOV/AVI/WebM格式的视频');
+                        return false;
+                    }
+                    
+                    // 检查文件大小 (50MB)
+                    const isLessThan50MB = file.size / 1024 / 1024 < 50;
+                    if (!isLessThan50MB) {
+                        ElementPlus.ElMessage.error('视频大小不能超过50MB');
+                        return false;
+                    }
+                    
+                    this.imagesLoading = ElementPlus.ElLoading.service({
+                        lock: true,
+                        text: '视频上传中...',
+                        background: 'rgba(0, 0, 0, 0.7)'
+                    });
+                    
+                    try {
+                        // 使用时间戳和随机数生成唯一文件名
+                        const timestamp = Date.now();
+                        const random = Math.random().toString(36).substr(2, 6);
+                        const ext = file.name.split('.').pop();
+                        const fileName = `${timestamp}_${random}.${ext}`;
+                        const path = `videos/${fileName}`;
+                        
+                        const uploadResponse = await axios.post('/get_uploadfileUrl', {
+                            path: path
+                        });
+                        
+                        const uploadData = uploadResponse.data;
+                        if (uploadData.errcode !== 0) {
+                            throw new Error(uploadData.errmsg);
+                        }
+                        
+                        // 存储上传信息
+                        this.fileUploadInfo.set(file.uid, {
+                            ...uploadData,
+                            path: path,
+                            file: file
+                        });
+                        
+                        return true;
+                    } catch (error) {
+                        console.error('准备视频上传失败:', error);
+                        ElementPlus.ElMessage.error('视频准备失败：' + error.message);
+                        if (this.imagesLoading) {
+                            this.imagesLoading.close();
+                        }
+                        return false;
+                    }
+                },
+                
+                async customVideoUpload({ file }) {
+                    try {
+                        const uploadInfo = this.fileUploadInfo.get(file.uid);
+                        if (!uploadInfo) {
+                            ElementPlus.ElMessage.error('未找到视频上传信息');
+                            throw new Error('未找到视频上传信息');
+                        }
+                        
+                        const formData = new FormData();
+                        formData.append('key', uploadInfo.path);
+                        formData.append('Signature', uploadInfo.authorization);
+                        formData.append('x-cos-security-token', uploadInfo.token);
+                        formData.append('x-cos-meta-fileid', uploadInfo.cos_file_id);
+                        formData.append('file', file);
+                        
+                        const response = await axios.post(uploadInfo.url, formData);
+                        
+                        // 构建完整的文件URL
+                        const fileUrl = `https://7072-prod-9ed4311ic-1254893510.tcb.qcloud.la/${uploadInfo.path}`;
+                        
+                        // 清理该文件的上传信息
+                        this.fileUploadInfo.delete(file.uid);
+                        
+                        // 更新产品表单
+                        this.productForm.video_url = uploadInfo.file_id;
+                        this.videoPreviewUrl = fileUrl;
+                        
+                        // 如果是编辑模式并且已有商品ID，更新商品信息
+                        if (this.productForm.id) {
+                            await axios.post('/products', {
+                                id: this.productForm.id,
+                                video_url: this.productForm.video_url
+                            });
+                        }
+                        
+                        if (this.imagesLoading) {
+                            this.imagesLoading.close();
+                        }
+                        
+                        ElementPlus.ElMessage.success('视频上传成功');
+                        
+                        return {
+                            url: fileUrl
+                        };
+                    } catch (error) {
+                        console.error('视频上传失败:', error);
+                        ElementPlus.ElMessage.error('视频上传失败：' + error.message);
+                        if (this.imagesLoading) {
+                            this.imagesLoading.close();
+                        }
+                        throw error;
+                    }
+                },
+                
+                handleVideoUploadSuccess(response, file) {
+                    this.videoPreviewUrl = response.url;
+                    this.videoFileList = [file];
+                },
+                
+                handleVideoRemove() {
+                    this.videoPreviewUrl = '';
+                    this.productForm.video_url = '';
+                    this.videoFileList = [];
+                },
+                
+                removeVideo() {
+                    this.handleVideoRemove();
+                    ElementPlus.ElMessage.success('视频已删除');
+                },
+                
+                openVideoPreview() {
+                    if (this.videoPreviewUrl) {
+                        // 创建一个全屏预览层
+                        const previewContainer = document.createElement('div');
+                        previewContainer.className = 'video-fullscreen-preview';
+                        previewContainer.style.cssText = `
+                            position: fixed;
+                            top: 0;
+                            left: 0;
+                            width: 100vw;
+                            height: 100vh;
+                            background-color: rgba(0, 0, 0, 0.9);
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: center;
+                            align-items: center;
+                            z-index: 3000;
+                        `;
+                        
+                        // 创建视频元素
+                        const videoEl = document.createElement('video');
+                        videoEl.src = this.videoPreviewUrl;
+                        videoEl.controls = true;
+                        videoEl.autoplay = true;
+                        videoEl.style.cssText = `
+                            max-width: 90%;
+                            max-height: 80vh;
+                            border-radius: 4px;
+                        `;
+                        
+                        // 创建关闭按钮
+                        const closeBtn = document.createElement('button');
+                        closeBtn.innerHTML = '关闭预览';
+                        closeBtn.style.cssText = `
+                            margin-top: 20px;
+                            padding: 8px 15px;
+                            background-color: #409EFF;
+                            color: white;
+                            border: none;
+                            border-radius: 4px;
+                            cursor: pointer;
+                            font-size: 16px;
+                        `;
+                        closeBtn.onclick = () => {
+                            document.body.removeChild(previewContainer);
+                        };
+                        
+                        // 点击背景也可以关闭
+                        previewContainer.onclick = (e) => {
+                            if (e.target === previewContainer) {
+                                document.body.removeChild(previewContainer);
+                            }
+                        };
+                        
+                        // 添加到页面
+                        previewContainer.appendChild(videoEl);
+                        previewContainer.appendChild(closeBtn);
+                        document.body.appendChild(previewContainer);
+                    }
+                },
+                
+                // 修改商品编辑方法，加载视频信息
+                handleEdit(row) {
+                    this.dialogType = 'edit';
+                    this.editingProductId = row.id;
+                    
+                    // 解析数据
+                    const images = typeof row.images === 'string' ? JSON.parse(row.images) : (row.images || []);
+                    const specs = typeof row.specs === 'string' ? JSON.parse(row.specs) : (row.specs || []);
+                    const tags = typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || []);
+                    
+                    const specs_info = typeof row.specs_info === 'string' ? JSON.parse(row.specs_info) : (row.specs_info || {
+                        size: '',
+                        weight: 0,
+                        yarn: '',
+                        composition: ''
+                    });
+                    
+                    // 设置文件列表
+                    this.fileList = images.map(url => ({
+                        name: url.split('/').pop(),
+                        url: this.handleImageUrl(url),
+                        status: 'success'
+                    }));
+                    
+                    // 更新预览图片列表
+                    this.previewSrcList = this.fileList.map(file => file.url);
+                    
+                    // 处理视频文件
+                    if (row.video_url) {
+                        const videoUrl = this.handleImageUrl(row.video_url);
+                        this.videoPreviewUrl = videoUrl;
+                        this.videoFileList = [{
+                            name: row.video_url.split('/').pop(),
+                            url: videoUrl,
+                            status: 'success'
+                        }];
+                    } else {
+                        this.videoPreviewUrl = '';
+                        this.videoFileList = [];
+                    }
+                    
+                    // 设置表单数据
+                    this.productForm = {
+                        id: row.id,
+                        name: row.name,
+                        price: parseFloat(row.price) || 0,
+                        cost_price: parseFloat(row.cost_price) || 0,
+                        price_b: parseFloat(row.price_b) || 0,
+                        price_c: parseFloat(row.price_c) || 0,
+                        price_d: parseFloat(row.price_d) || 0,
+                        description: row.description || '',
+                        style: parseInt(row.type) || 1,
+                        colors: specs.map(spec => spec.color),  // 提取颜色列表
+                        specs: specs,  // 保存完整的规格数据（包含库存）
+                        tags: tags,
+                        images: images,
+                        video_url: row.video_url || '',
+                        stock: parseInt(row.stock) || 0,
+                        stock_warning: parseInt(row.stock_warning) || 10,
+                        created_at: row.created_at,
+                        specs_info: {
+                            size: specs_info.size || '',
+                            weight: parseFloat(specs_info.weight) || 0,
+                            yarn: specs_info.yarn || '',
+                            composition: specs_info.composition || ''
+                        }
+                    };
+
+                    // 解析标签数据
+                    const uniqueTags = [...new Set(tags)];
+                    
+                    // 更新预设标签的选中状态
+                    this.selectedPresetTags = uniqueTags.filter(tag => this.presetTags.includes(tag));
+                    
+                    // 设置预设颜色的选中状态
+                    this.selectedPresetColors = specs
+                        .map(spec => spec.color)
+                        .filter(color => this.presetColors.includes(color));
+
+                    // 设置自定义颜色
+                    this.customColorInput = specs.map(spec => spec.color);
+                    this.customColorOptions = specs
+                        .map(spec => spec.color)
+                        .filter(color => !this.presetColors.includes(color));
+
+                    // 直接设置所有标签到 productForm.tags
+                    this.productForm.tags = uniqueTags;
+
+                    // 最后再打开对话框
+                    this.$nextTick(() => {
+                        this.dialogVisible = true;
+                        // 延迟初始化排序功能，确保DOM已更新
+                        setTimeout(() => {
+                            this.initSortable();
+                        }, 300);
+                    });
+                },
+                
+                // 修改商品添加对话框初始化方法，重置视频相关字段
+                showAddProductDialog() {
+                    this.dialogType = 'add';
+                    this.productForm = {
+                        id: '',
+                        name: '',
+                        price: 0,
+                        cost_price: 0,
+                        price_b: 0,
+                        price_c: 0,
+                        price_d: 0,
+                        style: 1,
+                        colors: ['灰色', '黑色'],  // 默认颜色
+                        specs: [                 // 初始化 specs 数组
+                            { color: '灰色', stock: 0 },
+                            { color: '黑色', stock: 0 }
+                        ],
+                        images: [],
+                        video_url: '',
+                        description: '暂时没有',
+                        stock: 0,
+                        stock_warning: 10,
+                        specs_info: {           // 新的规格信息对象
+                            size: '',           // 尺寸
+                            weight: 0,          // 克重
+                            yarn: '',           // 材质
+                            composition: ''     // 成分
+                        }
+                    };
+                    // 清空文件列表
+                    if (this.$refs.uploadRef) {
+                        this.$refs.uploadRef.clearFiles();
+                    }
+                    // 清空视频文件
+                    this.videoPreviewUrl = '';
+                    this.videoFileList = [];
+                    
+                    this.dialogVisible = true;
+                    this.selectedPresetColors = [];
+                    this.customColorInput = [];
+                    this.customColorOptions = [];
+                    
+                    // 延迟初始化排序功能，确保DOM已更新
+                    setTimeout(() => {
+                        this.initSortable();
+                    }, 300);
+                },
+                
+                // 修改提交方法，添加视频URL
+                async submitProduct() {
+                    try {
+                        await this.$refs.productFormRef.validate(); // 验证表单
+
+                        // 处理规格数据
+                        const specs = this.productForm.specs.map(spec => ({
+                            color: spec.color,
+                            stock: parseInt(spec.stock) || 0,
+                            image: spec.image || ''
+                        }));
+
+                        const submitData = {
+                            id: this.productForm.id,
+                            name: this.productForm.name.trim(),
+                            description: this.productForm.description.trim(),
+                            price: parseFloat(this.productForm.price) || 0,
+                            cost_price: parseFloat(this.productForm.cost_price) || 0,
+                            price_b: parseFloat(this.productForm.price_b) || 0,
+                            price_c: parseFloat(this.productForm.price_c) || 0,
+                            price_d: parseFloat(this.productForm.price_d) || 0,
+                            specs: specs,
+                            images: this.productForm.images || [],
+                            video_url: this.productForm.video_url || '',
+                            type: parseInt(this.productForm.style) || 1,
+                            stock: specs.reduce((sum, spec) => sum + (parseInt(spec.stock) || 0), 0),
+                            stock_warning: parseInt(this.productForm.stock_warning) || 10,
+                            created_at: this.dialogType === 'add' ? new Date().toISOString() : this.productForm.created_at,
+                            specs_info: {
+                                size: (this.productForm.specs_info.size || '').trim(),
+                                weight: parseFloat(this.productForm.specs_info.weight) || 0,
+                                yarn: (this.productForm.specs_info.yarn || '').trim(),
+                                composition: (this.productForm.specs_info.composition || '').trim()
+                            }
+                        };
+                        
+                        const url = `/products`;
+                        const method = 'post';
+                        const response = await axios[method](url, submitData);
+                        
+
+                        if (response.status === 200 || response.status === 201) {
+                            ElementPlus.ElMessage.success(this.dialogType === 'add' ? '添加成功' : '更新成功');
+                            if (this.dialogType === 'add') {
+                                const uploadComponent = this.$refs.uploadRef;
+                                this.totalFiles = 0;
+                                this.uploadedFiles = 0;
+                                console.log('商品创建/更新成功返回:', response.data.product_id);
+                                this.tempProductId = response.data.product_id;
+                                await new Promise(resolve => setTimeout(resolve, 200));
+                                await uploadComponent.submit();   
+                                console.log('商品创建/更新成功返回:', this.tempProductId);
+                            }
+                            this.dialogVisible = false;
+                            this.loadProducts();
+                        }
+                    } catch (error) {
+                        this.handleAxiosError(error, '保存商品失败');
+                    }
                 },
             }
         })

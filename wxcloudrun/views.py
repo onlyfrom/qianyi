@@ -25,6 +25,7 @@ from sqlalchemy import inspect, text, func, desc, distinct, case, Text
 from sqlalchemy.sql import literal, literal_column
 from wxcloudrun.response import *
 #from .decorators import admin_required, permission_required
+from wxcloudrun.recommended import get_recommended_products, update_recommended_products
 
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
@@ -840,11 +841,13 @@ def add_or_update_product(user_id):
             if 'specs' in data:
                 product.specs = json.dumps(data['specs'])
             if 'images' in data:
-                product.images = json.dumps(data['images'])
+                product.images = json.dumps(data['images'])                
             if 'status' in data:
                 product.status = data['status']
             if 'is_public' in data:
                 product.is_public = data['is_public']
+            if 'video_url' in data:
+                product.video_url = data['video_url']
                 
             product.updated_at = datetime.now()
         else:
@@ -903,7 +906,8 @@ def add_or_update_product(user_id):
                 status=status,
                 is_public=is_public,
                 created_at=datetime.now(),
-                updated_at=datetime.now()
+                updated_at=datetime.now(),
+                video_url=data.get('video_url', '')
             )
             db.session.add(product)
             
@@ -1549,14 +1553,14 @@ def import_products(user_id):
                     product_data = {
                         'id': product_id,
                         'name': str(row['商品名称']).strip(),
-                        'material': str(row['材质']).strip() if not pd.isna(row.get('材质', '')) else '',  # 材质
+                        'yarn': str(row['材质']).strip() if not pd.isna(row.get('材质', '')) else '',  # 材质
                         'composition': str(row['成份']).strip() if not pd.isna(row.get('成份', '')) else '',  # 成份
                         'size': str(row['尺寸']).strip() if not pd.isna(row.get('尺寸', '')) else '',  # 尺寸
                         'weight': str(row['克重']).strip() if not pd.isna(row.get('克重', '')) else '',  # 克重
                         'price': float(row['A类售价']) if not pd.isna(row.get('A类售价', '')) else 0,  # A类售价
                         'description': str(row['备注']).strip() if not pd.isna(row.get('备注', '')) else '',  # 备注
                         'type': 1,  # 默认类型
-                        'created_at': datetime.now().isoformat()
+                        'created_at': datetime.now().isoformat(),
                     }
                 except ValueError as e:
                     error_msg = f'第 {index + 2} 行：数据格式错误 - {str(e)}'
@@ -1564,36 +1568,10 @@ def import_products(user_id):
                     errors.append(error_msg)
                     continue
                 
-                # 构建商品描述
-                description_parts = []
-                if product_data['material']:
-                    description_parts.append(f"yarn：{product_data['material']}")
-                if product_data['composition']:
-                    description_parts.append(f"composition：{product_data['composition']}")
-                if product_data['size']:
-                    description_parts.append(f"size：{product_data['size']}")
-                if product_data['weight']:
-                    description_parts.append(f"weight：{product_data['weight']}")
-                
-                product_data['description'] = '\n'.join(description_parts)
-
-                # 创建一个字典来存储规格信息
-                specs_info = {}
-
-                if product_data['material']:
-                    specs_info['yarn'] = product_data['material']
-                if product_data['composition']:
-                    specs_info['composition'] = product_data['composition']
-                if product_data['size']:
-                    specs_info['size'] = product_data['size']
-                if product_data['weight']:
-                    specs_info['weight'] = product_data['weight']
-
-                # 将字典转换为JSON字符串
-                product_data['specs_info'] = json.dumps(specs_info)
-                
+                product_data['description'] = ''
+  
                 # 设置默认规格
-                specs = [{'color': '默认', 'stock': 999999}]
+                specs = [{'color': '默认', 'stock': 999999, 'image': ''}]
                 product_data['specs'] = json.dumps(specs)
          
                 # 从系统设置获取商品类型配置
@@ -1621,9 +1599,12 @@ def import_products(user_id):
                     description=product_data['description'],
                     price_b=product_data['price'],
                     specs=product_data['specs'],
-                    specs_info=product_data['specs_info'],
                     type=product_data['type'],
-                    created_at=product_data['created_at']
+                    created_at=product_data['created_at'],
+                    size=product_data['size'],
+                    weight=product_data['weight'],
+                    yarn=product_data['yarn'],
+                    composition=product_data['composition']
                 )
                 db.session.add(new_product)
                 db.session.commit()
@@ -4357,53 +4338,45 @@ def get_products(user_id):
                 Product.name.like(search),
                 Product.description.like(search)
             ))
-            
+        
         # 添加类型筛选
         if product_type:
-            query = query.filter(Product.type == product_type)
-
-        # 打印一个示例产品的specs_info，用于调试
-        sample_product = Product.query.first()
-        if sample_product:
-            print(f"示例产品 specs_info: {sample_product.specs_info}")
-            try:
-                specs_dict = json.loads(sample_product.specs_info)
-                print(f"解析后的 specs_info: {specs_dict}")
-            except json.JSONDecodeError as e:
-                print(f"JSON解析错误: {e}")
-
-        # 添加规格筛选条件
+            if product_type == '-':
+                query = query.filter(db.or_(Product.type == None, Product.type == ''))
+            else:
+                query = query.filter(Product.type == product_type)
+        
         if size:
-            print(f"搜索size条件: {size}")
-            query = query.filter(Product.specs_info.like(f'%"size":"{size}"%'))
-            # 打印匹配的结果数量
-            print(f"匹配size的产品数量: {query.count()}")
+            if size == '-':
+                query = query.filter(db.or_(Product.size == None, Product.size == ''))
+            else:
+                query = query.filter(Product.size == size)
             
         if weight:
-            print(f"搜索weight条件: {weight}")
-            query = query.filter(Product.specs_info.like(f'%"weight":{weight}%'))
-            print(f"匹配weight的产品数量: {query.count()}")
+            if weight == '-':
+                query = query.filter(db.or_(Product.weight == None, Product.weight == ''))
+            else:
+                query = query.filter(Product.weight == weight)
             
         if yarn:
-            print(f"搜索yarn条件: {yarn}")
-            query = query.filter(Product.specs_info.like(f'%"yarn":"{yarn}"%'))
-            print(f"匹配yarn的产品数量: {query.count()}")
-            
+            if yarn == '-':
+                query = query.filter(db.or_(Product.yarn == None, Product.yarn == ''))
+            else:
+                query = query.filter(Product.yarn == yarn)
+        
         if composition:
-            print(f"搜索composition条件: {composition}")
-            query = query.filter(Product.specs_info.like(f'%"composition":"{composition}"%'))
-            print(f"匹配composition的产品数量: {query.count()}")
-            
+            if composition == '-':
+                query = query.filter(db.or_(Product.composition == None, Product.composition == ''))
+            else:
+                query = query.filter(Product.composition == composition)
+        
         # 获取分页数据
         paginated_products = query.order_by(Product.created_at.desc())\
             .paginate(page=page, per_page=page_size, error_out=False)
             
         # 格式化返回数据
         products = []
-        for product in paginated_products.items:
-            # 打印每个产品的specs_info，用于调试
-            print(f"产品 {product.id} 的 specs_info: {product.specs_info}")
-            
+        for product in paginated_products.items:            
             # 安全地获取基础价格
             base_price = float(product.price) if product.price is not None else 0
             
@@ -4418,11 +4391,15 @@ def get_products(user_id):
                 'cost_price': float(product.cost_price) if product.cost_price is not None else base_price,
                 'type': product.type,
                 'created_at': product.created_at.isoformat() if product.created_at else None,
-                'specs_info': json.loads(product.specs_info) if product.specs_info else {},
-            'specs': json.loads(product.specs) if product.specs else [],
-            'images': json.loads(product.images) if product.images else [],
+                'specs': json.loads(product.specs) if product.specs else [],
+                'images': json.loads(product.images) if product.images else [],
                 'status': product.status if product.status is not None else 1,  # 默认上架
-                'is_public': product.is_public if product.is_public is not None else 1  # 默认公开
+                'is_public': product.is_public if product.is_public is not None else 1,  # 默认公开
+                'video_url': product.video_url if product.video_url is not None else '',
+                'size': product.size if product.size is not None else '',
+                'weight': product.weight if product.weight is not None else '',
+                'yarn': product.yarn if product.yarn is not None else '',
+                'composition': product.composition if product.composition is not None else ''
             })
             
         return jsonify({
@@ -6499,35 +6476,19 @@ def get_product_filter_options(user_id):
         yarns = set()
         compositions = set()
         types = set()
-        # 遍历商品收集筛选选项
-
-
+        
+        
         for product in products:
-            if product.specs_info:
-                specs_info = json.loads(product.specs_info)
-
-                if specs_info.get('type'):
-                    types.add(specs_info['type'])
-                
-                # 收集尺寸选项
-                if specs_info.get('size'):
-                    sizes.add(specs_info['size'])
-                
-                # 收集克重选项
-                if specs_info.get('weight'):
-                    try:
-                        weight = float(specs_info['weight'])
-                        weights.add(weight)
-                    except (ValueError, TypeError):
-                        pass
-                
-                # 收集材质选项
-                if specs_info.get('yarn'):
-                    yarns.add(specs_info['yarn'])
-                
-                # 收集成分选项
-                if specs_info.get('composition'):
-                    compositions.add(specs_info['composition'])
+            size = product.size if product.size else '-'
+            weight = product.weight if product.weight else '-'
+            yarn = product.yarn if product.yarn else '-'
+            composition = product.composition if product.composition else '-'
+            type = product.type if product.type else '-'
+            sizes.add(size)
+            weights.add(weight)
+            yarns.add(yarn)
+            compositions.add(composition)
+            types.add(type)
         
         # 将集合转换为Element Plus过滤器格式
         return jsonify({
@@ -6535,11 +6496,12 @@ def get_product_filter_options(user_id):
             'message': 'success',
             'data': {
                 'sizes': [{'text': size, 'value': size} for size in sorted(sizes)],
-                'weights': [{'text': f'{weight}g', 'value': weight} for weight in sorted(weights)],
+                'weights': [{'text': f'{weight}', 'value': weight} for weight in sorted(weights)],
                 'yarns': [{'text': yarn, 'value': yarn} for yarn in sorted(yarns)],
-                'compositions': [{'text': comp, 'value': comp} for comp in sorted(compositions)]
-            }
-        })
+                'compositions': [{'text': composition, 'value': composition} for composition in sorted(compositions)],
+                'types': [{'text': type, 'value': type} for type in sorted(types)]
+                }
+            })
         
     except Exception as e:
         print(f'获取筛选选项失败: {str(e)}')
@@ -6549,3 +6511,11 @@ def get_product_filter_options(user_id):
             'message': '获取筛选选项失败',
             'error': str(e)
         }), 500
+
+@app.route('/recommended/products', methods=['GET'])
+def recommended_products():
+    return get_recommended_products()
+
+@app.route('/recommended/products', methods=['POST'])
+def set_recommended_products():
+    return update_recommended_products()

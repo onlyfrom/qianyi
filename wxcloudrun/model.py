@@ -126,7 +126,7 @@ class Product(db.Model):
     id = db.Column(db.String(80), primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     description = db.Column(db.Text)
-    price = db.Column(db.Float, nullable=False)
+    price = db.Column(db.Float)
     price_b = db.Column(db.Float)
     price_c = db.Column(db.Float)
     price_d = db.Column(db.Float)
@@ -139,6 +139,11 @@ class Product(db.Model):
     status = db.Column(db.Integer, default=1)  # 0:下架 1:上架
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+    video_url = db.Column(db.Text)
+    size = db.Column(db.Text)
+    weight = db.Column(db.Text)
+    yarn = db.Column(db.Text)
+    composition = db.Column(db.Text)
 
 class StockRecord(db.Model):
     __tablename__ = 'stock_records'
