@@ -4330,9 +4330,8 @@ def batch_update_product_type_api(user_id):
 
 # 获取商品列表（需要管理员登录）
 @app.route('/products', methods=['GET'])
-#@admin_required
 @check_staff_permission('product.view')
-def get_products(user_id):  # 添加 user_id 参数来接收装饰器传入的值
+def get_products(user_id):
     try:
         # 获取查询参数
         page = request.args.get('page', 1, type=int)
@@ -4340,7 +4339,14 @@ def get_products(user_id):  # 添加 user_id 参数来接收装饰器传入的�
         keyword = request.args.get('keyword', '')
         product_type = request.args.get('type')
         
-        print(f'获取商品列表参数: page={page}, page_size={page_size}, keyword={keyword}, product_type={product_type}')
+        # 获取规格筛选参数
+        size = request.args.get('size')
+        weight = request.args.get('weight')
+        yarn = request.args.get('yarn')
+        composition = request.args.get('composition')
+        
+        print(f'获取商品列表参数: page={page}, page_size={page_size}, keyword={keyword}, product_type={product_type}, size={size}, weight={weight}, yarn={yarn}, composition={composition}')
+        
         # 构建基础查询
         query = Product.query
         
@@ -4355,6 +4361,38 @@ def get_products(user_id):  # 添加 user_id 参数来接收装饰器传入的�
         # 添加类型筛选
         if product_type:
             query = query.filter(Product.type == product_type)
+
+        # 打印一个示例产品的specs_info，用于调试
+        sample_product = Product.query.first()
+        if sample_product:
+            print(f"示例产品 specs_info: {sample_product.specs_info}")
+            try:
+                specs_dict = json.loads(sample_product.specs_info)
+                print(f"解析后的 specs_info: {specs_dict}")
+            except json.JSONDecodeError as e:
+                print(f"JSON解析错误: {e}")
+
+        # 添加规格筛选条件
+        if size:
+            print(f"搜索size条件: {size}")
+            query = query.filter(Product.specs_info.like(f'%"size":"{size}"%'))
+            # 打印匹配的结果数量
+            print(f"匹配size的产品数量: {query.count()}")
+            
+        if weight:
+            print(f"搜索weight条件: {weight}")
+            query = query.filter(Product.specs_info.like(f'%"weight":{weight}%'))
+            print(f"匹配weight的产品数量: {query.count()}")
+            
+        if yarn:
+            print(f"搜索yarn条件: {yarn}")
+            query = query.filter(Product.specs_info.like(f'%"yarn":"{yarn}"%'))
+            print(f"匹配yarn的产品数量: {query.count()}")
+            
+        if composition:
+            print(f"搜索composition条件: {composition}")
+            query = query.filter(Product.specs_info.like(f'%"composition":"{composition}"%'))
+            print(f"匹配composition的产品数量: {query.count()}")
             
         # 获取分页数据
         paginated_products = query.order_by(Product.created_at.desc())\
@@ -4363,6 +4401,9 @@ def get_products(user_id):  # 添加 user_id 参数来接收装饰器传入的�
         # 格式化返回数据
         products = []
         for product in paginated_products.items:
+            # 打印每个产品的specs_info，用于调试
+            print(f"产品 {product.id} 的 specs_info: {product.specs_info}")
+            
             # 安全地获取基础价格
             base_price = float(product.price) if product.price is not None else 0
             
@@ -6444,3 +6485,67 @@ def upload_handler():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/products/filter-options', methods=['GET'])
+@check_staff_permission('product.view')
+def get_product_filter_options(user_id):
+    try:
+        # 查询所有商品
+        products = Product.query.all()
+        
+        # 初始化筛选选项集合
+        sizes = set()
+        weights = set()
+        yarns = set()
+        compositions = set()
+        types = set()
+        # 遍历商品收集筛选选项
+
+
+        for product in products:
+            if product.specs_info:
+                specs_info = json.loads(product.specs_info)
+
+                if specs_info.get('type'):
+                    types.add(specs_info['type'])
+                
+                # 收集尺寸选项
+                if specs_info.get('size'):
+                    sizes.add(specs_info['size'])
+                
+                # 收集克重选项
+                if specs_info.get('weight'):
+                    try:
+                        weight = float(specs_info['weight'])
+                        weights.add(weight)
+                    except (ValueError, TypeError):
+                        pass
+                
+                # 收集材质选项
+                if specs_info.get('yarn'):
+                    yarns.add(specs_info['yarn'])
+                
+                # 收集成分选项
+                if specs_info.get('composition'):
+                    compositions.add(specs_info['composition'])
+        
+        # 将集合转换为Element Plus过滤器格式
+        return jsonify({
+            'code': 0,
+            'message': 'success',
+            'data': {
+                'sizes': [{'text': size, 'value': size} for size in sorted(sizes)],
+                'weights': [{'text': f'{weight}g', 'value': weight} for weight in sorted(weights)],
+                'yarns': [{'text': yarn, 'value': yarn} for yarn in sorted(yarns)],
+                'compositions': [{'text': comp, 'value': comp} for comp in sorted(compositions)]
+            }
+        })
+        
+    except Exception as e:
+        print(f'获取筛选选项失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({
+            'code': 500,
+            'message': '获取筛选选项失败',
+            'error': str(e)
+        }), 500
