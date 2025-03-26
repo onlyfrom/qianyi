@@ -670,6 +670,47 @@
             margin-bottom: 4px;
         }
 
+        .recommended-products-container {
+            padding: 10px;
+        }
+
+        .recommended-list {
+            margin-top: 20px;
+        }
+
+        .recommended-list h4,
+        .search-results h4 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #409EFF;
+            padding-left: 10px;
+            border-left: 3px solid #409EFF;
+        }
+
+        .search-results {
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px dashed #EBEEF5;
+        }
+
+        /* 修改分页组件 */
+        .pagination-container {
+            margin-top: 20px;
+            text-align: right;
+        }
+
+        .pagination-dropdown .el-select-dropdown__item {
+            display: flex;
+        }
+
+        .pagination-dropdown .el-select-dropdown__item::before {
+            content: "每页 ";
+        }
+
+        .pagination-dropdown .el-select-dropdown__item::after {
+            content: " 条";
+        }
+
     </style>
 </head>
 
@@ -859,7 +900,7 @@
                                             <template #reference>
                                                 <span :style="{ color: selectedFilters.type !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
                                                     款式
-                                                    <el-icon v-if="selectedFilters.type !== null"><CircleCheck /></el-icon>
+                                                    <el-icon v-if="selectedFilters.type !== null"></el-icon>
                                                 </span>
                                             </template>
                                             <div class="filter-options">
@@ -887,7 +928,7 @@
                                             <template #reference>
                                                 <span :style="{ color: selectedFilters.size !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
                                                     尺寸
-                                                    <el-icon v-if="selectedFilters.size !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                    <el-icon v-if="selectedFilters.size !== null" class="el-icon--right"></el-icon>
                                                 </span>
                                             </template>
                                             <div class="filter-options">
@@ -923,7 +964,7 @@
                                             <template #reference>
                                                 <span :style="{ color: selectedFilters.weight !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
                                                     克重
-                                                    <el-icon v-if="selectedFilters.weight !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                    <el-icon v-if="selectedFilters.weight !== null" class="el-icon--right"></el-icon>
                                                 </span>
                                             </template>
                                             <div class="filter-options">
@@ -961,7 +1002,7 @@
                                             <template #reference>
                                                 <span :style="{ color: selectedFilters.yarn !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
                                                     材质
-                                                    <el-icon v-if="selectedFilters.yarn !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                    <el-icon v-if="selectedFilters.yarn !== null" class="el-icon--right"></el-icon>
                                                 </span>
                                             </template>
                                             <div class="filter-options">
@@ -997,7 +1038,7 @@
                                             <template #reference>
                                                 <span :style="{ color: selectedFilters.composition !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
                                                     成分
-                                                    <el-icon v-if="selectedFilters.composition !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                    <el-icon v-if="selectedFilters.composition !== null" class="el-icon--right"></el-icon>
                                                 </span>
                                             </template>
                                             <div class="filter-options">
@@ -1060,7 +1101,12 @@
                                     :total="pagination.total"
                                     layout="total, sizes, prev, pager, next, jumper"
                                     @size-change="handleSizeChange"
-                                    @current-change="handleCurrentChange" />
+                                    @current-change="handleCurrentChange"
+                                    :prev-text="'上一页'"
+                                    :next-text="'下一页'"
+                                    :total-text="'总计'"
+                                    popper-class="pagination-dropdown"
+                                />
                             </div>
 
                             <!-- 添加商品编辑商品对话框 -->
@@ -1184,7 +1230,7 @@
                                             </video>
                                             <div class="video-preview-actions" style="margin-top: 10px;">
                                                 <el-button type="primary" size="small" @click="openVideoPreview">
-                                                    <el-icon class="el-icon--left"><VideoPlay /></el-icon>预览视频
+                                                    <el-icon class="el-icon--left"></el-icon>预览视频
                                                 </el-button>
                                                 <el-button type="danger" size="small" @click="removeVideo">
                                                     <el-icon class="el-icon--left"><Delete /></el-icon>删除视频
@@ -1456,6 +1502,16 @@
                                                 
                                             </template>     
                                             <el-button type="primary" @click="showStyleSettings">管理</el-button>                                      
+                                        </el-card>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-card shadow="hover" class="settings-card">
+                                            <template #header>
+                                                <div class="card-header">
+                                                    <span>推荐商品管理</span>
+                                                </div>
+                                            </template>
+                                            <el-button type="primary" @click="showRecommendedProducts">管理</el-button>
                                         </el-card>
                                     </el-col>
                                 </el-row>
@@ -2118,7 +2174,14 @@
     </el-dialog>
 
     <!-- 系统管理对话框 -->
-    <el-dialog title="系统设置" v-model="systemSettingsVisible" width="500px">
+    <el-dialog 
+        v-model="systemSettingsVisible" 
+        title="系统设置" 
+        width="500px"
+        :close-on-click-modal="false"
+        :show-close="true"
+        destroy-on-close
+    >
         <el-form :model="systemSettings" label-width="120px">
             <el-form-item label="系统名称">
                 <el-input v-model="systemSettings.system_name"></el-input>
@@ -2134,13 +2197,13 @@
                     :on-success="handleLogoSuccess"
                     :before-upload="beforeLogoUpload">
                     <img v-if="systemSettings.logo_url" :src="systemSettings.logo_url" class="avatar">
-                    <i v-else class="el-icon-plus avatar-uploader-icon"></i>
+                    <el-icon v-else><Plus /></el-icon>
                 </el-upload>
             </el-form-item>
         </el-form>
         <template #footer>
             <span class="dialog-footer">
-                <el-button @click="systemSettingsVisible = false">取消</el-button>
+                <el-button @click="closeSystemSettings">取消</el-button>
                 <el-button type="primary" @click="saveSystemSettings">保存</el-button>
             </span>
         </template>
@@ -2170,6 +2233,106 @@
                 <el-button type="primary" @click="saveStyleSettings">保存</el-button>
             </span>
         </template>
+    </el-dialog>
+
+    <!-- 添加推荐商品管理弹窗 -->
+    <el-dialog v-model="recommendedProductsVisible" title="推荐商品管理" width="800px">
+        <div class="recommended-products-container">
+            <div class="search-bar" style="margin-bottom: 20px;">
+                <el-input
+                    v-model="recommendedSearch.keyword"
+                    placeholder="搜索商品名称或ID"
+                    clearable
+                    @keyup.enter="searchProductsForRecommended"
+                >
+                    <template #append>
+                        <el-button @click="searchProductsForRecommended">搜索</el-button>
+                    </template>
+                </el-input>
+            </div>
+            
+            <div v-if="searchProductsResults.length > 0" class="search-results">
+                <h4>搜索结果</h4>
+                <el-table :data="searchProductsResults" border style="margin-bottom: 20px;">
+                    <el-table-column prop="id" label="ID" width="80"></el-table-column>
+                    <el-table-column prop="name" label="商品名称"></el-table-column>
+                    <el-table-column label="图片" width="100">
+                        <template #default="scope">
+                            <el-image 
+                                v-if="scope.row.images && scope.row.images.length > 0"
+                                style="width: 50px; height: 50px; cursor: pointer; border-radius: 4px; overflow: hidden;" 
+                                :src="handleImageUrl(scope.row.images[0])"
+                                :preview-src-list="scope.row.images.map(img => handleImageUrl(img))"
+                                fit="cover">
+                            </el-image>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="120">
+                        <template #default="scope">
+                            <el-button 
+                                type="primary" 
+                                size="small" 
+                                @click="addToRecommended(scope.row)"
+                                :disabled="isProductRecommended(scope.row.id)">
+                                添加
+                            </el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </div>
+            
+            <div class="recommended-list">
+                <h4>当前推荐商品 ({{recommendedProducts.length}})</h4>
+                <el-empty v-if="recommendedProducts.length === 0" description="暂无推荐商品"></el-empty>
+                <el-table 
+                    v-else 
+                    :data="recommendedProducts" 
+                    row-key="id"
+                    border 
+                    style="width: 100%;">
+                    <el-table-column type="index" width="50" label="排序"></el-table-column>
+                    <el-table-column prop="id" label="ID" width="80"></el-table-column>
+                    <el-table-column prop="name" label="商品名称"></el-table-column>
+                    <el-table-column label="图片" width="100">
+                        <template #default="scope">
+                            <el-image 
+                                v-if="scope.row.images && scope.row.images.length > 0"
+                                style="width: 50px; height: 50px; cursor: pointer; border-radius: 4px; overflow: hidden;" 
+                                :src="handleImageUrl(scope.row.images[0])"
+                                :preview-src-list="scope.row.images.map(img => handleImageUrl(img))"
+                                fit="cover">
+                            </el-image>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="200">
+                        <template #default="scope">
+                            <el-button-group>
+                                <el-button 
+                                    type="primary" 
+                                    size="small"
+                                    :disabled="scope.$index === 0"
+                                    @click="moveRecommendedProduct(scope.$index, 'up')">
+                                    上移
+                                </el-button>
+                                <el-button 
+                                    type="primary" 
+                                    size="small"
+                                    :disabled="scope.$index === recommendedProducts.length - 1"
+                                    @click="moveRecommendedProduct(scope.$index, 'down')">
+                                    下移
+                                </el-button>
+                                <el-button 
+                                    type="danger" 
+                                    size="small"
+                                    @click="removeFromRecommended(scope.$index)">
+                                    删除
+                                </el-button>
+                            </el-button-group>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </div>
+        </div>
     </el-dialog>
 
     </div>
@@ -2536,7 +2699,8 @@
                     uploadSignature: '', // 存储cos security token
                     uploadxcossecuritytoken: '', // 存储cos key time
                     uploadFileId: '', // 存储file id
-                    cloudBaseUrl: 'https://7072-prod-9gd4jllic76d4842-1348936510.tcb.qcloud.la/', // 替换为您的云存储域名
+                    cloudBaseUrl: 'cloud://prod-9gd4jllic76d4842.7072-prod-9gd4jllic76d4842-1348936510', // 替换为您的云存储域名
+                    httpsBaseUrl: 'https://7072-prod-9gd4jllic76d4842-1348936510.tcb.qcloud.la/', // 替换为您的云存储域名
                     uploadProgress: 0, // 上传进度
                     uploadProductData: {}, // 添加这个属性
                     fileUploadInfo: new Map(), // 用于存储每个文件的上传信息
@@ -2596,6 +2760,12 @@
                     videoFileList: [],
                     videoPreviewUrl: '',
                     videoPreviewVisible: false,
+                    recommendedProductsVisible: false,
+                    recommendedSearch: {
+                        keyword: ''
+                    },
+                    searchProductsResults: [],
+                    recommendedProducts: [],
                 }
             },
            // computed: {
@@ -2980,13 +3150,36 @@
                 },
 
 
-                handleUploadSuccess(response, file) {
-                    console.log('response:', response);
+                handleUploadSuccess(response, file, fileList) {
+                    console.log('上传成功:', response);
+                    
+                    // 更新文件列表
+                    this.fileList = fileList.map(file => {
+                        return {
+                            name: file.name,
+                            url: file.url || (response.url && file.uid === file.uid ? response.url : ''),
+                            status: file.status,
+                            uid: file.uid
+                        };
+                    });
+                    
+                    // 更新商品图片列表
                     if (response.url) {
                         this.uploadedFiles++;
+                        if (!this.productForm.images) this.productForm.images = [];
                         this.productForm.images.push(response.url);
                         console.log('文件上传成功:', response.url);
                     }
+                    
+                    // 检查是否所有文件都上传完成
+                    const allFilesUploaded = fileList.every(file => 
+                        file.status === 'success' || file.status === 'fail'
+                    );
+                    
+                    if (allFilesUploaded || this.uploadedFiles >= this.totalFiles) {
+                        this.closeLoading(); // 所有文件上传完成，关闭 loading
+                    }
+                    
                     this.checkUploadComplete();
                 },
 
@@ -4020,11 +4213,11 @@
                         }
                     if (url.startsWith('cloud://')) {
                             return url.replace(
-                                'cloud://prod-9gd4jllic76d4842.7072-prod-9gd4jllic76d4842-1348936510/',
-                                this.cloudBaseUrl
+                                this.cloudBaseUrl,
+                                this.httpsBaseUrl
                             );
                         }
-                        return `https://7072-prod-9gd43ll-1251001567.tcb.qcloud.la/${url}`;
+                        return `http://127.0.0.1/${url}`;
                     } catch (error) {
                         console.error('处理图片URL失败:', error);
                         return '';
@@ -4080,12 +4273,13 @@
                 async handleRemove(file) {
                     try {
                         const index = this.fileList.indexOf(file);
+
                         if (index !== -1) {
                             // 从文件列表中移除
-                            this.fileList.splice(index, 1);
-                            
+                            this.fileList.splice(index, 1);                            
                             // 更新商品图片列表
-                            this.productForm.images = this.fileList.map(file => file.url);
+                            this.productForm.images = this.fileList.map(file => this.httpstocloud(file.url));
+
                             
                             // 如果是编辑模式，直接更新商品信息
                             if (this.dialogType === 'edit' && this.productForm.id) {
@@ -4115,10 +4309,11 @@
                                         composition: (this.productForm.specs_info.composition || '').trim()
                                     }
                                 };
-
+                                console.log('提交数据:', submitData.images);
                                 const response = await axios.post(`/products`, submitData);
                                 if (response.status === 200) {
                                     this.$message.success('删除图片成功');
+
                                 }
                             }
                         }
@@ -4146,7 +4341,7 @@
                         console.log('上传成功:', response);
 
                         // 构建完整的文件URL
-                        const fileUrl = `https://7072-prod-9ed4311ic-1254893510.tcb.qcloud.la/${uploadInfo.path}`;
+                        const fileUrl = `${this.httpsBaseUrl}/${uploadInfo.path}`;
                         
                         // 清理该文件的上传信息
                         this.fileUploadInfo.delete(file.uid);
@@ -4154,6 +4349,21 @@
                         // 更新productForm.images数组
                         if (!this.productForm.images) { this.productForm.images = []; }
                         this.productForm.images.push(uploadInfo.file_id);
+                        
+                        // 同步更新fileList
+                        const fileIndex = this.fileList.findIndex(item => item.uid === file.uid);
+                        if (fileIndex > -1) {
+                            this.fileList[fileIndex].url = fileUrl;
+                            this.fileList[fileIndex].status = 'success';
+                        } else {
+                            this.fileList.push({
+                                name: file.name,
+                                url: fileUrl,
+                                status: 'success',
+                                uid: file.uid
+                            });
+                        }
+                        
                         if (this.productForm.id) {
                             this.tempProductId = this.productForm.id;
                         }
@@ -4173,12 +4383,13 @@
                                 }
                                 ElementPlus.ElMessage.success('图片上传成功');
                             }
-                        }else{
+                        } else {
                             ElementPlus.ElMessage.error('未找到商品ID');
                             
                             throw new Error('未找到商品ID');
                         }
                         
+                        console.log('上传成功:', fileUrl);
                         return {
                             url: fileUrl // 返回完整的文件URL
                         };
@@ -4241,17 +4452,30 @@
                 },
                 // 系统管理相关方法
                 showSystemSettings() {
-                    this.systemSettingsVisible = true;
-                    this.loadSystemSettings();
+                    this.loadSystemSettings().then(() => {
+                        this.systemSettingsVisible = true;
+                    }).catch(error => {
+                        this.$message.error('加载系统设置失败：' + error.message);
+                    });
+                },
+                closeSystemSettings() {
+                    this.systemSettingsVisible = false;
+                    // 延迟一段时间再重置数据，确保对话框已完全关闭
+                    setTimeout(() => {
+                        this.systemSettings = {};
+                    }, 300);
                 },
                 async loadSystemSettings() {
                     try {
                         const response = await axios.get('/system/settings');
                         if (response.status === 200) {
-                            this.systemSettings = response.data.settings;
+                            this.systemSettings = response.data.settings || {};
+                            return Promise.resolve(this.systemSettings);
                         }
+                        return Promise.reject(new Error('加载系统设置失败'));
                     } catch (error) {
-                        this.handleAxiosError(error, '加载系统设置失败');
+                        console.error('加载系统设置失败:', error);
+                        return Promise.reject(error);
                     }
                 },
                 async saveSystemSettings() {
@@ -4490,11 +4714,8 @@
                     
                     if (this.currentColorIndex >= 0 && this.selectedImageUrl) {
                         // 替换图片URL中的域名
-                        if (this.selectedImageUrl.startsWith('https://7072-prod-9gd43ll-1251001567.tcb.qcloud.la/')) {
-                            this.selectedImageUrl = this.selectedImageUrl.replace(
-                                'https://7072-prod-9gd43ll-1251001567.tcb.qcloud.la/',
-                                'cloud://prod-9gd4jllic76d4842.7072-prod-9gd4jllic76d4842-1348936510/'
-                            );
+                        if (this.selectedImageUrl.startsWith(this.httpsBaseUrl)) {
+                            this.selectedImageUrl = this.httpstocloud(this.selectedImageUrl);
                         }
                         this.productForm.specs[this.currentColorIndex].image = this.selectedImageUrl;
                     }
@@ -4503,6 +4724,19 @@
                     this.colorImageDialogVisible = false;
                     this.currentColorIndex = -1;
                     this.selectedImageUrl = '';
+                },
+
+                cloudtohttps(url) {
+                    return url.replace(
+                        this.cloudBaseUrl,
+                        this.httpsBaseUrl
+                    );
+                },
+                httpstocloud(url) {
+                    return url.replace(
+                        this.httpsBaseUrl,
+                        this.cloudBaseUrl
+                    );
                 },
 
                 removeColorImage(colorIndex) {
@@ -4658,7 +4892,7 @@
                         const response = await axios.post(uploadInfo.url, formData);
                         
                         // 构建完整的文件URL
-                        const fileUrl = `https://7072-prod-9ed4311ic-1254893510.tcb.qcloud.la/${uploadInfo.path}`;
+                        const fileUrl = `${this.httpsBaseUrl}/${uploadInfo.path}`;
                         
                         // 清理该文件的上传信息
                         this.fileUploadInfo.delete(file.uid);
@@ -4666,6 +4900,14 @@
                         // 更新产品表单
                         this.productForm.video_url = uploadInfo.file_id;
                         this.videoPreviewUrl = fileUrl;
+                        
+                        // 同步更新videoFileList
+                        this.videoFileList = [{
+                            name: file.name,
+                            url: fileUrl,
+                            status: 'success',
+                            uid: file.uid
+                        }];
                         
                         // 如果是编辑模式并且已有商品ID，更新商品信息
                         if (this.productForm.id) {
@@ -4975,6 +5217,145 @@
                         }
                     } catch (error) {
                         this.handleAxiosError(error, '保存商品失败');
+                    }
+                },
+                showRecommendedProducts() {
+                    this.recommendedProductsVisible = true;
+                    this.loadRecommendedProducts();
+                },
+                async loadRecommendedProducts() {
+                    try {
+                        const response = await axios.get('/recommended/products');
+                        if (response.data.code === 0) {
+                            this.recommendedProducts = response.data.data || [];
+                            console.log('推荐商品列表:', this.recommendedProducts);
+                        } else {
+                            this.$message.error('加载推荐商品失败: ' + response.data.message);
+                        }
+                    } catch (error) {
+                        console.error('加载推荐商品失败:', error);
+                        this.$message.error('加载推荐商品失败');
+                    }
+                },
+                async searchProductsForRecommended() {
+                    if (!this.recommendedSearch.keyword.trim()) {
+                        this.$message.warning('请输入搜索关键词');
+                        return;
+                    }
+                    
+                    try {
+                        const response = await axios.get('/products', {
+                            params: {
+                                keyword: this.recommendedSearch.keyword,
+                                page: 1,
+                                page_size: 10
+                            }
+                        });
+                        
+                        if (response.status === 200) {
+                            this.searchProductsResults = response.data.products || [];
+                            if (this.searchProductsResults.length === 0) {
+                                this.$message.info('未找到相关商品');
+                            }
+                        }
+                    } catch (error) {
+                        console.error('搜索商品失败:', error);
+                        this.$message.error('搜索商品失败');
+                    }
+                },
+                isProductRecommended(productId) {
+                    return this.recommendedProducts.some(p => p.id === productId);
+                },
+                async addToRecommended(product) {
+                    if (this.isProductRecommended(product.id)) {
+                        this.$message.warning('该商品已经在推荐列表中');
+                        return;
+                    }
+                    
+                    try {
+                        // 构建新的推荐列表
+                        const newRecommendedList = [...this.recommendedProducts, product];
+                        const productIds = newRecommendedList.map(p => p.id);
+                        
+                        const response = await axios.post('/recommended/products', {
+                            product_ids: productIds
+                        });
+                        
+                        if (response.data.code === 0) {
+                            this.$message.success('添加推荐商品成功');
+                            await this.loadRecommendedProducts();
+                            // 清空搜索结果
+                            this.recommendedSearch.keyword = '';
+                            this.searchProductsResults = [];
+                        } else {
+                            this.$message.error('添加推荐商品失败: ' + response.data.message);
+                        }
+                    } catch (error) {
+                        console.error('添加推荐商品失败:', error);
+                        this.$message.error('添加推荐商品失败');
+                    }
+                },
+                async moveRecommendedProduct(index, direction) {
+                    if (direction === 'up' && index > 0) {
+                        // 向上移动
+                        const temp = this.recommendedProducts[index];
+                        this.recommendedProducts[index] = this.recommendedProducts[index - 1];
+                        this.recommendedProducts[index - 1] = temp;
+                    } else if (direction === 'down' && index < this.recommendedProducts.length - 1) {
+                        // 向下移动
+                        const temp = this.recommendedProducts[index];
+                        this.recommendedProducts[index] = this.recommendedProducts[index + 1];
+                        this.recommendedProducts[index + 1] = temp;
+                    } else {
+                        return; // 无效的移动
+                    }
+                    
+                    // 保存新的顺序
+                    await this.saveRecommendedProducts();
+                },
+                async removeFromRecommended(index) {
+                    try {
+                        // 构建新的推荐列表
+                        const newRecommendedList = [...this.recommendedProducts];
+                        newRecommendedList.splice(index, 1);
+                        
+                        const productIds = newRecommendedList.map(p => p.id);
+                        
+                        const response = await axios.post('/recommended/products', {
+                            product_ids: productIds
+                        });
+                        
+                        if (response.data.code === 0) {
+                            this.$message.success('移除推荐商品成功');
+                            await this.loadRecommendedProducts();
+                        } else {
+                            this.$message.error('移除推荐商品失败: ' + response.data.message);
+                        }
+                    } catch (error) {
+                        console.error('移除推荐商品失败:', error);
+                        this.$message.error('移除推荐商品失败');
+                    }
+                },
+                async saveRecommendedProducts() {
+                    try {
+                        const productIds = this.recommendedProducts.map(p => p.id);
+                        
+                        const response = await axios.post('/recommended/products', {
+                            product_ids: productIds
+                        });
+                        
+                        if (response.data.code === 0) {
+                            this.$message.success('更新推荐商品顺序成功');
+                        } else {
+                            this.$message.error('更新推荐商品顺序失败: ' + response.data.message);
+                            // 如果失败，重新加载列表
+                            await this.loadRecommendedProducts();
+                        }
+                    } catch (error) {
+                        console.error('更新推荐商品顺序失败:', error);
+                        this.$message.error('更新推荐商品顺序失败');
+                        // 如果失败，重新加载列表
+                        await this.loadRecommendedProducts();
                     }
                 },
             }
