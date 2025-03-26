@@ -6,7 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>仟艺服饰管理后台</title>
     <link rel="icon" type="image/x-icon" href="https://7072-prod-9gd4jllic76d4842-1348936510.tcb.qcloud.la/system/logo.png?sign=013420464d5c9d73dd11b8a00bbcc674&t=1742838676">
+    <!-- 引入 Element Plus 相关文件 -->
     <link rel="stylesheet" href="//unpkg.com/element-plus/dist/index.css" />
+    <script src="//unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="//unpkg.com/element-plus"></script>
+    <script src="//unpkg.com/@element-plus/icons-vue"></script>
+    <script src="//unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="//unpkg.com/sortablejs/Sortable.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -56,9 +62,7 @@
             border: 1px solid #ebeef5;
             border-radius: 4px;
             width: calc(33.33% - 10px);
-            min-width: 100px;
-            max-width: 195px;
-            margin-bottom: 10px;
+            width: 250px;
             background-color: #fff;
         }
 
@@ -208,6 +212,399 @@
             width: auto !important;
         }
         
+        /* 自定义图片预览样式 */
+        :root {
+            --el-image-viewer-mask-color: rgba(0, 0, 0, 0.9);
+        }
+
+        .el-image-viewer__wrapper {
+            position: fixed;
+            z-index: 2050 !important;
+        }
+
+        .el-image-viewer__btn {
+            opacity: 0.8;
+            color: #fff;
+            font-size: 24px;
+        }
+
+        .el-image-viewer__close {
+            top: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            font-size: 24px;
+        }
+
+        .el-image-viewer__canvas {
+            user-select: none;
+        }
+
+        .el-image-viewer__actions {
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.7);
+        }
+
+        .el-image-viewer__actions__inner {
+            gap: 15px;
+        }
+
+        .el-image {
+            .el-image__inner {
+                transition: all 0.3s;
+            }
+            
+            &:hover .el-image__inner {
+                transform: scale(1.05);
+            }
+        }
+
+        /* 调整图片预览组件的层级关系 */
+        .el-image-viewer__wrapper {
+            position: fixed !important;
+            z-index: 2999 !important;
+        }
+
+        .el-image-viewer__mask {
+            position: fixed !important;
+            z-index: 2998 !important;
+            background-color: rgba(0, 0, 0, 0.9);
+        }
+
+        .el-image-viewer__btn {
+            z-index: 3000 !important;
+        }
+
+        .el-image-viewer__close {
+            z-index: 3000 !important;
+        }
+
+        .el-image-viewer__canvas {
+            z-index: 2999 !important;
+        }
+
+        .el-image-viewer__actions {
+            z-index: 3000 !important;
+        }
+
+        /* 图片预览器内的操作按钮样式 */
+        .el-image-viewer__actions__inner i {
+            color: #fff !important;
+            font-size: 18px !important;
+            margin: 0 10px !important;
+            cursor: pointer !important;
+        }
+
+        /* 预览图片容器样式 */
+        .el-image-viewer__img {
+            background-color: transparent !important;
+            max-width: 90vw !important;
+            max-height: 90vh !important;
+            user-select: none !important;
+        }
+
+        /* 缩略图样式 */
+        .el-image {
+            border-radius: 4px;
+            overflow: hidden;
+            
+            .el-image__inner {
+                transition: all 0.3s;
+            }
+            
+            &:hover .el-image__inner {
+                transform: scale(1.05);
+            }
+        }
+
+        /* 占位符和错误状态样式 */
+        .image-placeholder,
+        .image-error {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: #f5f7fa;
+            color: #909399;
+            font-size: 12px;
+        }
+
+        .image-error {
+            .el-icon {
+                font-size: 20px;
+                margin-bottom: 8px;
+            }
+        }
+
+        /* 重新调整图片预览组件的层级和样式 */
+        :root {
+            --el-image-viewer-mask-color: rgba(0, 0, 0, 0.85);
+        }
+
+        .el-image-viewer__wrapper {
+            position: fixed !important;
+            z-index: 2100 !important;
+        }
+
+        .el-image-viewer__mask {
+            position: fixed !important;
+            z-index: 2000 !important;
+            backdrop-filter: blur(2px);
+        }
+
+        .el-image-viewer__img {
+            z-index: 2200 !important;
+            position: relative !important;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .el-image-viewer__prev,
+        .el-image-viewer__next,
+        .el-image-viewer__close {
+            z-index: 2300 !important;
+            background-color: rgba(0, 0, 0, 0.3) !important;
+            border-radius: 50%;
+            width: 44px !important;
+            height: 44px !important;
+            line-height: 44px !important;
+            
+            &:hover {
+                background-color: rgba(0, 0, 0, 0.5) !important;
+            }
+        }
+
+        .el-image-viewer__actions {
+            z-index: 2300 !important;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            padding: 8px 20px;
+            
+            .el-image-viewer__actions__inner {
+                gap: 20px;
+                
+                i {
+                    font-size: 20px;
+                    transition: all 0.3s;
+                    
+                    &:hover {
+                        transform: scale(1.2);
+                        color: #fff;
+                    }
+                }
+            }
+        }
+
+        .el-image-viewer__canvas {
+            z-index: 2200 !important;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 优化图片加载和错误状态的显示 */
+        .image-placeholder,
+        .image-error {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: #f5f7fa;
+            border-radius: 4px;
+            
+            .el-icon {
+                font-size: 20px;
+                margin-bottom: 8px;
+                color: #909399;
+            }
+        }
+
+        .filter-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 4px;
+        }
+
+        .filter-option-item {
+            padding: 6px 12px;
+            border: 1px solid #DCDFE6;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+            background: #fff;
+            font-size: 13px;
+            color: #606266;
+        }
+
+        .filter-option-item:hover {
+            border-color: #409EFF;
+            color: #409EFF;
+        }
+
+        .filter-option-item.is-active {
+            background: #409EFF;
+            border-color: #409EFF;
+            color: #fff;
+        }
+
+        .dialog-footer {
+            padding-top: 20px;
+            text-align: right;
+        }
+
+        .el-select {
+            width: 100%;
+        }
+
+        .el-dialog {
+            border-radius: 8px;
+        }
+
+        .el-dialog__header {
+            margin-right: 0;
+            padding: 20px;
+            border-bottom: 1px solid #dcdfe6;
+        }
+
+        .el-dialog__body {
+            padding: 20px;
+        }
+
+        .el-dialog__footer {
+            padding: 10px 20px 20px;
+            border-top: 1px solid #dcdfe6;
+        }
+        .batch-style-dialog {
+            width: 400px;
+            height: 400px;
+        }
+
+        /* 添加新样式 */
+        .color-images-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .color-image-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border: 1px solid #EBEEF5;
+            border-radius: 4px;
+        }
+
+        .selected-images {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .image-select-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .image-select-item {
+            width: 100px;
+            height: 100px;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .image-select-item:hover {
+            transform: scale(1.05);
+        }
+
+        .image-select-item.selected {
+            border-color: #409EFF;
+        }
+
+        .color-image-preview {
+            margin-left: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .color-image-preview:hover {
+            opacity: 0.8;
+        }
+
+        .image-select-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .image-select-item {
+            width: 100px;
+            height: 100px;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .image-select-item:hover {
+            transform: scale(1.05);
+        }
+
+        .image-select-item.selected {
+            border-color: #409EFF;
+        }
+
+        /* 添加图片选择相关样式 */
+        .image-select-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            padding: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .image-select-item {
+            width: 100px;
+            height: 100px;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .image-select-item:hover {
+            transform: scale(1.05);
+        }
+
+        .image-select-item.selected {
+            border-color: #409EFF;
+        }
+
+        .color-image-preview {
+            margin-left: 10px;
+            cursor: pointer;
+        }
+
+        .color-image-preview:hover {
+            opacity: 0.8;
+        }
     </style>
 </head>
 
@@ -246,22 +643,18 @@
                         </el-menu-item>
 
                         <el-menu-item index="2">
-                            <el-icon>
-                                <User />
-                            </el-icon>
-                            <span>用户管理</span>
+                            <el-icon><Goods /></el-icon>
+                            <span>采购管理</span>
                         </el-menu-item>
 
                         <el-menu-item index="3">
-                            <el-icon>
-                                <ShoppingCart />
-                            </el-icon>
+                            <el-icon><List /></el-icon>
                             <span>采购单管理</span>
                         </el-menu-item>
 
                         <el-menu-item index="4">
                             <el-icon>
-                                <Van />
+                                <List />
                             </el-icon>
                             <span>配送单管理</span>
                         </el-menu-item>
@@ -277,9 +670,7 @@
                         </el-menu-item>
 
                         <el-menu-item index="6">
-                            <el-icon>
-                                <TrendCharts />
-                            </el-icon>
+                            <el-icon><Histogram /></el-icon>
                             <span>数据统计</span>
                         </el-menu-item>
 
@@ -293,6 +684,7 @@
                         
                         <div v-if="currentPage === '1'">
                              <!-- 批量修改款式对话框 -->
+                            <!-- 批量修改款式对话框 -->
                             <el-dialog title="批量修改款式" v-model="batchStyleDialogVisible" width="400px">
                                 <el-form :model="batchStyleForm" label-width="80px">
                                     <el-form-item label="款式">
@@ -343,20 +735,12 @@
                                     </el-input>
                                 </div>
                                 <!-- 筛选区域 -->
-                                <div style="width: 200px">
-                                    <el-select 
-                                        v-model="productFilter.type" 
-                                        placeholder="选择款式" 
-                                        @change="handleProductSearch"
-                                        popper-class="my-select-dropdown">
-                                        <el-option
-                                            v-for="item in styleOptions"
-                                            :key="item.id"
-                                            :label="item.name"
-                                            :value="item.id">
-                                        </el-option>
-                                    </el-select>
-                                </div>
+                                <el-upload class="excel-uploader" action="/products/import" :headers="uploadHeaders"
+                                    :on-success="handleImportSuccess" :on-error="handleImportError"
+                                    :before-upload="beforeImportUpload" accept=".xlsx,.xls" :show-file-list="false">
+                                    <el-button type="success">Excel导入</el-button>
+                                </el-upload>
+                                <el-button type="info" @click="downloadTemplate">下载模板</el-button>
                             </div>
                             <!-- 商品列表 -->
                             <el-table 
@@ -369,46 +753,176 @@
                                 <!-- 款号<el-table-column prop="id" label="款号" width="80"></el-table-column> -->
                                 <el-table-column label="图片" width="100">
                                     <template #default="scope">
-                                        <el-image v-if="scope.row.images && scope.row.images.length > 0"
-                                            style="width: 50px; height: 50px" 
+                                        <el-image 
+                                            v-if="scope.row.images && scope.row.images.length > 0"
+                                            style="width: 50px; height: 50px; cursor: pointer; border-radius: 4px; overflow: hidden;" 
                                             :src="handleImageUrl(scope.row.images[0])"
-                                            :preview-src-list="scope.row.images.map(img => handleImageUrl(img))" 
-                                            fit="cover">
+                                            :preview-src-list="scope.row.images.map(img => handleImageUrl(img))"
+                                            :initial-index="0"
+                                            :zoom-rate="1.2"
+                                            :preview-teleported="true"
+                                            :close-on-press-escape="true"
+                                            :infinite="true"
+                                            fit="cover"
+                                            @load="onImageLoad">
+                                            <template #placeholder>
+                                                <div class="image-placeholder">
+                                                    <el-icon><Picture /></el-icon>
+                                                </div>
+                                            </template>
+                                            <template #error>
+                                                <div class="image-error">
+                                                    <el-icon><Picture /></el-icon>
+                                                    <span>加载失败</span>
+                                                </div>
+                                            </template>
                                         </el-image>
                                     </template>
                                 </el-table-column>
                                 <el-table-column prop="name" label="商品名称"></el-table-column>
-                                <!--el-table-column prop="price" label="建议零售价" width="80">
+                                <el-table-column prop="price_b" label="价格" width="80" v-if="userInfo.user_type === 1">
                                     <template #default="scope">
-                                        {{ scope.row.price === 0 ? '讯价' : '¥' + scope.row.price }}
-                                    </template>
-                                </el-table-column-->  
-                                <el-table-column prop="type" label="款式" width="80">
-                                    <template #default="scope">
-                                        {{ getStyleLabel(scope.row.type) }}
+                                        {{ scope.row.price_b === 0 ? '讯价' : '¥' + scope.row.price_b }}
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="size" label="尺寸" width="100">
+                                <el-table-column label="款式" prop="type" width="120" >
+                                    <template #header>
+                                        <el-popover placement="bottom" :width="120" trigger="click" v-model:visible="filterVisible.type">
+                                            <template #reference>
+                                                <span :style="{ color: selectedFilters.type !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
+                                                    款式
+                                                    <el-icon v-if="selectedFilters.type !== null"><CircleCheck /></el-icon>
+                                                </span>
+                                            </template>
+                                            <div class="filter-options">
+                                                <div v-for="item in styleOptions" 
+                                                    :key="item.id" 
+                                                    class="filter-option-item"
+                                                    :class="{ 'is-active': selectedFilters.type === item.id }"
+                                                    @click="selectedFilters.type = item.id">
+                                                    {{ item.name }}
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #EBEEF5; text-align: right">
+                                                <el-button size="small" @click="resetSpecificFilter('type')">重置</el-button>
+                                                <el-button size="small" type="primary" @click="handleProductSearch">确定</el-button>
+                                            </div>
+                                        </el-popover>
+                                    </template>
                                     <template #default="scope">
-                                        {{ scope.row.specs_info?.size || '-' }}
+                                        <span>{{ styleOptions.find(item => item.id === scope.row.type)?.name || '未知' }}</span>
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="weight" label="克重" width="100">
+                                <el-table-column label="尺寸" prop="specs_info.size" width="120">
+                                    <template #header>
+                                        <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.size">
+                                            <template #reference>
+                                                <span :style="{ color: selectedFilters.size !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
+                                                    尺寸(cm)
+                                                    <el-icon v-if="selectedFilters.size !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                </span>
+                                            </template>
+                                            <div class="filter-options">
+                                                <div v-for="item in filterOptions.sizes" 
+                                                    :key="item.value" 
+                                                    class="filter-option-item"
+                                                    :class="{ 'is-active': selectedFilters.size === item.value }"
+                                                    @click="selectedFilters.size = item.value">
+                                                    {{ item.text }}
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #EBEEF5; text-align: right">
+                                                <el-button size="small" @click="resetSpecificFilter('size')">重置</el-button>
+                                                <el-button size="small" type="primary" @click="handleProductSearch">确定</el-button>
+                                            </div>
+                                        </el-popover>
+                                    </template>
                                     <template #default="scope">
-                                        {{ scope.row.specs_info?.weight ? scope.row.specs_info.weight + 'g' : '-' }}
+                                        <span>{{ scope.row.specs_info?.size || '-' }}</span>
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="material" label="材质" width="120">
+                                <el-table-column label="克重" prop="specs_info.weight" width="120">
+                                    <template #header>
+                                        <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.weight">
+                                            <template #reference>
+                                                <span :style="{ color: selectedFilters.weight !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
+                                                    克重(g)       
+                                                    <el-icon v-if="selectedFilters.weight !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                </span>
+                                            </template>
+                                            <div class="filter-options">
+                                                <div v-for="item in filterOptions.weights" 
+                                                    :key="item.value" 
+                                                    class="filter-option-item"
+                                                    :class="{ 'is-active': selectedFilters.weight === item.value }"
+                                                    @click="selectedFilters.weight = item.value">
+                                                    {{ item.text }}
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #EBEEF5; text-align: right">
+                                                <el-button size="small" @click="resetSpecificFilter('weight')">重置</el-button>
+                                                <el-button size="small" type="primary" @click="handleProductSearch">确定</el-button>
+                                            </div>
+                                        </el-popover>
+                                    </template>
                                     <template #default="scope">
-                                        {{ scope.row.specs_info?.yarn || '-' }}
+                                        <span>{{ scope.row.specs_info?.weight ? scope.row.specs_info.weight + 'g' : '-' }}</span>
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="composition" label="成分" width="150">
+                                <el-table-column label="材质" prop="specs_info.yarn" width="120">
+                                    <template #header>
+                                        <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.yarn">
+                                            <template #reference>
+                                                <span :style="{ color: selectedFilters.yarn !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
+                                                    材质
+                                                    <el-icon v-if="selectedFilters.yarn !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                </span>
+                                            </template>
+                                            <div class="filter-options">
+                                                <div v-for="item in filterOptions.yarns" 
+                                                    :key="item.value" 
+                                                    class="filter-option-item"
+                                                    :class="{ 'is-active': selectedFilters.yarn === item.value }"
+                                                    @click="selectedFilters.yarn = item.value">
+                                                    {{ item.text }}
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #EBEEF5; text-align: right">
+                                                <el-button size="small" @click="resetSpecificFilter('yarn')">重置</el-button>
+                                                <el-button size="small" type="primary" @click="handleProductSearch">确定</el-button>
+                                            </div>
+                                        </el-popover>
+                                    </template>
                                     <template #default="scope">
-                                        <el-tooltip v-if="scope.row.specs_info?.composition" :content="scope.row.specs_info.composition" placement="top">
-                                            <span>{{ scope.row.specs_info.composition.length > 10 ? scope.row.specs_info.composition.slice(0, 10) + '...' : scope.row.specs_info.composition }}</span>
-                                        </el-tooltip>
-                                        <span v-else>-</span>
+                                        <span>{{ scope.row.specs_info?.yarn || '-' }}</span>
+                                    </template>
+                                </el-table-column>
+                                <el-table-column label="成分" prop="specs_info.composition" width="150">
+                                    <template #header>
+                                        <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.composition">
+                                            <template #reference>
+                                                <span :style="{ color: selectedFilters.composition !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
+                                                    成分
+                                                    <el-icon v-if="selectedFilters.composition !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                </span>
+                                            </template>
+                                            <div class="filter-options">
+                                                <div v-for="item in filterOptions.compositions" 
+                                                    :key="item.value" 
+                                                    class="filter-option-item"
+                                                    :class="{ 'is-active': selectedFilters.composition === item.value }"
+                                                    @click="selectedFilters.composition = item.value">
+                                                    {{ item.text }}
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #EBEEF5; text-align: right">
+                                                <el-button size="small" @click="resetSpecificFilter('composition')">重置</el-button>
+                                                <el-button size="small" type="primary" @click="handleProductSearch">确定</el-button>
+                                            </div>
+                                        </el-popover>
+                                    </template>
+                                    <template #default="scope">
+                                        <span>{{ scope.row.specs_info?.composition || '-' }}</span>
                                     </template>
                                 </el-table-column>
                                 <el-table-column prop="specs" label="颜色/库存" width="250">
@@ -536,8 +1050,8 @@
 
                                     <el-form-item label="商品图片" prop="images">
                                         <el-upload 
-                                            ref="uploadRef" 
-                                            list-type="picture-card" 
+                                            ref="uploadRef"
+                                            list-type="picture-card"
                                             :limit="9"
                                             :auto-upload="dialogType === 'add' ? false : true" 
                                             :multiple="true"
@@ -548,6 +1062,8 @@
                                             :on-error="handleUploadError" 
                                             :on-exceed="handleExceed"
                                             :file-list="fileList" 
+                                            hide-on-click-modal
+                                            accept=".jpg,.png,.jpeg,.gif,.webp"
                                             @change="handleFileChange">
                                             <el-icon>
                                                 <Plus />
@@ -580,10 +1096,8 @@
                                     </el-form-item>
 
                                     <el-form-item label="颜色库存">
-                                        <div class="color-stock-form-item"
-                                            style="border: 1px solid #dcdfe6; border-radius: 4px; padding: 5px;">
-                                            <div v-for="(color, index) in productForm.specs" :key="index"
-                                                class="color-stock-item">
+                                        <div class="color-stock-form-item" style="border: 1px solid #dcdfe6; border-radius: 4px; padding: 5px;">
+                                            <div v-for="(color, index) in productForm.specs" :key="index" class="color-stock-item">
                                                 <el-tag class="color-tag" size="small">{{ color.color }}</el-tag>
                                                 <div class="stock-input">
                                                     <el-input-number v-model="color.stock" :min="0" :step="1"
@@ -591,7 +1105,17 @@
                                                         placeholder="库存数量">
                                                     </el-input-number>
                                                 </div>
-                                                <img :src="color.image" alt="颜色图片" style="width: 20px; height: 20px;">
+                                                <div class="color-image-preview" @click="handleColorImageClick(index)">
+                                                    <el-image 
+                                                        v-if="color.image" 
+                                                        :src="color.image" 
+                                                        fit="cover"
+                                                        style="width: 40px; height: 40px; border-radius: 4px;">
+                                                    </el-image>
+                                                    <el-button v-else size="small" type="primary" link>
+                                                        选择图片
+                                                    </el-button>
+                                                </div>
                                             </div>
                                         </div>
                                     </el-form-item>
@@ -609,6 +1133,34 @@
                                     <span class="dialog-footer">
                                         <el-button @click="handleCancel">取消</el-button>
                                         <el-button type="primary" @click="submitProduct">确定</el-button>
+                                    </span>
+                                </template>
+                            </el-dialog>
+
+                            <!-- 添加颜色图片选择对话框 -->
+                            <el-dialog
+                                v-model="colorImageDialogVisible"
+                                title="选择颜色图片"
+                                width="60%"
+                                append-to-body>
+                                <div class="image-select-grid">
+                                    <div 
+                                        v-for="(file, index) in fileList"
+                                        :key="index"
+                                        class="image-select-item"
+                                        :class="{ 'selected': selectedImageUrl === file.url }"
+                                        @click="selectImage(file)">
+                                        <el-image 
+                                            :src="file.url" 
+                                            fit="cover"
+                                            style="width: 100%; height: 100%;">
+                                        </el-image>
+                                    </div>
+                                </div>
+                                <template #footer>
+                                    <span class="dialog-footer">
+                                        <el-button @click="colorImageDialogVisible = false">取消</el-button>
+                                        <el-button type="primary" @click="confirmColorImage">确定</el-button>
                                     </span>
                                 </template>
                             </el-dialog>
@@ -1455,11 +2007,13 @@
 
 
     <!-- 引入依赖 -->
-    <script src="//unpkg.com/vue@3"></script>
-    <script src="//unpkg.com/element-plus"></script>
-    <script src="//unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/vue@3"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
     <script>
+
         const { createApp, computed } = Vue
+        
         
         // 设置 axios 默认配置
         const isDevelopment = window.location.hostname === 'localhost' || 
@@ -1542,7 +2096,7 @@
             return Promise.reject(error);
         });
 
-        const app = createApp({
+        const app = Vue.createApp({
             data() {
                 return {
                     // 从localStorage获取用户信息
@@ -1565,7 +2119,6 @@
                     },
                     fileList: [],
                     styleOptions: [
-                        { value: '', label: '全部' },
                         { value: 1, label: '披肩' },
                         { value: 2, label: '围巾' },
                         { value: 3, label: '帽子' },
@@ -1819,7 +2372,8 @@
                     fileUploadInfo: new Map(), // 用于存储每个文件的上传信息
                     productFilter: {
                         type: '', // 款式筛选值
-                        keyword: '' // 搜索关键词
+                        keyword: '', // 搜索关键词
+                        spec_info: '' // 规格筛选值
                     },
                     batchStyleDialogVisible: false,
                     batchStyleForm: {
@@ -1829,6 +2383,44 @@
                     systemSettings: {},
                     styleSettingsVisible: false,
                     product_types: [], // 修改为 product_types
+                    imageViewerConfig: {
+                        zIndex: 2050,
+                        maskClosable: true,
+                        onClose: () => {
+                            console.log('图片预览关闭');
+                        },
+                        onSwitch: (index) => {
+                            console.log('切换到图片:', index);
+                        }
+                    },
+                    sizeFilters: [],
+                    weightFilters: [],
+                    yarnFilters: [],
+                    compositionFilters: [],
+                    filterOptions: {
+                        types: [],
+                        sizes: [],
+                        weights: [],
+                        yarns: [],
+                        compositions: []
+                    },
+                    filterVisible: {
+                        type: false,
+                        size: false,
+                        weight: false,
+                        yarn: false,
+                        composition: false
+                    },
+                    selectedFilters: {
+                        type: null,
+                        size: null,
+                        weight: null,
+                        yarn: null,
+                        composition: null
+                    },
+                    colorImageDialogVisible: false,
+                    selectedImageUrl: '',
+                    currentColorIndex: -1,
                 }
             },
            // computed: {
@@ -1849,6 +2441,7 @@
                 this.getCurrentUserInfo();
                 // 加载款式选项
                 this.loadStyleOptions();
+                this.loadFilterOptions();
             },
             methods: {
                 handleSelect(index) {
@@ -1879,24 +2472,40 @@
                     try {
                         this.productLoading = true;
                         const params = {
-                            page: this.pagination.currentPage,
-                            page_size: this.pagination.pageSize,
-                            keyword: this.productFilter.keyword
+                                page: this.pagination.currentPage,
+                                page_size: this.pagination.pageSize,
+                            keyword: this.productSearch.keyword
                         };
                         if (this.productFilter.type) {
                             params.type = this.productFilter.type;
                         }
+                        if (this.selectedFilters.size) {
+                            params.size = this.selectedFilters.size;
+                        }
+                        if (this.selectedFilters.weight) {
+                            params.weight = this.selectedFilters.weight;
+                        }
+                        if (this.selectedFilters.yarn) {
+                            params.yarn = this.selectedFilters.yarn;
+                        }
+                        if (this.selectedFilters.composition) {
+                            params.composition = this.selectedFilters.composition;
+                        }
+                        
                         const response = await axios.get('/products', { params });
                         if (response.status === 200) {
                             this.products = response.data.products;
                             this.pagination.total = response.data.total;
                         }
+                        
+                        // 数据加载完成后更新筛选选项
+                        this.updateFilters();
                     } catch (error) {
                         console.error('加载商品列表失败:', error);
                         ElementPlus.ElMessage.error('加载商品列表失败');
                     } finally {
                         this.productLoading = false;
-                    }
+                        }
                 },
                 showAddProductDialog() {
                     this.dialogType = 'add'
@@ -2237,11 +2846,12 @@
                         // 处理规格数据
                         const specs = this.productForm.specs.map(spec => ({
                             color: spec.color,
-                            stock: parseInt(spec.stock) || 0
+                            stock: parseInt(spec.stock) || 0,
+                            image: spec.image || ''
                         }));
 
                          //如果有待上传的图片，处理上传
-                        
+
                         const submitData = {
                             id: this.productForm.id,
                             name: this.productForm.name.trim(),
@@ -2270,7 +2880,7 @@
                         
 
                         if (response.status === 200 || response.status === 201) {
-                            ElementPlus.ElMessage.success(this.dialogType === 'add' ? '添加成功' : '更新成功');                                                   
+                            ElementPlus.ElMessage.success(this.dialogType === 'add' ? '添加成功' : '更新成功');
                             if (this.dialogType === 'add') {
                             const uploadComponent = this.$refs.uploadRef;
                             this.totalFiles = 0;
@@ -2431,7 +3041,7 @@
                 handleSizeChange(newSize) {
                     this.pagination.pageSize = newSize;
                     this.pagination.currentPage = 1;
-                    this.loadProducts();
+                this.loadProducts();
                 },
 
                 handleCurrentChange(newPage) {
@@ -3084,12 +3694,6 @@
                     // 实现处理配送单图像上传前的逻辑
                 },
 
-                // 处理商品搜索
-                handleProductSearch() {
-                    this.pagination.currentPage = 1;  // 重置到第一页
-                    this.productFilter.keyword = this.productSearch.keyword;
-                    this.loadProducts();
-                },
                 async handleBatchDelete() {
                     try {
                         await ElementPlus.ElMessageBox.confirm(
@@ -3209,16 +3813,21 @@
                 // 处理图片链接
                 handleImageUrl(url) {
                     if (!url) return '';
-                    if (url.startsWith('http')) {
-                        return url;
-                    }
+                    try {
+                        if (url.startsWith('http')) {
+                            return url;
+                        }
                     if (url.startsWith('cloud://')) {
-                        return url.replace(
-                            'cloud://prod-9gd4jllic76d4842.7072-prod-9gd4jllic76d4842-1348936510/',
-                            this.cloudBaseUrl
-                        );
+                            return url.replace(
+                                'cloud://prod-9gd4jllic76d4842.7072-prod-9gd4jllic76d4842-1348936510/',
+                                this.cloudBaseUrl
+                            );
+                        }
+                        return `https://7072-prod-9gd43ll-1251001567.tcb.qcloud.la/${url}`;
+                    } catch (error) {
+                        console.error('处理图片URL失败:', error);
+                        return '';
                     }
-                    return `https://7072-prod-9gd43ll-1251001567.tcb.qcloud.la/${url}`;
                 },
 
                 // 修改文件列表的显示方法
@@ -3231,14 +3840,14 @@
                 // 处理文件变化
                 handleFileChange(file, fileList) {
                     console.log('文件改变:', file, fileList);
-                    this.fileList = fileList;                 
+                    this.fileList = fileList;
                     
                 },
 
                 // 处理超出限制
                 handleExceed(files, fileList) {
                     this.$message.warning(`最多只能上传 9 张图片`);
-                },    
+                },
 
                 // 提交表单时保存商品信息
                 async submitForm() {
@@ -3254,7 +3863,7 @@
                                 this.dialogVisible = false;
                                 this.loadProducts();
                             }
-                        } else {
+                    } else {
                             const response = await axios.put(`/products/${this.productForm.id}`, this.productForm);
                             if (response.status === 200) {
                                 this.$message.success('更新商品成功');
@@ -3501,7 +4110,6 @@
                         const response = await axios.get('/system/settings');
                         if (response.status === 200) {
                             this.styleOptions = response.data.product_types || [];
-                            this.styleOptions.unshift({ value: '', name: '全部' });
                             console.log('加载款式选项成功:', this.styleOptions);
                         }
                     } catch (error) {
@@ -3552,20 +4160,178 @@
                         this.imagesLoading.close();
                         this.imagesLoading = null;
                     }
-                }
+                },
+                onImageLoad(e) {
+                   // console.log('图片加载完成', e);
+                },
+                // 更新筛选选项
+                updateFilters() {
+                    // 获取所有不重复的尺寸
+                    const sizes = new Set(this.products.map(p => p.specs_info?.size).filter(Boolean));
+                    this.sizeFilters = Array.from(sizes).map(size => ({ text: size, value: size }));
+
+                    // 获取所有不重复的克重并排序
+                    const weights = new Set(this.products.map(p => p.specs_info?.weight).filter(Boolean));
+                    this.weightFilters = Array.from(weights).sort((a, b) => a - b)
+                        .map(weight => ({ text: `${weight}g`, value: weight }));
+
+                    // 获取所有不重复的材质
+                    const yarns = new Set(this.products.map(p => p.specs_info?.yarn).filter(Boolean));
+                    this.yarnFilters = Array.from(yarns).map(yarn => ({ text: yarn, value: yarn }));
+
+                    // 获取所有不重复的成分
+                    const compositions = new Set(this.products.map(p => p.specs_info?.composition).filter(Boolean));
+                    this.compositionFilters = Array.from(compositions).map(comp => ({ text: comp, value: comp }));
+                },
+
+                // 款式筛选方法
+                filterType(value, row) {
+                    return row.type === value;
+                },
+
+                // 尺寸筛选方法
+                filterSize(value, row) {
+                    return row.specs_info?.size === value;
+                },
+
+                // 克重筛选方法
+                filterWeight(value, row) {
+                    return row.specs_info?.weight === value;
+                },
+
+                // 材质筛选方法
+                filterYarn(value, row) {
+                    return row.specs_info?.yarn === value;
+                },
+
+                // 成分筛选方法
+                filterComposition(value, row) {
+                    return row.specs_info?.composition === value;
+                },
+
+                // 获取商品类型名称
+                getProductTypeName(type) {
+                    const typeMap = {
+                        1: '披肩',
+                        2: '围巾',
+                        3: '帽子',
+                        4: '三角巾',
+                        5: '其他'
+                    };
+                    return typeMap[type] || '未知';
+                },
+                // 加载筛选选项
+                async loadFilterOptions() {
+                    try {
+                        const response = await axios.get('/products/filter-options');
+                        if (response.data.code === 0) {
+                            // 为每个筛选选项添加"全部"选项
+                            this.filterOptions = {
+                                sizes: [{ text: '全部', value: null }, ...response.data.data.sizes],
+                                weights: [{ text: '全部', value: null }, ...response.data.data.weights],
+                                yarns: [{ text: '全部', value: null }, ...response.data.data.yarns],
+                                compositions: [{ text: '全部', value: null }, ...response.data.data.compositions]
+                            };
+                        }
+                    } catch (error) {
+                        console.error('加载筛选选项失败:', error);
+                        ElementPlus.ElMessage.error('加载筛选选项失败');
+                    }
+                },
+
+                // 筛选方法
+                filterHandler(value, row, column) {
+                    const property = column.property;
+                    if (!value) return true;
+                    
+                    // 处理嵌套属性（例如 specs_info.size）
+                    if (property.includes('.')) {
+                        const [parent, child] = property.split('.');
+                        return row[parent] && row[parent][child] === value;
+                    }
+                    
+                    return row[property] === value;
+                },
+
+                // 重置筛选
+                resetFilters() {
+                    this.$refs.productTable.clearFilter();
+                    this.loadProducts();
+                },
+
+                // 重置特定筛选条件
+                resetSpecificFilter(filterType) {
+                    this.selectedFilters[filterType] = null;
+                    this.filterVisible[filterType] = false;
+                    this.handleProductSearch();
+                },
+
+                // 处理筛选搜索
+                handleProductSearch() {
+                    // 更新筛选条件
+                    this.productFilter.type = this.selectedFilters.type;
+                    this.productFilter.size = this.selectedFilters.size;
+                    this.productFilter.weight = this.selectedFilters.weight;
+                    this.productFilter.yarn = this.selectedFilters.yarn;
+                    this.productFilter.composition = this.selectedFilters.composition;
+           
+                    console.log( "规格筛选值：",this.productFilter.spec_info);
+                    // 关闭所有筛选弹窗
+                    Object.keys(this.filterVisible).forEach(key => {
+                        this.filterVisible[key] = false;
+                    });
+                    
+                    // 重置到第一页
+                    this.productFilter.page = 1;
+                    // 重新加载数据
+                    this.loadProducts();
+                },
+                selectColorImage(colorIndex) {
+                    this.currentColorIndex = colorIndex;
+                    this.selectedImageUrl = this.productForm.colors[colorIndex].imageUrl || '';
+                    this.colorImageDialogVisible = true;
+                },
+
+                selectImage(file) {
+                    this.selectedImageUrl = file.url;
+                },
+
+                confirmColorImage() {
+                    
+                    if (this.currentColorIndex >= 0 && this.selectedImageUrl) {
+                        this.productForm.specs[this.currentColorIndex].image = this.selectedImageUrl;
+                    }
+
+                    console.log('确认颜色图片', this.productForm.specs);
+                    this.colorImageDialogVisible = false;
+                    this.currentColorIndex = -1;
+                    this.selectedImageUrl = '';
+                },
+
+                removeColorImage(colorIndex) {
+                    this.productForm.colors[colorIndex].imageUrl = '';
+                },
+                handleColorImageClick(index) {
+                    this.currentColorIndex = index;
+                    this.selectedImageUrl = this.productForm.specs[index].image || '';
+                    this.colorImageDialogVisible = true;
+                },
             }
         })
-        app.component('el-icon', ElementPlus.ElIcon)
-        app.component('Plus', ElementPlus.Plus)
-        app.component('User', ElementPlus.User)
-        app.component('Lock', ElementPlus.Lock)
-        app.component('Document', ElementPlus.Document)
-        app.component('Setting', ElementPlus.Setting)
+        
+        // 注册所有图标组件
+        for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+            app.component(key, component)
+        }
 
-        app.use(ElementPlus)
+        // 使用 Element Plus
+        app.use(ElementPlus, {
+            size: 'default',
+            zIndex: 3000
+        })
+
         app.mount('#app')
     </script>
 </body>
 
-</html>
 </html>
