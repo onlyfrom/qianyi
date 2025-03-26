@@ -660,8 +660,8 @@
                         </el-menu-item>
 
                         <el-menu-item index="2">
-                            <el-icon><Goods /></el-icon>
-                            <span>采购管理</span>
+                            <el-icon><User /></el-icon>
+                            <span>用户管理</span>
                         </el-menu-item>
 
                         <el-menu-item index="3">
@@ -834,12 +834,34 @@
                                     </template>
                                 </el-table-column>
                                 <el-table-column label="尺寸" prop="specs_info.size" width="120">
+                                    <template #header>
+                                        <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.size">
+                                            <template #reference>
+                                                <span :style="{ color: selectedFilters.size !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
+                                                    尺寸
+                                                    <el-icon v-if="selectedFilters.size !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                </span>
+                                            </template>
+                                            <div class="filter-options">
+                                                <div v-for="item in filterOptions.sizes" 
+                                                    :key="item.value" 
+                                                    class="filter-option-item"
+                                                    :class="{ 'is-active': selectedFilters.size === item.value }"
+                                                    @click="selectedFilters.size = item.value">
+                                                    {{ item.text }}
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #EBEEF5; text-align: right">
+                                                <el-button size="small" @click="resetSpecificFilter('size')">重置</el-button>
+                                                <el-button size="small" type="primary" @click="handleProductSearch">确定</el-button>
+                                            </div>
+                                        </el-popover>
+                                    </template>
                                     <template #default="{ row }">
                                         <div v-if="isEditMode" class="editable-cell">
                                             <el-input
                                                 v-model="row.specs_info.size"
                                                 size="small"
-                                                @blur="handleSpecsSave(row)"
                                                 @keyup.enter="handleSpecsSave(row)"
                                                 placeholder="输入尺寸">
                                             </el-input>
@@ -848,6 +870,29 @@
                                     </template>
                                 </el-table-column>
                                 <el-table-column label="克重" prop="specs_info.weight" width="120">
+                                    <template #header>
+                                        <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.weight">
+                                            <template #reference>
+                                                <span :style="{ color: selectedFilters.weight !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
+                                                    克重
+                                                    <el-icon v-if="selectedFilters.weight !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                </span>
+                                            </template>
+                                            <div class="filter-options">
+                                                <div v-for="item in filterOptions.weights" 
+                                                    :key="item.value" 
+                                                    class="filter-option-item"
+                                                    :class="{ 'is-active': selectedFilters.weight === item.value }"
+                                                    @click="selectedFilters.weight = item.value">
+                                                    {{ item.text }}
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #EBEEF5; text-align: right">
+                                                <el-button size="small" @click="resetSpecificFilter('weight')">重置</el-button>
+                                                <el-button size="small" type="primary" @click="handleProductSearch">确定</el-button>
+                                            </div>
+                                        </el-popover>
+                                    </template>
                                     <template #default="{ row }">
                                         <div v-if="isEditMode" class="editable-cell">
                                             <el-input-number
@@ -855,7 +900,7 @@
                                                 size="small"
                                                 :min="0"
                                                 :step="1"
-                                                @change="handleSpecsSave(row)"
+                                                @keyup.enter="handleSpecsSave(row)"
                                                 placeholder="输入克重">
                                             </el-input-number>
                                         </div>
@@ -863,12 +908,34 @@
                                     </template>
                                 </el-table-column>
                                 <el-table-column label="材质" prop="specs_info.yarn" width="120">
+                                    <template #header>
+                                        <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.yarn">
+                                            <template #reference>
+                                                <span :style="{ color: selectedFilters.yarn !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
+                                                    材质
+                                                    <el-icon v-if="selectedFilters.yarn !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                </span>
+                                            </template>
+                                            <div class="filter-options">
+                                                <div v-for="item in filterOptions.yarns" 
+                                                    :key="item.value" 
+                                                    class="filter-option-item"
+                                                    :class="{ 'is-active': selectedFilters.yarn === item.value }"
+                                                    @click="selectedFilters.yarn = item.value">
+                                                    {{ item.text }}
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #EBEEF5; text-align: right">
+                                                <el-button size="small" @click="resetSpecificFilter('yarn')">重置</el-button>
+                                                <el-button size="small" type="primary" @click="handleProductSearch">确定</el-button>
+                                            </div>
+                                        </el-popover>
+                                    </template>
                                     <template #default="{ row }">
                                         <div v-if="isEditMode" class="editable-cell">
                                             <el-input
                                                 v-model="row.specs_info.yarn"
                                                 size="small"
-                                                @blur="handleSpecsSave(row)"
                                                 @keyup.enter="handleSpecsSave(row)"
                                                 placeholder="输入材质">
                                             </el-input>
@@ -877,12 +944,34 @@
                                     </template>
                                 </el-table-column>
                                 <el-table-column label="成分" prop="specs_info.composition" width="150">
+                                    <template #header>
+                                        <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.composition">
+                                            <template #reference>
+                                                <span :style="{ color: selectedFilters.composition !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
+                                                    成分
+                                                    <el-icon v-if="selectedFilters.composition !== null" class="el-icon--right"><CircleCheck /></el-icon>
+                                                </span>
+                                            </template>
+                                            <div class="filter-options">
+                                                <div v-for="item in filterOptions.compositions" 
+                                                    :key="item.value" 
+                                                    class="filter-option-item"
+                                                    :class="{ 'is-active': selectedFilters.composition === item.value }"
+                                                    @click="selectedFilters.composition = item.value">
+                                                    {{ item.text }}
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #EBEEF5; text-align: right">
+                                                <el-button size="small" @click="resetSpecificFilter('composition')">重置</el-button>
+                                                <el-button size="small" type="primary" @click="handleProductSearch">确定</el-button>
+                                            </div>
+                                        </el-popover>
+                                    </template>
                                     <template #default="{ row }">
                                         <div v-if="isEditMode" class="editable-cell">
                                             <el-input
                                                 v-model="row.specs_info.composition"
                                                 size="small"
-                                                @blur="handleSpecsSave(row)"
                                                 @keyup.enter="handleSpecsSave(row)"
                                                 placeholder="输入成分">
                                             </el-input>
@@ -1027,6 +1116,7 @@
                                             :on-error="handleUploadError" 
                                             :on-exceed="handleExceed"
                                             :file-list="fileList" 
+                                            :preview-src-list="previewSrcList"
                                             hide-on-click-modal
                                             accept=".jpg,.png,.jpeg,.gif,.webp"
                                             @change="handleFileChange">
@@ -2387,6 +2477,7 @@
                     selectedImageUrl: '',
                     currentColorIndex: -1,
                     isEditMode: false,
+                    previewSrcList: [],
                 }
             },
            // computed: {
@@ -2408,6 +2499,12 @@
                 // 加载款式选项
                 this.loadStyleOptions();
                 this.loadFilterOptions();
+                
+                // 初始化加载
+                this.loadProducts();
+                this.$nextTick(() => {
+                    this.initSortable();
+                });
             },
             methods: {
                 handleSelect(index) {
@@ -2508,6 +2605,11 @@
                     this.selectedPresetColors = [];
                     this.customColorInput = [];
                     this.customColorOptions = [];
+                    
+                    // 延迟初始化排序功能，确保DOM已更新
+                    setTimeout(() => {
+                        this.initSortable();
+                    }, 300);
                 },
 
                 showCreateDeliveryDialog() {
@@ -2546,7 +2648,10 @@
                         url: this.handleImageUrl(url),
                         status: 'success'
                     }));
-                   
+                    
+                    // 更新预览图片列表
+                    this.previewSrcList = this.fileList.map(file => file.url);
+                    
                     // 设置表单数据
                     this.productForm = {
                         id: row.id,
@@ -2595,8 +2700,12 @@
 
                     // 最后再打开对话框
                     this.$nextTick(() => {
-                        this.dialogVisible = true
-                    })
+                        this.dialogVisible = true;
+                        // 延迟初始化排序功能，确保DOM已更新
+                        setTimeout(() => {
+                            this.initSortable();
+                        }, 300);
+                    });
                 },
 
                 handleDeliveryPageChange(page, pageSize) {
@@ -4175,17 +4284,6 @@
                     return row.specs_info?.composition === value;
                 },
 
-                // 获取商品类型名称
-                getProductTypeName(type) {
-                    const typeMap = {
-                        1: '披肩',
-                        2: '围巾',
-                        3: '帽子',
-                        4: '三角巾',
-                        5: '其他'
-                    };
-                    return typeMap[type] || '未知';
-                },
                 // 加载筛选选项
                 async loadFilterOptions() {
                     try {
@@ -4260,11 +4358,19 @@
 
                 selectImage(file) {
                     this.selectedImageUrl = file.url;
+                    this.confirmColorImage();
                 },
 
                 confirmColorImage() {
                     
                     if (this.currentColorIndex >= 0 && this.selectedImageUrl) {
+                        // 替换图片URL中的域名
+                        if (this.selectedImageUrl.startsWith('https://7072-prod-9gd43ll-1251001567.tcb.qcloud.la/')) {
+                            this.selectedImageUrl = this.selectedImageUrl.replace(
+                                'https://7072-prod-9gd43ll-1251001567.tcb.qcloud.la/',
+                                'cloud://prod-9gd4jllic76d4842.7072-prod-9gd4jllic76d4842-1348936510/'
+                            );
+                        }
                         this.productForm.specs[this.currentColorIndex].image = this.selectedImageUrl;
                     }
 
@@ -4310,8 +4416,9 @@
                                 composition: row.specs_info.composition || ''
                             }
                         });
+                        console.log('保存规格', response);
 
-                        if (response.data.code === 0) {
+                        if (response.status === 200) {
                             this.$message.success('保存成功');
                         } else {
                             this.$message.error(response.data.message || '保存失败');
@@ -4322,7 +4429,42 @@
                         this.$message.error('保存失败');
                         await this.loadProducts();
                     }
-                }
+                },
+                
+                // 初始化拖拽排序功能
+                initSortable() {
+                    this.$nextTick(() => {
+                        const el = document.querySelector('.el-upload-list--picture-card');
+                        if (el) {
+                            this.sortable = Sortable.create(el, {
+                                animation: 150,
+                                ghostClass: 'sortable-ghost',
+                                onEnd: (evt) => {
+                                    // 更新文件列表顺序
+                                    const itemEl = evt.item;
+                                    const newIndex = evt.newIndex;
+                                    const oldIndex = evt.oldIndex;
+                                    
+                                    if (newIndex !== oldIndex) {
+                                        // 从旧位置移除，在新位置插入
+                                        const movedItem = this.fileList.splice(oldIndex, 1)[0];
+                                        this.fileList.splice(newIndex, 0, movedItem);
+                                        
+                                        // 更新预览图片列表
+                                        this.previewSrcList = this.fileList.map(file => file.url);
+                                        
+                                        // 更新表单数据中的图片顺序
+                                        if (this.productForm.images) {
+                                            this.productForm.images = this.fileList.map(file => file.url);
+                                        }
+                                        
+                                        ElementPlus.ElMessage.success('图片顺序已更新');
+                                    }
+                                }
+                            });
+                        }
+                    });
+                },
             }
         })
         
