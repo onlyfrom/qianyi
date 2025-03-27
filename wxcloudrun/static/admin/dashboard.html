@@ -888,6 +888,20 @@
                                         </el-image>
                                     </template>
                                 </el-table-column>
+                                <el-table-column prop="status" label="状态" width="80">
+                                    <template #default="scope">
+                                        <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'" @click="handleStatusChange(scope.row, 'status')">
+                                            {{ scope.row.status === 1 ? '上架' : '下架' }}
+                                        </el-tag>
+                                    </template>
+                                </el-table-column>
+                                <el-table-column prop="is_public" label="是否公开" width="80">
+                                    <template #default="scope">
+                                        <el-tag :type="scope.row.is_public === 1 ? 'success' : 'danger'" @click="handleStatusChange(scope.row, 'is_public')">
+                                            {{ scope.row.is_public === 1 ? '公开' : '私密' }}
+                                        </el-tag>
+                                    </template>
+                                </el-table-column>
                                 <el-table-column prop="name" label="商品名称" width="300" ></el-table-column>
                                 <el-table-column prop="price_b" label="价格" width="80" v-if="userInfo.user_type === 1">
                                     <template #default="scope">
@@ -1126,26 +1140,51 @@
                                     <el-form-item label="商品名称" prop="name">
                                         <el-input v-model="productForm.name" placeholder="请输入商品名称"></el-input>
                                     </el-form-item>
+                                    <el-form-item label="商品状态">
+                                        <el-row :gutter="20">
+                                            <el-col :span="12">
+                                                <el-tag :type="productForm.status === 1 ? 'success' : 'danger'" @click="handleStatusChange(productForm, 'status')">{{ productForm.status === 1 ? '上架' : '下架' }}</el-tag>
+                                            </el-col>
+                                            <el-col :span="12">
+                                                <el-tag :type="productForm.is_public === 1 ? 'success' : 'danger'" @click="handleStatusChange(productForm, 'is_public')">{{ productForm.is_public === 1 ? '公开' : '私密' }}</el-tag>   
+                                                </el-switch>
+                                            </el-col>
+                                        </el-row>
+                                    </el-form-item>
 
                                     
 
                                     <!-- 只有管理员(user_type=1)才显示这些价格设置 -->
                                     <template v-if="userInfo.user_type === 1">
-                                        <el-form-item label="建议零售价" prop="price" >
-                                            <el-input-number v-model="productForm.price" :precision="2" :step="0.1" :min="0"></el-input-number>
-                                        </el-form-item>
-                                        <el-form-item label="A类价格" prop="price_b">
-                                            <el-input-number v-model="productForm.price_b" :precision="2" :step="0.1" :min="0"></el-input-number>
-                                        </el-form-item>
-                                        <el-form-item label="B类价格" prop="price_c">
-                                            <el-input-number v-model="productForm.price_c" :precision="2" :step="0.1" :min="0"></el-input-number>
-                                        </el-form-item>
-                                        <el-form-item label="C类价格" prop="price_d">
-                                            <el-input-number v-model="productForm.price_d" :precision="2" :step="0.1" :min="0"></el-input-number>
-                                        </el-form-item>
-                                        <el-form-item label="成本价" prop="cost_price">
-                                            <el-input-number v-model="productForm.cost_price" :precision="2" :step="0.1" :min="0"></el-input-number>
-                                        </el-form-item>
+                                        <el-row :gutter="10">
+                                            <el-col :span="8">
+                                                <el-form-item label="A类价格" prop="price_b">
+                                                    <el-input-number v-model="productForm.price_b" :precision="2" :step="0.1" :min="0"></el-input-number>
+                                                </el-form-item>
+                                            </el-col>
+                                            <el-col :span="8">
+                                                <el-form-item label="B类价格" prop="price_c">
+                                                    <el-input-number v-model="productForm.price_c" :precision="2" :step="0.1" :min="0"></el-input-number>
+                                                </el-form-item>
+                                            </el-col>
+                                            <el-col :span="8">
+                                                <el-form-item label="C类价格" prop="price_d">
+                                                    <el-input-number v-model="productForm.price_d" :precision="2" :step="0.1" :min="0"></el-input-number>
+                                                </el-form-item>
+                                            </el-col>
+                                        </el-row>
+                                        <el-row :gutter="10" >
+                                            <el-col :span="12">
+                                                <el-form-item label="建议零售价" prop="price">
+                                                    <el-input-number v-model="productForm.price" :precision="2" :step="0.1" :min="0"></el-input-number>
+                                                </el-form-item>
+                                            </el-col>
+                                            <el-col :span="12">
+                                                <el-form-item label="成本价" prop="cost_price">
+                                                    <el-input-number v-model="productForm.cost_price" :precision="2" :step="0.1" :min="0"></el-input-number>
+                                                </el-form-item>
+                                            </el-col>
+                                        </el-row>
                                     </template>
 
                                     <el-form-item label="商品款式" prop="style">
@@ -1265,6 +1304,7 @@
                                             placeholder="请输入商品描述"></el-input>
                                     </el-form-item>
 
+                                    
                                     <el-form-item label="商品规格">
                                         <div class="spec-form-container">
                                             <el-row :gutter="4" class="spec-form-row">
@@ -2880,7 +2920,9 @@
                         size: '',               // 尺寸
                         weight: 0,              // 克重
                         yarn: '',               // 材质
-                        composition: ''         // 成分
+                        composition: '',         // 成分
+                        status: 1,          // 默认上架
+                        is_public: 0            // 默认公开
                     }
                     // 清空文件列表
                     if (this.$refs.uploadRef) {
@@ -2967,7 +3009,9 @@
                         size: row.size || '',
                         weight: parseFloat(row.weight) || 0,
                         yarn: row.yarn || '',
-                        composition: row.composition || ''
+                        composition: row.composition || '',
+                        status: row.status || 1,
+                        is_public: row.is_public || 1
                     };
 
                     // 解析标签数据
@@ -3208,7 +3252,10 @@
                         size: '',
                         weight: 0,
                         yarn: '',
-                        composition: ''
+                        composition: '',
+                        status: 1,
+                        is_public: 1
+
                     };
                     
                     // 清空文件列表
@@ -3258,7 +3305,9 @@
                             size: (this.productForm.size || '').trim(),
                             weight: parseFloat(this.productForm.weight) || 0,
                             yarn: (this.productForm.yarn || '').trim(),
-                            composition: (this.productForm.composition || '').trim()
+                            composition: (this.productForm.composition || '').trim(),
+                            status: this.productForm.status,
+                            is_public: this.productForm.is_public
                         };
                         const url = `/products`;
                         const method = 'post';
@@ -4299,6 +4348,7 @@
                                     weight: parseFloat(this.productForm.weight) || 0,
                                     yarn: (this.productForm.yarn || '').trim(),
                                     composition: (this.productForm.composition || '').trim()
+
                                 };
                                 console.log('提交数据:', submitData.images);
                                 const response = await axios.post(`/products`, submitData);
@@ -4402,7 +4452,9 @@
                         weight: 0,
                         yarn: '',
                         composition: '',
-                        specs: []
+                        specs: [],
+                        status: 1,
+                        is_public: 1
                     };
                 },
                 showBatchStyleDialog() {
@@ -5052,7 +5104,9 @@
                         size: row.size || '',
                         weight: parseFloat(row.weight) || 0,
                         yarn: row.yarn || '',
-                        composition: row.composition || ''
+                        composition: row.composition || '',
+                        status: row.status || 1,
+                        is_public: row.is_public || 1
                     };
 
                     // 解析标签数据
@@ -5110,7 +5164,9 @@
                         size: '',               // 尺寸
                         weight: 0,              // 克重
                         yarn: '',               // 材质
-                        composition: ''         // 成分
+                        composition: '',         // 成分
+                        status: 1,          // 默认上架
+                        is_public: 1            // 默认公开
                     };
                     // 清空文件列表
                     if (this.$refs.uploadRef) {
@@ -5162,7 +5218,9 @@
                             size: (this.productForm.size || '').trim(),
                             weight: parseFloat(this.productForm.weight) || 0,
                             yarn: (this.productForm.yarn || '').trim(),
-                            composition: (this.productForm.composition || '').trim()
+                            composition: (this.productForm.composition || '').trim(),
+                            status: this.productForm.status,
+                            is_public: this.productForm.is_public
                         };
                         
                         const url = `/products`;
@@ -5327,6 +5385,29 @@
                         this.$message.error('更新推荐商品顺序失败');
                         // 如果失败，重新加载列表
                         await this.loadRecommendedProducts();
+                    }
+                },
+                // 添加处理状态变更的方法
+                async handleStatusChange(row, field) {
+                    try {
+                        const response = await axios.post(`/products`, {
+                            id: row.id,
+                            [field]: row[field] === 1 ? 0 : 1
+                        });
+                        
+                        if (response.status === 200) {
+                            ElementPlus.ElMessage.success('状态更新成功');
+                            this.loadProducts();
+                        } else {
+                            ElementPlus.ElMessage.error('状态更新失败');
+                            // 更新失败时恢复原状态
+                            row[field] = row[field] === 1 ? 0 : 1;
+                        }
+                    } catch (error) {
+                        console.error('状态更新失败:', error);
+                        ElementPlus.ElMessage.error('状态更新失败');
+                        // 更新失败时恢复原状态
+                        row[field] = row[field] === 1 ? 0 : 1;
                     }
                 },
             }

@@ -1012,7 +1012,11 @@ def get_product_detail(user_id, product_id):
             'created_at': product.created_at.isoformat() if product.created_at else None,
             'specs_info': json.loads(product.specs_info) if product.specs_info else {},
             'status': product.status if product.status is not None else 1,  # 默认上架
-            'is_public': product.is_public if product.is_public is not None else 1  # 默认公开
+            'is_public': product.is_public if product.is_public is not None else 1,  # 默认公开
+            'size': product.size if product.size is not None else '-',
+            'weight': product.weight if product.weight is not None else '0',
+            'yarn': product.yarn if product.yarn is not None else '-',
+            'composition': product.composition if product.composition is not None else '-'
         }
         return jsonify({'product': product_detail}), 200
 
@@ -1049,7 +1053,11 @@ def get_recent_products():
                 'images': json.loads(product.images) if product.images else [],
                 'type': product.type,
                 'created_at': product.created_at.isoformat() if product.created_at else None,
-                'specs_info': json.loads(product.specs_info) if product.specs_info else {}
+                'specs_info': json.loads(product.specs_info) if product.specs_info else {},
+                'size': product.size if product.size is not None else '-',
+                'weight': product.weight if product.weight is not None else '0',
+                'yarn': product.yarn if product.yarn is not None else '-',
+                'composition': product.composition if product.composition is not None else '-'
             })
             
         return jsonify({
