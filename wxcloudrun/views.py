@@ -848,7 +848,14 @@ def add_or_update_product(user_id):
                 product.is_public = data['is_public']
             if 'video_url' in data:
                 product.video_url = data['video_url']
-                
+            if 'size' in data:
+                product.size = data['size']
+            if 'weight' in data:
+                product.weight = data['weight']
+            if 'yarn' in data:
+                product.yarn = data['yarn']
+            if 'composition' in data:
+                product.composition = data['composition']
             product.updated_at = datetime.now()
         else:
             # 新增商品时的必需字段验证
@@ -907,7 +914,11 @@ def add_or_update_product(user_id):
                 is_public=is_public,
                 created_at=datetime.now(),
                 updated_at=datetime.now(),
-                video_url=data.get('video_url', '')
+                video_url=data.get('video_url', ''),
+                size=data.get('size', '-'),
+                weight=data.get('weight', '0'),
+                yarn=data.get('yarn', '-'),
+                composition=data.get('composition', '-')
             )
             db.session.add(product)
             

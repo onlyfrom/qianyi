@@ -2477,12 +2477,10 @@
                         description: '暂时没有',
                         stock: 0,
                         stock_warning: 10,
-                        specs_info: {           // 新的规格信息对象
-                            size: '',           // 尺寸
-                            weight: 0,          // 克重
-                            yarn: '',           // 材质
-                            composition: ''     // 成分
-                        }
+                        size: '',               // 尺寸
+                        weight: 0,              // 克重
+                        yarn: '',               // 材质
+                        composition: ''         // 成分
                     },
                     productRules: {
                         id: [
@@ -2535,16 +2533,16 @@
                         description: [
                             { required: true, message: '请输入商品描述', trigger: 'blur' }
                         ],
-                        'specs_info.size': [
+                        size: [
                             { max: 50, message: '尺寸长度不能超过50个字符', trigger: 'blur' }
                         ],
-                        'specs_info.weight': [
+                        weight: [
                             { type: 'number', min: 0, message: '克重不能小于0', trigger: 'blur' }
                         ],
-                        'specs_info.yarn': [
+                        yarn: [
                             { max: 100, message: '材质长度不能超过100个字符', trigger: 'blur' }
                         ],
-                        'specs_info.composition': [
+                        composition: [
                             { max: 500, message: '成分长度不能超过500个字符', trigger: 'blur' }
                         ]
                     },
@@ -2844,6 +2842,7 @@
                         }
                         
                         const response = await axios.get('/products', { params });
+                        console.log('搜索商品结果:', response.data);
                         if (response.status === 200) {
                             this.products = response.data.products;
                             this.pagination.total = response.data.total;
@@ -2878,12 +2877,10 @@
                         description: '暂时没有',
                         stock: 0,
                         stock_warning: 10,
-                        specs_info: {           // 新的规格信息对象
-                            size: '',           // 尺寸
-                            weight: 0,          // 克重
-                            yarn: '',           // 材质
-                            composition: ''     // 成分
-                        }
+                        size: '',               // 尺寸
+                        weight: 0,              // 克重
+                        yarn: '',               // 材质
+                        composition: ''         // 成分
                     }
                     // 清空文件列表
                     if (this.$refs.uploadRef) {
@@ -2967,7 +2964,6 @@
                         stock: parseInt(row.stock) || 0,
                         stock_warning: parseInt(row.stock_warning) || 10,
                         created_at: row.created_at,
-                        // 使用独立字段
                         size: row.size || '',
                         weight: parseFloat(row.weight) || 0,
                         yarn: row.yarn || '',
@@ -3209,12 +3205,10 @@
                         description: '暂时没有',
                         stock: 0,
                         stock_warning: 10,
-                        specs_info: {
-                            size: '',
-                            weight: 0,
-                            yarn: '',
-                            composition: ''
-                        }
+                        size: '',
+                        weight: 0,
+                        yarn: '',
+                        composition: ''
                     };
                     
                     // 清空文件列表
@@ -3261,12 +3255,10 @@
                             stock: specs.reduce((sum, spec) => sum + (parseInt(spec.stock) || 0), 0),
                             stock_warning: parseInt(this.productForm.stock_warning) || 10,
                             created_at: this.dialogType === 'add' ? new Date().toISOString() : this.productForm.created_at,
-                            specs_info: {
-                                size: (this.productForm.specs_info.size || '').trim(),
-                                weight: parseFloat(this.productForm.specs_info.weight) || 0,
-                                yarn: (this.productForm.specs_info.yarn || '').trim(),
-                                composition: (this.productForm.specs_info.composition || '').trim()
-                            }
+                            size: (this.productForm.size || '').trim(),
+                            weight: parseFloat(this.productForm.weight) || 0,
+                            yarn: (this.productForm.yarn || '').trim(),
+                            composition: (this.productForm.composition || '').trim()
                         };
                         const url = `/products`;
                         const method = 'post';
@@ -4303,12 +4295,10 @@
                                     type: parseInt(this.productForm.style) || 1,
                                     stock: specs.reduce((sum, spec) => sum + (parseInt(spec.stock) || 0), 0),
                                     stock_warning: parseInt(this.productForm.stock_warning) || 10,
-                                    specs_info: {
-                                        size: (this.productForm.specs_info.size || '').trim(),
-                                        weight: parseFloat(this.productForm.specs_info.weight) || 0,
-                                        yarn: (this.productForm.specs_info.yarn || '').trim(),
-                                        composition: (this.productForm.specs_info.composition || '').trim()
-                                    }
+                                    size: (this.productForm.size || '').trim(),
+                                    weight: parseFloat(this.productForm.weight) || 0,
+                                    yarn: (this.productForm.yarn || '').trim(),
+                                    composition: (this.productForm.composition || '').trim()
                                 };
                                 console.log('提交数据:', submitData.images);
                                 const response = await axios.post(`/products`, submitData);
@@ -4408,7 +4398,10 @@
                     this.loadProducts(); // 刷新商品列表数据
                     this.fileList = []; // 清空文件列表
                     this.productForm = { // 重置表单
-                        specs_info: {},
+                        size: '',
+                        weight: 0,
+                        yarn: '',
+                        composition: '',
                         specs: []
                     };
                 },
@@ -4597,20 +4590,20 @@
                 // 更新筛选选项
                 updateFilters() {
                     // 获取所有不重复的尺寸
-                    const sizes = new Set(this.products.map(p => p.specs_info?.size).filter(Boolean));
+                    const sizes = new Set(this.products.map(p => p.size).filter(Boolean));
                     this.sizeFilters = Array.from(sizes).map(size => ({ text: size, value: size }));
 
                     // 获取所有不重复的克重并排序
-                    const weights = new Set(this.products.map(p => p.specs_info?.weight).filter(Boolean));
+                    const weights = new Set(this.products.map(p => p.weight).filter(Boolean));
                     this.weightFilters = Array.from(weights).sort((a, b) => a - b)
                         .map(weight => ({ text: `${weight}g`, value: weight }));
 
                     // 获取所有不重复的材质
-                    const yarns = new Set(this.products.map(p => p.specs_info?.yarn).filter(Boolean));
+                    const yarns = new Set(this.products.map(p => p.yarn).filter(Boolean));
                     this.yarnFilters = Array.from(yarns).map(yarn => ({ text: yarn, value: yarn }));
 
                     // 获取所有不重复的成分
-                    const compositions = new Set(this.products.map(p => p.specs_info?.composition).filter(Boolean));
+                    const compositions = new Set(this.products.map(p => p.composition).filter(Boolean));
                     this.compositionFilters = Array.from(compositions).map(comp => ({ text: comp, value: comp }));
                 },
 
@@ -4621,22 +4614,22 @@
 
                 // 尺寸筛选方法
                 filterSize(value, row) {
-                    return row.specs_info?.size === value;
+                    return row.size === value;
                 },
 
                 // 克重筛选方法
                 filterWeight(value, row) {
-                    return row.specs_info?.weight === value;
+                    return row.weight === value;
                 },
 
                 // 材质筛选方法
                 filterYarn(value, row) {
-                    return row.specs_info?.yarn === value;
+                    return row.yarn === value;
                 },
 
                 // 成分筛选方法
                 filterComposition(value, row) {
-                    return row.specs_info?.composition === value;
+                    return row.composition === value;
                 },
 
                 // 加载筛选选项
@@ -4663,13 +4656,6 @@
                 filterHandler(value, row, column) {
                     const property = column.property;
                     if (!value) return true;
-                    
-                    // 处理嵌套属性（例如 specs_info.size）
-                    if (property.includes('.')) {
-                        const [parent, child] = property.split('.');
-                        return row[parent] && row[parent][child] === value;
-                    }
-                    
                     return row[property] === value;
                 },
 
@@ -4754,14 +4740,6 @@
                 },
                 toggleEditMode() {
                     this.isEditMode = !this.isEditMode;
-                    // 确保每行的 specs_info 对象存在
-                    if (this.isEditMode) {
-                        this.products.forEach(row => {
-                            if (!row.specs_info) {
-                                this.$set(row, 'specs_info', {});
-                            }
-                        });
-                    }
                 },
 
                 async handleSpecsSave(row) {
@@ -5028,13 +5006,6 @@
                     const specs = typeof row.specs === 'string' ? JSON.parse(row.specs) : (row.specs || []);
                     const tags = typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || []);
                     
-                    const specs_info = typeof row.specs_info === 'string' ? JSON.parse(row.specs_info) : (row.specs_info || {
-                        size: '',
-                        weight: 0,
-                        yarn: '',
-                        composition: ''
-                    });
-                    
                     // 设置文件列表
                     this.fileList = images.map(url => ({
                         name: url.split('/').pop(),
@@ -5078,12 +5049,10 @@
                         stock: parseInt(row.stock) || 0,
                         stock_warning: parseInt(row.stock_warning) || 10,
                         created_at: row.created_at,
-                        specs_info: {
-                            size: specs_info.size || '',
-                            weight: parseFloat(specs_info.weight) || 0,
-                            yarn: specs_info.yarn || '',
-                            composition: specs_info.composition || ''
-                        }
+                        size: row.size || '',
+                        weight: parseFloat(row.weight) || 0,
+                        yarn: row.yarn || '',
+                        composition: row.composition || ''
                     };
 
                     // 解析标签数据
@@ -5138,12 +5107,10 @@
                         description: '暂时没有',
                         stock: 0,
                         stock_warning: 10,
-                        specs_info: {           // 新的规格信息对象
-                            size: '',           // 尺寸
-                            weight: 0,          // 克重
-                            yarn: '',           // 材质
-                            composition: ''     // 成分
-                        }
+                        size: '',               // 尺寸
+                        weight: 0,              // 克重
+                        yarn: '',               // 材质
+                        composition: ''         // 成分
                     };
                     // 清空文件列表
                     if (this.$refs.uploadRef) {
@@ -5192,12 +5159,10 @@
                             stock: specs.reduce((sum, spec) => sum + (parseInt(spec.stock) || 0), 0),
                             stock_warning: parseInt(this.productForm.stock_warning) || 10,
                             created_at: this.dialogType === 'add' ? new Date().toISOString() : this.productForm.created_at,
-                            specs_info: {
-                                size: (this.productForm.specs_info.size || '').trim(),
-                                weight: parseFloat(this.productForm.specs_info.weight) || 0,
-                                yarn: (this.productForm.specs_info.yarn || '').trim(),
-                                composition: (this.productForm.specs_info.composition || '').trim()
-                            }
+                            size: (this.productForm.size || '').trim(),
+                            weight: parseFloat(this.productForm.weight) || 0,
+                            yarn: (this.productForm.yarn || '').trim(),
+                            composition: (this.productForm.composition || '').trim()
                         };
                         
                         const url = `/products`;
@@ -5256,6 +5221,7 @@
                                 page_size: 10
                             }
                         });
+                        console.log('搜索商品结果:', response.data);
                         
                         if (response.status === 200) {
                             this.searchProductsResults = response.data.products || [];
