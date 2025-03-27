@@ -49,7 +49,7 @@ def get_recommended_products():
                     'name': product.name,
                     'type': product.type,
                     'price': product.price if hasattr(product, 'price') else None,
-                    'images': product.images if hasattr(product, 'images') else [],
+                    'images': json.loads(product.images) if hasattr(product, 'images') and product.images else [],
                     'created_at': product.created_at.strftime('%Y-%m-%d %H:%M:%S') if hasattr(product, 'created_at') else None
                 }
                 products_data.append(product_dict)

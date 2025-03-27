@@ -888,7 +888,7 @@
                                         </el-image>
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="name" label="商品名称"></el-table-column>
+                                <el-table-column prop="name" label="商品名称" width="300" ></el-table-column>
                                 <el-table-column prop="price_b" label="价格" width="80" v-if="userInfo.user_type === 1">
                                     <template #default="scope">
                                         {{ scope.row.price_b === 0 ? '讯价' : '¥' + scope.row.price_b }}
@@ -927,7 +927,7 @@
                                         <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.size">
                                             <template #reference>
                                                 <span :style="{ color: selectedFilters.size !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
-                                                    尺寸
+                                                    尺寸(cm)
                                                     <el-icon v-if="selectedFilters.size !== null" class="el-icon--right"></el-icon>
                                                 </span>
                                             </template>
@@ -963,7 +963,7 @@
                                         <el-popover placement="bottom" :width="200" trigger="click" v-model:visible="filterVisible.weight">
                                             <template #reference>
                                                 <span :style="{ color: selectedFilters.weight !== null ? '#ADD8E6' : 'inherit' }" style="cursor: pointer">
-                                                    克重
+                                                    克重(g)
                                                     <el-icon v-if="selectedFilters.weight !== null" class="el-icon--right"></el-icon>
                                                 </span>
                                             </template>
@@ -1324,7 +1324,7 @@
                                                 <div class="color-image-preview" @click="handleColorImageClick(index)">
                                                     <el-image 
                                                         v-if="color.image" 
-                                                        :src="color.image" 
+                                                        :src="this.cloudtohttps(color.image)" 
                                                         fit="cover"
                                                         style="width: 40px; height: 40px; border-radius: 4px;">
                                                     </el-image>
@@ -4192,7 +4192,8 @@
                     this.loadPushOrders();
                 },
                 getImageUrl(path) {
-                    return axios.defaults.baseURL + path;
+                    return this.httpsBaseUrl + path;
+
                 },
                 // 添加文件大小检查方法
                 checkFileSize(file) {
@@ -4535,6 +4536,10 @@
                         const response = await axios.get('/system/settings');
                         if (response.status === 200) {
                             this.styleOptions = response.data.product_types || [];
+                            this.styleOptions.unshift({
+                                id: null,
+                                name: '全部'
+                            });
                             console.log('加载款式选项成功:', this.styleOptions);
                         }
                     } catch (error) {
