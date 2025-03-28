@@ -1,0 +1,32 @@
+.login-container {
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f5f5f5;
+}
+
+.login-card {
+    width: 400px;
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 100%;
+}
+
+.toolbar {
+    margin-bottom: 20px;
+}
+
+.el-header {
+    background-color: #fff;
+    border-bottom: 1px solid #dcdfe6;
+    padding: 0 20px;
+}
+
+.el-main {
+    padding: 20px;
+} 
