@@ -367,6 +367,56 @@ def init_system_settings():
         print(f'错误追踪:\n{traceback.format_exc()}')
         raise
 
+def get_access_token():
+    """获取小程序 access_token"""  
+    try:        
+        # 先尝试 HTTP
+        url = f'http://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=wxa17a5479891750b3&secret=33359853cfee1dc1e2b6e535249e351d'
+        response = requests.get(url)    
+        print(f'获取access_token响应 (HTTP): {response.json()}')
+        
+        if response.status_code == 200:
+            data = response.json()
+            print('\n接口响应数据:')
+            # 处理响应数据时隐藏实际的access_token
+            safe_data = data.copy()
+            if 'access_token' in safe_data:
+                safe_data['access_token'] = safe_data['access_token'][:10] + '...'
+            print(json.dumps(safe_data, ensure_ascii=False, indent=2))
+            
+            if 'access_token' in data:
+                print('\n成功获取access_token')
+                return data['access_token']
+        
+        # 如果 HTTP 失败，尝试 HTTPS
+        print('\nHTTP 请求失败，尝试 HTTPS...')
+        url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=wxa17a5479891750b3&secret=33359853cfee1dc1e2b6e535249e351d'
+        response = requests.get(url)    
+        print(f'获取access_token响应 (HTTPS): {response.json()}')
+        
+        if response.status_code == 200:
+            data = response.json()
+            print('\n接口响应数据:')
+            safe_data = data.copy()
+            if 'access_token' in safe_data:
+                safe_data['access_token'] = safe_data['access_token'][:10] + '...'
+            print(json.dumps(safe_data, ensure_ascii=False, indent=2))
+            
+            if 'access_token' in data:
+                print('\n成功获取access_token')
+                return data['access_token']
+                
+        print('\n获取access_token失败')
+        print('错误响应:')
+        print(response.text)
+        return None
+        
+    except Exception as e:
+        print('\n获取access_token时发生错误:')
+        print(f'- 错误类型: {type(e).__name__}')
+        print(f'- 错误信息: {str(e)}')
+        print(f'- 错误追踪:\n{traceback.format_exc()}')
+        return None
 
 def send_push_notification(openid, order_number, products):
     """发送微信推送消息"""
