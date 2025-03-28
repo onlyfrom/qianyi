@@ -372,8 +372,14 @@ def get_access_token():
     try:        
         # 先尝试 HTTP
         url = f'http://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=wxa17a5479891750b3&secret=33359853cfee1dc1e2b6e535249e351d'
+        print('\n尝试 HTTP 请求:')
+        print(f'请求URL: {url}')
+        print('请求头:', requests.get(url).request.headers)
+        
         response = requests.get(url)    
-        print(f'获取access_token响应 (HTTP): {response.json()}')
+        print(f'响应状态码: {response.status_code}')
+        print(f'响应头: {dict(response.headers)}')
+        print(f'响应内容: {response.text}')
         
         if response.status_code == 200:
             data = response.json()
@@ -387,12 +393,25 @@ def get_access_token():
             if 'access_token' in data:
                 print('\n成功获取access_token')
                 return data['access_token']
+            elif 'errcode' in data:
+                print(f'\n获取access_token失败，错误码: {data.get("errcode")}')
+                print(f'错误信息: {data.get("errmsg")}')
+                if data.get('errcode') == 400:
+                    print('可能的原因：')
+                    print('1. appid 或 secret 不正确')
+                    print('2. 请求参数格式错误')
+                    print('3. 超出调用频率限制')
         
         # 如果 HTTP 失败，尝试 HTTPS
         print('\nHTTP 请求失败，尝试 HTTPS...')
         url = f'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=wxa17a5479891750b3&secret=33359853cfee1dc1e2b6e535249e351d'
+        print(f'请求URL: {url}')
+        print('请求头:', requests.get(url).request.headers)
+        
         response = requests.get(url)    
-        print(f'获取access_token响应 (HTTPS): {response.json()}')
+        print(f'响应状态码: {response.status_code}')
+        print(f'响应头: {dict(response.headers)}')
+        print(f'响应内容: {response.text}')
         
         if response.status_code == 200:
             data = response.json()
@@ -405,6 +424,14 @@ def get_access_token():
             if 'access_token' in data:
                 print('\n成功获取access_token')
                 return data['access_token']
+            elif 'errcode' in data:
+                print(f'\n获取access_token失败，错误码: {data.get("errcode")}')
+                print(f'错误信息: {data.get("errmsg")}')
+                if data.get('errcode') == 400:
+                    print('可能的原因：')
+                    print('1. appid 或 secret 不正确')
+                    print('2. 请求参数格式错误')
+                    print('3. 超出调用频率限制')
                 
         print('\n获取access_token失败')
         print('错误响应:')

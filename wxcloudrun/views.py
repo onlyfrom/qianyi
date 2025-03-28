@@ -3702,12 +3702,9 @@ def create_push_order(user_id):
         target_user_id = data.get('target_user_id', None)
         share_code = data.get('share_code')
         qrcode = data.get('qrcode')
-
+        print(f'data: {data}')
         if not data or 'products' not in data:
             return jsonify({'error': '无效的请求数据'}), 400
-
-        if not share_code or not qrcode:
-            return jsonify({'error': '缺少分享码或二维码'}), 400
 
         # 生成推送单号
         order_number = f"PUSH{datetime.now().strftime('%Y%m%d%H%M%S')}{random.randint(100,999)}"
@@ -5655,7 +5652,10 @@ def get_merged_products(user_id):
                     'images': json.loads(product.images) if product.images else [],
                     'type': product.type,
                     'specs': json.loads(product.specs) if product.specs else [],
-                    'specs_info': json.loads(product.specs_info) if product.specs_info else {},
+                    'size': product.size,
+                    'weight': product.weight,
+                    'yarn': product.yarn,
+                    'composition': product.composition,
                     'source': source,  # 添加来源标记
                     'push_time': push_time.isoformat() if push_time else None,
                     'created_at': product.created_at.isoformat() if product.created_at else None,
