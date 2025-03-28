@@ -185,6 +185,7 @@ class PurchaseOrder(db.Model):
     total_amount = db.Column(db.Float, default=0)
     status = db.Column(db.Integer, default=0)  # 0:待处理 1:已处理 2:已取消
     remark = db.Column(db.Text)
+    handler_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
 
 class PurchaseOrderItem(db.Model):

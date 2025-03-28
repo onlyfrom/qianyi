@@ -1830,8 +1830,8 @@ def create_purchase_order(user_id):
     try:
         data = request.json
         if not data or 'items' not in data:
-            return jsonify({'error': '无效的请求数据'}), 400
-        
+            return jsonify({'error': '无效的请求数据'}), 400        
+        handler_id = data.get('handler_id')
         # 生成订单号
         order_number = datetime.now().strftime('%Y%m%d%H%M%S') + str(random.randint(1000, 9999))
         
@@ -1841,12 +1841,15 @@ def create_purchase_order(user_id):
         # 创建采购单
         purchase_order = PurchaseOrder(
             order_number=order_number,
-            user_id=user_id,
+            user_id=data.get('user_id', user_id),            
             total_amount=total_amount,
             status=0,  # 初始状态：待处理
             remark=data.get('remark', ''),
             created_at=datetime.now()
         )
+        
+        if handler_id :
+            purchase_order.handler_id = handler_id
         
         db.session.add(purchase_order)
         db.session.flush()  # 立即刷新会话，获取新创建的 ID
