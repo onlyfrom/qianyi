@@ -995,6 +995,33 @@ def get_product_detail(user_id, product_id):
         product = Product.query.get(product_id)
         if not product:
             return jsonify({'error': '商品不存在'}), 404
+        
+        # 获取推送过该商品的用户
+        pushed_users = db.session.query(User.id, User.nickname, User.avatar)\
+            .join(PushOrder, PushOrder.target_user_id == User.id)\
+            .join(PushOrderProduct, PushOrderProduct.push_order_id == PushOrder.id)\
+            .filter(PushOrderProduct.product_id == product_id)\
+            .distinct().all()
+            
+        # 获取所有用户
+        all_users = db.session.query(User.id, User.nickname, User.avatar).all()
+        
+        # 获取未推送过的用户
+        pushed_user_ids = {user.id for user in pushed_users}
+        not_pushed_users = [user for user in all_users if user.id not in pushed_user_ids]
+        
+        # 格式化用户数据
+        pushed_users_data = [{
+            'id': user.id,
+            'nickname': user.nickname,
+            'avatar': user.avatar
+        } for user in pushed_users]
+        
+        not_pushed_users_data = [{
+            'id': user.id, 
+            'nickname': user.nickname,
+            'avatar': user.avatar
+        } for user in not_pushed_users]
 
         base_price = float(product.price) if product.price is not None else 0
         product_detail = {
@@ -1016,7 +1043,9 @@ def get_product_detail(user_id, product_id):
             'size': product.size if product.size is not None else '-',
             'weight': product.weight if product.weight is not None else '0',
             'yarn': product.yarn if product.yarn is not None else '-',
-            'composition': product.composition if product.composition is not None else '-'
+            'composition': product.composition if product.composition is not None else '-',
+            'pushed_users': pushed_users_data,
+            'not_pushed_users': not_pushed_users_data
         }
         return jsonify({'product': product_detail}), 200
 
@@ -1028,48 +1057,72 @@ def get_product_detail(user_id, product_id):
 @app.route('/products/recent', methods=['GET'])
 def get_recent_products():
     try:
-        page = int(request.args.get('page', 1))  # 默认第 1 页
-        limit = int(request.args.get('limit', 10))  # 默认每页 10 条
+        # 获取最近7天的商品
+        one_week_ago = datetime.now() - timedelta(days=7)
         
-        # 使用 SQLAlchemy 查询
-        products_query = Product.query.order_by(Product.created_at.desc())
-        
-        # 获取分页数据
-        paginated_products = products_query.paginate(
-            page=page, 
-            per_page=limit, 
-            error_out=False
-        )
-        
-        # 格式化数据
-        products = []
-        for product in paginated_products.items:
-            products.append({
+        # 查询最近一周添加的商品
+        recent_products = Product.query.filter(
+            Product.created_at >= one_week_ago,
+            Product.status == 1  # 确保商品是上架状态
+        ).order_by(Product.created_at.desc()).all()
+
+        # 如果一周内没有新商品，则获取最近的10件商品
+        if not recent_products:
+            recent_products = Product.query.filter(
+                Product.status == 1
+            ).order_by(Product.created_at.desc()).limit(10).all()
+
+        result = []
+        for product in recent_products:
+            # 获取规格信息
+            specs = json.loads(product.specs) if product.specs else []
+            all_colors_stock = []
+            total_stock = 0
+            
+            # 计算总库存和各颜色库存
+            for spec in specs:
+                try:
+                    stock = int(spec.get('stock', 0))
+                    total_stock += stock
+                    color_info = {
+                        'color': spec.get('color', '未知颜色'),
+                        'stock': stock
+                    }
+                    all_colors_stock.append(color_info)
+                except (ValueError, TypeError):
+                    continue
+
+            base_price = float(product.price) if product.price is not None else 0
+            product_data = {
                 'id': product.id,
                 'name': product.name,
                 'description': product.description,
-                'price': float(product.price),
-                'specs': json.loads(product.specs) if product.specs else [],
+                'price': base_price,
                 'images': json.loads(product.images) if product.images else [],
-                'type': product.type,
+                'total_stock': total_stock,
+                'all_colors_stock': all_colors_stock,
                 'created_at': product.created_at.isoformat() if product.created_at else None,
-                'specs_info': json.loads(product.specs_info) if product.specs_info else {},
-                'size': product.size if product.size is not None else '-',
-                'weight': product.weight if product.weight is not None else '0',
-                'yarn': product.yarn if product.yarn is not None else '-',
-                'composition': product.composition if product.composition is not None else '-'
-            })
-            
+                'days_since_created': (datetime.now() - product.created_at).days if product.created_at else None,
+                'is_new': (datetime.now() - product.created_at).days <= 7 if product.created_at else False  # 标记是否是一周内的新品
+            }
+            result.append(product_data)
+
         return jsonify({
-            'products': products,
-            'total': paginated_products.total,
-            'pages': paginated_products.pages,
-            'current_page': page
-        }), 200
-        
+            'code': 0,
+            'data': {
+                'products': result,
+                'total': len(result),
+                'has_new': any(p['is_new'] for p in result)  # 是否包含新品
+            },
+            'message': 'success'
+        })
+
     except Exception as e:
-        print(f"获取最近商品列表失败: {str(e)}")
-        return jsonify({'error': '获取商品列表失败'}), 500
+        print(f"获取近期上新商品失败: {str(e)}")
+        return jsonify({
+            'code': -1,
+            'message': '获取近期上新商品失败'
+        }), 500
 
 # 确保文件扩展名合法
 def allowed_file(filename):
@@ -4408,29 +4461,35 @@ def get_products(user_id):
         for product in paginated_products.items:            
             # 安全地获取基础价格
             base_price = float(product.price) if product.price is not None else 0
+            product_dict = product.__dict__.copy()
             
-            products.append({
-                'id': product.id,
-                'name': product.name,
-                'description': product.description,
-                'price': base_price,
-                'price_b': float(product.price_b) if product.price_b is not None else base_price,
-                'price_c': float(product.price_c) if product.price_c is not None else base_price,
-                'price_d': float(product.price_d) if product.price_d is not None else base_price,
-                'cost_price': float(product.cost_price) if product.cost_price is not None else base_price,
-                'type': product.type,
-                'created_at': product.created_at.isoformat() if product.created_at else None,
-                'specs': json.loads(product.specs) if product.specs else [],
-                'images': json.loads(product.images) if product.images else [],
-                'status': product.status if product.status is not None else 1,  # 默认上架
-                'is_public': product.is_public if product.is_public is not None else 1,  # 默认公开
-                'video_url': product.video_url if product.video_url is not None else '',
-                'size': product.size if product.size is not None else '',
-                'weight': product.weight if product.weight is not None else '',
-                'yarn': product.yarn if product.yarn is not None else '',
-                'composition': product.composition if product.composition is not None else ''
-            })
+            # 删除不需要的属性
+            product_dict.pop('_sa_instance_state', None)
+            # 获取推送过该商品的用户
+           
             
+            # 处理特殊字段
+            product_dict['price'] = base_price
+            product_dict['price_b'] = float(product.price_b) if product.price_b is not None else 0
+            product_dict['price_c'] = float(product.price_c) if product.price_c is not None else 0
+            product_dict['price_d'] = float(product.price_d) if product.price_d is not None else 0
+            product_dict['cost_price'] = float(product.cost_price) if product.cost_price is not None else 0
+            product_dict['created_at'] = product.created_at.isoformat() if product.created_at else None
+            product_dict['specs'] = json.loads(product.specs) if product.specs else []
+            product_dict['images'] = json.loads(product.images) if product.images else []
+            product_dict['status'] = product.status if product.status is not None else 1
+            product_dict['is_public'] = product.is_public if product.is_public is not None else 1
+            product_dict['video_url'] = product.video_url if product.video_url is not None else ''
+            product_dict['size'] = product.size if product.size is not None else ''
+            product_dict['weight'] = product.weight if product.weight is not None else ''
+            product_dict['yarn'] = product.yarn if product.yarn is not None else ''
+            product_dict['composition'] = product.composition if product.composition is not None else ''
+            
+            products.append(product_dict)
+
+
+
+
         return jsonify({
             'products': products,
             'total': paginated_products.total,
@@ -6651,3 +6710,63 @@ def batch_update_public(user_id):
         print(f'批量更新商品公开状态失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'code': -1, 'message': str(e)}), 500
+
+@app.route('/products/low-stock', methods=['GET'])
+@check_staff_permission('product.view')
+def get_low_stock_products(user_id):
+    try:
+        # 设置库存预警阈值
+        threshold = 100
+        
+        # 查询所有商品
+        products = Product.query.all()
+
+        # 过滤和处理结果
+        result = []
+        for product in products:
+            # 获取规格信息
+            specs = json.loads(product.specs) if product.specs else []
+            low_stock_colors = []
+            all_colors_stock = []
+            total_stock = 0
+            
+            # 检查每个颜色的库存
+            for spec in specs:
+                try:
+                    stock = int(spec.get('stock', 0))
+                    total_stock += stock
+                    color_info = {
+                        'color': spec.get('color', '未知颜色'),
+                        'stock': stock
+                    }
+                    all_colors_stock.append(color_info)
+                    if stock < threshold:
+                        low_stock_colors.append(color_info)
+                except (ValueError, TypeError):
+                    continue
+
+            # 如果有任何颜色的库存低于阈值，添加到结果中
+            if low_stock_colors:
+                product_data = {
+                    'id': product.id,
+                    'name': product.name,
+                    'images': json.loads(product.images) if product.images else [],
+                    'total_stock': total_stock,  # 添加总库存
+                    'all_colors_stock': all_colors_stock,  # 所有颜色的库存
+                    'low_stock_colors': low_stock_colors,  # 低库存的颜色
+                    'threshold': threshold
+                }
+                result.append(product_data)
+
+        return jsonify({
+            'code': 0,
+            'data': result,
+            'message': 'success'
+        })
+
+    except Exception as e:
+        print(f"获取库存预警商品失败: {str(e)}")
+        return jsonify({
+            'code': -1,
+            'message': '获取库存预警商品失败'
+        }), 500
