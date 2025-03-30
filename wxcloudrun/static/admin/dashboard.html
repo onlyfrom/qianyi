@@ -1138,12 +1138,22 @@
                                         <span v-else style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; width: 80px; cursor: pointer;" :title="row.composition">{{ row.composition || '-' }}</span>
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="specs" label="颜色/库存" width="125">
+                                <el-table-column prop="specs" label="颜色/库存" width="250" min-width="125">
                                     <template #default="scope">
-                                        <el-tag v-for="spec in getSpecs(scope.row.specs)" :key="spec.color" size="small"
-                                            style="margin: 2px">
-                                            {{ spec.color }}({{ spec.stock }})
-                                        </el-tag>
+                                        <template v-for="spec in getSpecs(scope.row.specs)" :key="spec.color">
+                                            <el-tooltip
+                                                v-if="spec.stock >= 1000"
+                                                :content="spec.color + ': ' + spec.stock"
+                                                placement="top"
+                                                effect="light">
+                                                <el-tag size="small" style="margin: 2px">
+                                                    {{ spec.color }}(充足)
+                                                </el-tag>
+                                            </el-tooltip>
+                                            <el-tag v-else size="small" style="margin: 2px">
+                                                {{ spec.color }}({{ spec.stock }})
+                                            </el-tag>
+                                        </template>
                                     </template>
                                 </el-table-column>
                                 <el-table-column prop="created_at" label="创建日期" width="120">

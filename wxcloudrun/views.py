@@ -26,6 +26,7 @@ from sqlalchemy.sql import literal, literal_column
 from wxcloudrun.response import *
 #from .decorators import admin_required, permission_required
 from wxcloudrun.recommended import get_recommended_products, update_recommended_products
+import re
 
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
@@ -1045,7 +1046,8 @@ def get_product_detail(user_id, product_id):
             'yarn': product.yarn if product.yarn is not None else '-',
             'composition': product.composition if product.composition is not None else '-',
             'pushed_users': pushed_users_data,
-            'not_pushed_users': not_pushed_users_data
+            'not_pushed_users': not_pushed_users_data,
+            'video_url': product.video_url if product.video_url is not None else ''
         }
         return jsonify({'product': product_detail}), 200
 
@@ -1602,25 +1604,60 @@ def import_products(user_id):
         
         imported_count = 0
         errors = []
+
+
             
         for index, row in df.iterrows():
             try:
-                print(f'\n处理第 {index + 2} 行数据...')
+                print(f'\n处理第 {index + 2} 行数据...')                              
                 
                 # 验证商品名称（必填）
                 if pd.isna(row['商品名称']):
                     error_msg = f'第 {index + 2} 行：商品名称不能为空'
                     print(f'错误: {error_msg}')
                     errors.append(error_msg)
-                    continue
+                    continue   
                 
                 # 生成商品ID（使用时间戳+随机数）
-                product_id = f"P{int(time.time())}{random.randint(1000, 9999)}"
+                try:
+                    product_id = "QY" + str(row['货号']).strip()
+                except Exception as e:
+                    error_msg = f'第 {index + 2} 行：货号格式错误 - {str(e)}'
+                    print(f'错误: {error_msg}')
+                    errors.append(error_msg)
+                    continue
                 
                 # 打印行数据用于调试    
                 print(f'行数据: {dict(row)}')
                     
                 try:
+                    # 初始化specs列表
+                    specs = []
+                    
+                    # 处理颜色信息
+                    if not pd.isna(row.get('颜色', '')):
+                        colors = str(row['颜色']).strip()
+                        # 分割颜色（支持多个分隔符）
+                        color_list = [c.strip() for c in re.split('[，、,]', colors) if c.strip()]
+                        if not color_list:
+                            color_list = ['默认']
+                            
+                        # 为每个颜色创建规格
+                        for color in color_list:
+                            spec = {
+                                'color': color,
+                                'stock': 0,  # 默认库存为0
+                                'price': float(row['A类售价']) if not pd.isna(row.get('A类售价', '')) else 0
+                            }
+                            specs.append(spec)
+                    else:
+                        # 如果没有颜色信息，添加默认规格
+                        specs.append({
+                            'color': '默认',
+                            'stock': 0,
+                            'price': float(row['A类售价']) if not pd.isna(row.get('A类售价', '')) else 0
+                        })
+
                     # 构建商品数据，使用默认值处理空值
                     product_data = {
                         'id': product_id,
@@ -1633,6 +1670,7 @@ def import_products(user_id):
                         'description': str(row['备注']).strip() if not pd.isna(row.get('备注', '')) else '',  # 备注
                         'type': 1,  # 默认类型
                         'created_at': datetime.now().isoformat(),
+                        'specs': json.dumps(specs)
                     }
                 except ValueError as e:
                     error_msg = f'第 {index + 2} 行：数据格式错误 - {str(e)}'
@@ -1642,8 +1680,48 @@ def import_products(user_id):
                 
                 product_data['description'] = ''
   
-                # 设置默认规格
-                specs = [{'color': '默认', 'stock': 999999, 'image': ''}]
+                # 设置默认规格并获取商品颜色
+                specs = []
+                # 获取商品颜色
+                try:
+                    color_field = str(row['颜色']).strip() if not pd.isna(row.get('颜色', '')) else ''
+                    if color_field:
+                        # 尝试多种分隔符分离颜色
+                        if '，' in color_field:
+                            product_colors = color_field.split('，')
+                        elif '、' in color_field:
+                            product_colors = color_field.split('、')
+                        elif ',' in color_field:
+                            product_colors = color_field.split(',')
+                        else:
+                            # 如果没有分隔符，将整个字符串作为一个颜色
+                            product_colors = [color_field]
+                        
+                        # 清理颜色名称
+                        product_colors = [color.strip() for color in product_colors if color.strip()]
+                    else:
+                        product_colors = ['默认']
+                except Exception as e:
+                    print(f"处理颜色字段失败: {str(e)}")
+                    product_colors = ['默认']
+
+                # 为每个颜色创建规格
+                for color in product_colors:
+                    color_spec = {
+                        'color': color,
+                        'image': '',
+                        'stock': 999999
+                    }
+                    specs.append(color_spec)
+
+                # 如果没有有效的颜色，添加默认规格
+                if not specs:
+                    specs = [{
+                        'color': '默认',
+                        'image': '',
+                        'stock': 999999
+                    }]
+
                 product_data['specs'] = json.dumps(specs)
          
                 # 从系统设置获取商品类型配置
@@ -1677,6 +1755,7 @@ def import_products(user_id):
                     weight=product_data['weight'],
                     yarn=product_data['yarn'],
                     composition=product_data['composition']
+                    
                 )
                 db.session.add(new_product)
                 db.session.commit()
@@ -3157,36 +3236,11 @@ def batch_delete_products(user_id):
                 images = json.loads(product.images)
                 for image_url in images:
                     try:
-                        # 从URL中提取文件路径
                         file_list.append(image_url)
                     except Exception as e:
                         print(f"处理图片URL失败: {str(e)}")
 
-        # 如果有图片需要删除，调用微信云开发API
-        if file_list:
-            try:
-                # 获取access_token
-                access_token = get_access_token()
-                if not access_token:
-                    return jsonify({'error': '获取access_token失败'}), 500
-
-                # 调用批量删除文件API
-                url = f'{API_URL}/tcb/batchdeletefile?access_token={access_token}'
-                print(f'调用批量删除文件列表: {file_list}')
-                data = {
-                    'env': WX_ENV,
-                    'fileid_list': file_list
-                }
-                response = requests.post(url, json=data)
-                result = response.json()
-                
-                if result.get('errcode') != 0:
-                    print(f"删除图片文件失败: {result}")
-
-            except Exception as e:
-                print(f"调用删除图片API失败: {str(e)}")
-
-        # 开始数据库操作
+        # 先删除数据库记录
         try:
             # 使用原生SQL删除相关记录
             for product_id in product_ids:
@@ -3207,6 +3261,33 @@ def batch_delete_products(user_id):
             
             # 提交事务
             db.session.commit()
+            
+            # 数据库删除成功后，再删除文件
+            if file_list:
+                try:
+                    # 获取access_token
+                    access_token = get_access_token()
+                    if not access_token:
+                        print("警告：获取access_token失败，文件未删除")
+                    else:
+                        # 调用批量删除文件API
+                        url = f'{API_URL}/tcb/batchdeletefile?access_token={access_token}'
+                        print(f'调用批量删除文件列表: {file_list}')
+                        data = {
+                            'env': WX_ENV,
+                            'fileid_list': file_list
+                        }
+                        response = requests.post(url, json=data)
+                        result = response.json()
+                        
+                        if result.get('errcode') != 0:
+                            print(f"警告：删除图片文件失败: {result}")
+                        else:
+                            print("成功删除图片文件")
+
+                except Exception as e:
+                    print(f"警告：调用删除图片API失败: {str(e)}")
+                    # 文件删除失败不影响整体操作
             
             return jsonify({
                 'code': 200,
@@ -4484,6 +4565,7 @@ def get_products(user_id):
             product_dict['weight'] = product.weight if product.weight is not None else ''
             product_dict['yarn'] = product.yarn if product.yarn is not None else ''
             product_dict['composition'] = product.composition if product.composition is not None else ''
+            product_dict['video_url'] = product.video_url if product.video_url is not None else ''
             
             products.append(product_dict)
 
