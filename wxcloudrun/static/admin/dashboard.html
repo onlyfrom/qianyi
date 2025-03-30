@@ -847,6 +847,9 @@
                                         </template>
                                     </el-input>
                                 </div>
+                                
+                                
+                                </el-switch>
                                 <!-- 筛选区域 -->
                                 <el-upload class="excel-uploader" action="/products/import" :headers="uploadHeaders"
                                     :on-success="handleImportSuccess" :on-error="handleImportError"
@@ -854,6 +857,12 @@
                                     <el-button type="success">Excel导入</el-button>
                                 </el-upload>
                                 <el-button type="info" @click="downloadTemplate">下载模板</el-button>
+                                <el-switch v-model="selectedFilters.status"
+                                :active-value="1"
+                                :inactive-value="0"
+                                :active-text="selectedFilters.status === 1 ? '在售' : '下架'"
+                                @change="handleStatusFilterChange"
+                                >
                             </div>
                             <!-- 商品列表 -->
                             <el-table 
@@ -892,39 +901,7 @@
                                         </el-image>
                                     </template>
                                 </el-table-column>
-                                <el-table-column v-if="false" prop="status" label="状态" width="80">
-                                    <template #header>
-                                        <el-popover placement="bottom" :width="120" trigger="click" v-model:visible="filterVisible.status">
-                                            <template #reference>
-                                                <span :style="{ color: selectedFilters.status !== null ? '#inherit' : 'inherit' }" style="cursor: pointer">
-                                                    {{ selectedFilters.status === 1 ? '上架' : selectedFilters.status === 0 ? '下架' : '状态' }}
-                                                    <el-icon v-if="selectedFilters.status !== null"></el-icon>
-                                                </span>
-                                            </template>
-                                            <div class="filter-options">
-                                                <div class="filter-option-item"
-                                                    :class="{ 'is-active': selectedFilters.status === 1 }"
-                                                    @click="selectedFilters.status = 1">
-                                                    上架
-                                                </div>
-                                                <div class="filter-option-item"
-                                                    :class="{ 'is-active': selectedFilters.status === 0 }"
-                                                    @click="selectedFilters.status = 0">
-                                                    下架
-                                                </div>
-                                            </div>
-                                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #EBEEF5; text-align: right">
-                                                <el-button size="small" @click="resetSpecificFilter('status')">重置</el-button>
-                                                <el-button size="small" type="primary" @click="handleProductSearch">确定</el-button>
-                                            </div>
-                                        </el-popover>
-                                    </template>
-                                    <template #default="scope">
-                                        <el-tag :type="scope.row.status === 1 ? 'success' : 'info'" @click="handleStatusChange(scope.row, 'status')">
-                                            {{ scope.row.status === 1 ? '上架' : '下架' }}
-                                        </el-tag>
-                                    </template>
-                                </el-table-column>
+                                
                                 <el-table-column prop="is_public" label="是否公开" width="80">
                                     <template #header>
                                         <el-popover placement="bottom" :width="120" trigger="click" v-model:visible="filterVisible.is_public">
@@ -964,7 +941,7 @@
                                         {{ scope.row.price_b === 0 ? '讯价' : '¥' + scope.row.price_b }}
                                     </template>
                                 </el-table-column>
-                                <el-table-column label="款式" prop="type" >
+                                <el-table-column label="款式" width="80" prop="type" >
                                     <template #header>
                                         <el-popover placement="bottom" :width="120" trigger="click" v-model:visible="filterVisible.type">
                                             <template #reference>
@@ -1161,14 +1138,18 @@
                                         {{ formatDate(scope.row.created_at) }}
                                     </template>
                                 </el-table-column>
-                                <el-table-column label="操作" width="150" fixed="right">
+                                <el-table-column label="操作" width="175" fixed="right">
                                     <template #default="scope">
                                         <el-button-group>
                                             <el-button size="small" type="primary"
                                                 @click="handleEdit(scope.row)">编辑</el-button>
                                         <el-button size="small" type="danger"
                                             @click="handleDelete(scope.row)">删除</el-button>
+                                        <el-button size="small" :type="scope.row.status === 1 ? 'info' : 'success'"
+                                            @click="handleStatusChange(scope.row,'status')">{{ scope.row.status === 1 ? '下架' : '上架' }}</el-button>
                                         </el-button-group>
+
+
                                     </template>
                                 </el-table-column>
                             </el-table>
@@ -1209,10 +1190,10 @@
                                     <el-form-item label="商品状态">
                                         <el-row :gutter="20">
                                             <el-col :span="12">
-                                                <el-tag :type="productForm.status === 1 ? 'success' : 'danger'" @click="handleStatusChange(productForm, 'status')">{{ productForm.status === 1 ? '上架' : '下架' }}</el-tag>
+                                                <el-tag :type="productForm.status === 1 ? 'success' : 'info'" @click="handleStatusChange(productForm, 'status')">{{ productForm.status === 1 ? '上架' : '下架' }}</el-tag>
                                             </el-col>
                                             <el-col :span="12">
-                                                <el-tag :type="productForm.is_public === 1 ? 'success' : 'danger'" @click="handleStatusChange(productForm, 'is_public')">{{ productForm.is_public === 1 ? '公开' : '私密' }}</el-tag>   
+                                                <el-tag :type="productForm.is_public === 1 ? 'info' : 'success'" @click="handleStatusChange(productForm, 'is_public')">{{ productForm.is_public === 1 ? '公开' : '私密' }}</el-tag>   
                                                 </el-switch>
                                             </el-col>
                                         </el-row>
@@ -2722,7 +2703,9 @@
                         size: '',               // 尺寸
                         weight: 0,              // 克重
                         yarn: '',               // 材质
-                        composition: ''         // 成分
+                        composition: '',         // 成分
+                        status: 1,          // 默认上架
+                        is_public: 0            // 默认私密
                     },
                     productRules: {
                         id: [
@@ -3147,7 +3130,7 @@
                         yarn: '',               // 材质
                         composition: '',         // 成分
                         status: 1,          // 默认上架
-                        is_public: 0            // 默认公开
+                        is_public: 0            // 默认私密
                     }
                     // 清空文件列表
                     if (this.$refs.uploadRef) {
@@ -3236,7 +3219,7 @@
                         yarn: row.yarn || '',
                         composition: row.composition || '',
                         status: row.status || 1,
-                        is_public: row.is_public || 1
+                        is_public: row.is_public || 0
                     };
 
                     // 解析标签数据
@@ -5331,7 +5314,7 @@
                         yarn: row.yarn || '',
                         composition: row.composition || '',
                         status: row.status || 1,
-                        is_public: row.is_public || 1
+                        is_public: row.is_public || 0
                     };
 
                     // 解析标签数据
@@ -5810,6 +5793,10 @@
                         // 如果失败，重新加载列表
                         await this.loadHiddenProducts();
                     }
+                },
+                handleStatusFilterChange(value) {
+                    this.selectedFilters.status = value;
+                    this.handleProductSearch();
                 },
             }
         })

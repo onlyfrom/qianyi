@@ -875,7 +875,7 @@ def add_or_update_product(user_id):
             
             # 获取状态字段，设置默认值
             status = data.get('status', 1)  # 默认上架
-            is_public = data.get('is_public', 1)  # 默认公开
+            is_public = data.get('is_public', 0)  # 默认私密
             
             # 生成新的商品ID
             product_type = str(data['type']).zfill(2)  # 确保类型是两位数
@@ -1782,11 +1782,15 @@ def import_products(user_id):
                 # 设置默认类型
                 product_data['type'] = 5  # 默认类型
 
-                # 根据商品名称匹配类型
-                for type_config in product_types:
-                    if product_data['name'].startswith(type_config['name']):
-                        product_data['type'] = type_config['id']
-                        break
+                # 从Excel获取类型名称
+                type_name = str(row.get('类型', '')).strip() if not pd.isna(row.get('类型', '')) else ''
+                
+                # 根据类型名称匹配类型ID
+                if type_name:
+                    for type_config in product_types:
+                        if type_name == type_config['name']:
+                            product_data['type'] = type_config['id']
+                            break
                 
                 print('插入新商品...')
                 new_product = Product(

@@ -28,8 +28,9 @@ def get_recommended_products():
     try:
         # 获取当前用户ID
         user_id = request.args.get('user_id')
+        current_user = None
         if user_id:
-        # 获取当前用户信息
+            # 获取当前用户信息
             current_user = User.query.get(user_id)
             if not current_user:
                 return jsonify({
@@ -46,6 +47,11 @@ def get_recommended_products():
         # 过滤出用户有权限查看的商品
         filtered_products = []
         for product in products:
+            # 如果没有传入user_id，直接添加商品
+            if not user_id:
+                filtered_products.append(product)
+                continue
+                
             # 检查商品是否公开
             if product.is_public == 1:
                 filtered_products.append(product)
@@ -163,8 +169,9 @@ def get_hidden_products():
     try:
         # 获取当前用户ID
         user_id = request.args.get('user_id')
+        current_user = None
         if user_id:
-        # 获取当前用户信息
+            # 获取当前用户信息
             current_user = User.query.get(user_id)
             if not current_user:
                 return jsonify({
@@ -181,6 +188,11 @@ def get_hidden_products():
         # 过滤出用户有权限查看的商品
         filtered_products = []
         for product in products:
+            # 如果没有传入user_id，直接添加商品
+            if not user_id:
+                filtered_products.append(product)
+                continue
+                
             # 检查商品是否在用户的推送单中
             has_push_permission = db.session.query(PushOrderProduct).join(
                 PushOrder, PushOrder.id == PushOrderProduct.push_order_id

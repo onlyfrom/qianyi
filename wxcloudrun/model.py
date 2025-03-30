@@ -135,7 +135,7 @@ class Product(db.Model):
     images = db.Column(db.Text)  # JSON字符串
     type = db.Column(db.Integer)
     specs_info = db.Column(db.Text)  # JSON字符串    
-    is_public = db.Column(db.Integer, default=1)  # 0:私密 1:公开
+    is_public = db.Column(db.Integer, default=0)  # 0:私密 1:公开
     status = db.Column(db.Integer, default=1)  # 0:下架 1:上架
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
