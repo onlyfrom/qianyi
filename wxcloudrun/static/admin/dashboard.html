@@ -864,7 +864,7 @@
                                 @selection-change="handleSelectionChange">
                                 <el-table-column type="selection" width="55"></el-table-column>
                                 <!-- 款号<el-table-column prop="id" label="款号" width="80"></el-table-column> -->
-                                <el-table-column label="图片" width="100">
+                                <el-table-column label="图片"  width="65">
                                     <template #default="scope">
                                         <el-image 
                                             v-if="scope.row.images && scope.row.images.length > 0"
@@ -892,7 +892,7 @@
                                         </el-image>
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="status" label="状态" width="80">
+                                <el-table-column v-if="false" prop="status" label="状态" width="80">
                                     <template #header>
                                         <el-popover placement="bottom" :width="120" trigger="click" v-model:visible="filterVisible.status">
                                             <template #reference>
@@ -958,13 +958,13 @@
                                         </el-tag>
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="name" label="商品名称" width="300" ></el-table-column>
+                                <el-table-column prop="name" label="商品名称" width="200"  ></el-table-column>
                                 <el-table-column prop="price_b" label="价格" width="80" v-if="userInfo.user_type === 1">
                                     <template #default="scope">
                                         {{ scope.row.price_b === 0 ? '讯价' : '¥' + scope.row.price_b }}
                                     </template>
                                 </el-table-column>
-                                <el-table-column label="款式" prop="type" width="80" >
+                                <el-table-column label="款式" prop="type" >
                                     <template #header>
                                         <el-popover placement="bottom" :width="120" trigger="click" v-model:visible="filterVisible.type">
                                             <template #reference>
@@ -1618,6 +1618,16 @@
                                                 </div>
                                             </template>
                                             <el-button type="primary" @click="showRecommendedProducts">管理</el-button>
+                                        </el-card>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-card shadow="hover" class="settings-card">
+                                            <template #header>
+                                                <div class="card-header">
+                                                    <span>暗推产品管理</span>
+                                                </div>
+                                            </template>
+                                            <el-button type="primary" @click="showHiddenProducts">管理</el-button>
                                         </el-card>
                                     </el-col>
                                 </el-row>
@@ -2477,6 +2487,96 @@
         </template>
     </el-dialog>
 
+    <!-- 添加暗推产品管理弹窗 -->
+    <el-dialog v-model="hiddenProductsVisible" title="暗推产品管理" width="800px">
+        <div class="hidden-products-container">
+            <div class="search-bar" style="margin-bottom: 20px;">
+                <el-input
+                    v-model="hiddenSearch.keyword"
+                    placeholder="搜索商品名称或ID"
+                    clearable
+                    @keyup.enter="searchProductsForHidden"
+                >
+                    <template #append>
+                        <el-button @click="searchProductsForHidden">搜索</el-button>
+                    </template>
+                </el-input>
+            </div>
+            
+            <div v-if="searchProductsResults.length > 0" class="search-results">
+                <h4>搜索结果</h4>
+                <el-table :data="searchProductsResults" border style="margin-bottom: 20px;">
+                    <el-table-column prop="id" label="ID" width="80"></el-table-column>
+                    <el-table-column prop="name" label="商品名称"></el-table-column>
+                    <el-table-column label="图片" width="100">
+                        <template #default="scope">
+                            <el-image 
+                                v-if="scope.row.images && scope.row.images.length > 0"
+                                style="width: 50px; height: 50px; cursor: pointer; border-radius: 4px; overflow: hidden;" 
+                                :src="handleImageUrl(scope.row.images[0])"
+                                :preview-src-list="scope.row.images.map(img => handleImageUrl(img))"
+                                fit="cover">
+                            </el-image>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="120">
+                        <template #default="scope">
+                            <el-button 
+                                type="primary" 
+                                size="small" 
+                                @click="addToHidden(scope.row)"
+                                :disabled="isProductHidden(scope.row.id)">
+                                添加
+                            </el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </div>
+            
+            <div class="hidden-list">
+                <h4>当前暗推产品 ({{hiddenProducts.length}})</h4>
+                <el-empty v-if="hiddenProducts.length === 0" description="暂无暗推产品"></el-empty>
+                <el-table 
+                    v-else 
+                    :data="hiddenProducts" 
+                    row-key="id"
+                    border 
+                    style="width: 100%;">
+                    <el-table-column type="index" width="50" label="排序"></el-table-column>
+                    <el-table-column prop="id" label="ID" width="80"></el-table-column>
+                    <el-table-column prop="name" label="商品名称"></el-table-column>
+                    <el-table-column label="图片" width="100">
+                        <template #default="scope">
+                            <el-image 
+                                v-if="scope.row.images && scope.row.images.length > 0"
+                                style="width: 50px; height: 50px; cursor: pointer; border-radius: 4px; overflow: hidden;" 
+                                :src="handleImageUrl(scope.row.images[0])"
+                                :preview-src-list="scope.row.images.map(img => handleImageUrl(img))"
+                                fit="cover">
+                            </el-image>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="120">
+                        <template #default="scope">
+                            <el-button 
+                                type="danger" 
+                                size="small" 
+                                @click="removeFromHidden(scope.$index)">
+                                移除
+                            </el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </div>
+        </div>
+        <template #footer>
+            <span class="dialog-footer">
+                <el-button @click="hiddenProductsVisible = false">关闭</el-button>
+                <el-button type="primary" @click="saveHiddenProducts">保存</el-button>
+            </span>
+        </template>
+    </el-dialog>
+
     </div>
 
 
@@ -2917,6 +3017,11 @@
                     batchPublicDialogVisible: false,
                     batchPublicForm: {
                         is_public: 1
+                    },
+                    hiddenProductsVisible: false,
+                    hiddenProducts: [],
+                    hiddenSearch: {
+                        keyword: ''
                     },
                 }
             },
@@ -5582,6 +5687,128 @@
                         }
                     } catch (error) {
                         this.handleAxiosError(error, '批量更新公开状态失败');
+                    }
+                },
+                showHiddenProducts() {
+                    this.hiddenProductsVisible = true;
+                    this.loadHiddenProducts();
+                },
+                async loadHiddenProducts() {
+                    try {
+                        const response = await axios.get('/api/hidden_products');
+                        if (response.data.code === 0) {
+                            this.hiddenProducts = response.data.data || [];
+                            console.log('暗推产品列表:', this.hiddenProducts);
+                        } else {
+                            this.$message.error('加载暗推产品失败: ' + response.data.message);
+                        }
+                    } catch (error) {
+                        console.error('加载暗推产品失败:', error);
+                        this.$message.error('加载暗推产品失败');
+                    }
+                },
+                async searchProductsForHidden() {
+                    if (!this.hiddenSearch.keyword.trim()) {
+                        this.$message.warning('请输入搜索关键词');
+                        return;
+                    }
+                    
+                    try {
+                        const response = await axios.get('/products', {
+                            params: {
+                                keyword: this.hiddenSearch.keyword,
+                                page: 1,
+                                page_size: 10
+                            }
+                        });
+                        console.log('搜索商品结果:', response.data);
+                        
+                        if (response.status === 200) {
+                            this.searchProductsResults = response.data.products || [];
+                            if (this.searchProductsResults.length === 0) {
+                                this.$message.info('未找到相关商品');
+                            }
+                        }
+                    } catch (error) {
+                        console.error('搜索商品失败:', error);
+                        this.$message.error('搜索商品失败');
+                    }
+                },
+                isProductHidden(productId) {
+                    return this.hiddenProducts.some(p => p.id === productId);
+                },
+                async addToHidden(product) {
+                    if (this.isProductHidden(product.id)) {
+                        this.$message.warning('该商品已经在暗推列表中');
+                        return;
+                    }
+                    
+                    try {
+                        // 构建新的暗推列表
+                        const newHiddenList = [...this.hiddenProducts, product];
+                        const productIds = newHiddenList.map(p => p.id);
+                        
+                        const response = await axios.post('/api/hidden_products', {
+                            product_ids: productIds
+                        });
+                        
+                        if (response.data.code === 0) {
+                            this.$message.success('添加暗推产品成功');
+                            await this.loadHiddenProducts();
+                            // 清空搜索结果
+                            this.hiddenSearch.keyword = '';
+                            this.searchProductsResults = [];
+                        } else {
+                            this.$message.error('添加暗推产品失败: ' + response.data.message);
+                        }
+                    } catch (error) {
+                        console.error('添加暗推产品失败:', error);
+                        this.$message.error('添加暗推产品失败');
+                    }
+                },
+                async removeFromHidden(index) {
+                    try {
+                        // 构建新的暗推列表
+                        const newHiddenList = [...this.hiddenProducts];
+                        newHiddenList.splice(index, 1);
+                        
+                        const productIds = newHiddenList.map(p => p.id);
+                        
+                        const response = await axios.post('/api/hidden_products', {
+                            product_ids: productIds
+                        });
+                        
+                        if (response.data.code === 0) {
+                            this.$message.success('移除暗推产品成功');
+                            await this.loadHiddenProducts();
+                        } else {
+                            this.$message.error('移除暗推产品失败: ' + response.data.message);
+                        }
+                    } catch (error) {
+                        console.error('移除暗推产品失败:', error);
+                        this.$message.error('移除暗推产品失败');
+                    }
+                },
+                async saveHiddenProducts() {
+                    try {
+                        const productIds = this.hiddenProducts.map(p => p.id);
+                        
+                        const response = await axios.post('/api/hidden_products', {
+                            product_ids: productIds
+                        });
+                        
+                        if (response.data.code === 0) {
+                            this.$message.success('更新暗推产品顺序成功');
+                        } else {
+                            this.$message.error('更新暗推产品顺序失败: ' + response.data.message);
+                            // 如果失败，重新加载列表
+                            await this.loadHiddenProducts();
+                        }
+                    } catch (error) {
+                        console.error('更新暗推产品顺序失败:', error);
+                        this.$message.error('更新暗推产品顺序失败');
+                        // 如果失败，重新加载列表
+                        await this.loadHiddenProducts();
                     }
                 },
             }

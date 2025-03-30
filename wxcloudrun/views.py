@@ -987,15 +987,19 @@ def delete_product(user_id, product_id):
     except Exception as e:
         print(f"Error: {str(e)}")
         return jsonify({'error': f'处理请求失败: {str(e)}'}), 500
-
 # 获取商品详情
 @app.route('/products/<product_id>', methods=['GET'])
-@check_staff_permission('product.view')
+@login_required
 def get_product_detail(user_id, product_id):
     try:
         product = Product.query.get(product_id)
         if not product:
             return jsonify({'error': '商品不存在'}), 404
+            
+        # 获取当前用户信息
+        current_user = User.query.get(user_id)
+        if not current_user:
+            return jsonify({'error': '用户不存在'}), 404
         
         # 获取推送过该商品的用户
         pushed_users = db.session.query(User.id, User.nickname, User.avatar)\
@@ -1024,21 +1028,62 @@ def get_product_detail(user_id, product_id):
             'avatar': user.avatar
         } for user in not_pushed_users]
 
+        # 获取基础价格
         base_price = float(product.price) if product.price is not None else 0
+        
+        # 初始化规格信息
+        specs = json.loads(product.specs) if product.specs else []
+        specs_info = json.loads(product.specs_info) if product.specs_info else {}
+        
+        # 如果是普通客户，检查推送单中的价格和规格
+        if current_user.role == 'customer':
+            # 查找该用户最新的有效推送单中的商品信息
+            latest_push = db.session.query(PushOrderProduct)\
+                .join(PushOrder, PushOrder.id == PushOrderProduct.push_order_id)\
+                .filter(
+                    PushOrderProduct.product_id == product_id,
+                    PushOrder.target_user_id == user_id  
+                )\
+                .order_by(PushOrder.created_at.desc())\
+                .first()
+                
+            if latest_push:
+                # 如果在推送单中找到信息，使用推送单中的价格和规格
+                display_price = float(latest_push.price)
+                if latest_push.specs:
+                    specs = json.loads(latest_push.specs)
+            else:
+                # 如果不在推送单中，检查是否是公开商品
+                if product.is_public:
+                    # 根据用户类型获取对应价格
+                    if current_user.customer_type == 2:
+                        display_price = float(product.price_b) if product.price_b is not None else base_price
+                    elif current_user.customer_type == 3:
+                        display_price = float(product.price_c) if product.price_c is not None else base_price
+                    elif current_user.customer_type == 4:
+                        display_price = float(product.price_d) if product.price_d is not None else base_price
+                    else:
+                        display_price = base_price
+                else:
+                    # 如果不是公开商品，返回错误
+                    return jsonify({'error': '该商品未对您开放'}), 403
+        else:
+            # 如果不是普通客户，显示基础价格
+            display_price = base_price
+
         product_detail = {
             'id': product.id,
             'name': product.name,
             'description': product.description,
-            'price': base_price,
+            'price': display_price,  # 使用计算后的价格
             'price_b': float(product.price_b) if product.price_b is not None else base_price,
             'price_c': float(product.price_c) if product.price_c is not None else base_price,
             'price_d': float(product.price_d) if product.price_d is not None else base_price,
             'cost_price': float(product.cost_price) if product.cost_price is not None else base_price,
-            'specs': json.loads(product.specs) if product.specs else [],
+            'specs': specs,
             'images': json.loads(product.images) if product.images else [],
             'type': product.type,
             'created_at': product.created_at.isoformat() if product.created_at else None,
-            'specs_info': json.loads(product.specs_info) if product.specs_info else {},
             'status': product.status if product.status is not None else 1,  # 默认上架
             'is_public': product.is_public if product.is_public is not None else 1,  # 默认公开
             'size': product.size if product.size is not None else '-',
@@ -1065,7 +1110,8 @@ def get_recent_products():
         # 查询最近一周添加的商品
         recent_products = Product.query.filter(
             Product.created_at >= one_week_ago,
-            Product.status == 1  # 确保商品是上架状态
+            Product.status == 1,  # 确保商品是上架状态
+            Product.is_public == 1  # 确保商品是公开的
         ).order_by(Product.created_at.desc()).all()
 
         # 如果一周内没有新商品，则获取最近的10件商品
@@ -1747,14 +1793,18 @@ def import_products(user_id):
                     id=product_data['id'],
                     name=product_data['name'],
                     description=product_data['description'],
+                    price = '0',
                     price_b=product_data['price'],
+                    price_c= float(product_data['price']) + 2,
+                    price_d= float(product_data['price']) + 4,
                     specs=product_data['specs'],
                     type=product_data['type'],
                     created_at=product_data['created_at'],
                     size=product_data['size'],
                     weight=product_data['weight'],
                     yarn=product_data['yarn'],
-                    composition=product_data['composition']
+                    composition=product_data['composition'],
+                    is_public = 0 #默认不公开
                     
                 )
                 db.session.add(new_product)
@@ -6852,3 +6902,22 @@ def get_low_stock_products(user_id):
             'code': -1,
             'message': '获取库存预警商品失败'
         }), 500
+
+# 获取暗推产品列表
+@app.route('/api/hidden_products', methods=['GET'])
+def get_hidden_products_route():
+    """
+    获取暗推产品列表的路由
+    """
+    from .recommended import get_hidden_products
+    return get_hidden_products()
+
+# 更新暗推产品列表
+@app.route('/api/hidden_products', methods=['POST'])
+@admin_required
+def update_hidden_products_route(user_id):
+    """
+    更新暗推产品列表的路由
+    """
+    from .recommended import update_hidden_products
+    return update_hidden_products()
