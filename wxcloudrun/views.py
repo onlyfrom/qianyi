@@ -4528,6 +4528,8 @@ def get_products(user_id):
         product_type = request.args.get('type')
         status = request.args.get('status')
         is_public = request.args.get('is_public')
+        sort_field = request.args.get('sort_field', 'created_at')  # 添加排序字段参数
+        sort_order = request.args.get('sort_order', 'desc')  # 添加排序顺序参数
         
         # 获取规格筛选参数
         size = request.args.get('size')
@@ -4544,6 +4546,7 @@ def get_products(user_id):
         if keyword:
             search = f'%{keyword}%'
             query = query.filter(db.or_(
+                Product.id.like(search),
                 Product.name.like(search),
                 Product.description.like(search)
             ))
@@ -4588,8 +4591,20 @@ def get_products(user_id):
                 query = query.filter(Product.composition == composition)
         
         # 获取分页数据
-        paginated_products = query.order_by(Product.created_at.desc())\
-            .paginate(page=page, per_page=page_size, error_out=False)
+        # 根据排序字段和顺序构建排序
+        if sort_field == 'name':
+            order_column = Product.name
+        elif sort_field == 'id':  # 添加对货号的排序支持
+            order_column = Product.id
+        else:
+            order_column = Product.created_at
+            
+        if sort_order == 'asc':
+            query = query.order_by(order_column.asc())
+        else:
+            query = query.order_by(order_column.desc())
+            
+        paginated_products = query.paginate(page=page, per_page=page_size, error_out=False)
             
         # 格式化返回数据
         products = []

@@ -870,9 +870,11 @@
                                 style="width: 100%;" 
                                 v-loading="productLoading"
                                 ref="productTable"
-                                @selection-change="handleSelectionChange">
+                                @selection-change="handleSelectionChange"
+                                @sort-change="handleSortChange">
                                 <el-table-column type="selection" width="55"></el-table-column>
-                                <!-- 款号<el-table-column prop="id" label="款号" width="80"></el-table-column> -->
+                                <!-- 货号 -->
+                                <el-table-column prop="id" label="货号" width="80" sortable="custom"></el-table-column>
                                 <el-table-column label="图片"  width="65">
                                     <template #default="scope">
                                         <el-image 
@@ -914,6 +916,11 @@
                                             <div class="filter-options">
                                                 <div class="filter-option-item"
                                                     :class="{ 'is-active': selectedFilters.is_public === 1 }"
+                                                    @click="selectedFilters.is_public = null">
+                                                    全部
+                                                </div>
+                                                <div class="filter-option-item"
+                                                    :class="{ 'is-active': selectedFilters.is_public === 1 }"
                                                     @click="selectedFilters.is_public = 1">
                                                     公开
                                                 </div>
@@ -935,7 +942,7 @@
                                         </el-tag>
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="name" label="商品名称" width="200"  ></el-table-column>
+                                <el-table-column prop="name" label="商品名称" width="200" sortable @sort-change="handleSortChange"></el-table-column>
                                 <el-table-column prop="price_b" label="价格" width="80" v-if="userInfo.user_type === 1">
                                     <template #default="scope">
                                         {{ scope.row.price_b === 0 ? '讯价' : '¥' + scope.row.price_b }}
@@ -2656,8 +2663,14 @@
         const app = Vue.createApp({
             data() {
                 return {
-                    // 从localStorage获取用户信息
+                    activeTab: '0',
                     userInfo: JSON.parse(localStorage.getItem('userInfo') || '{}'),
+                    productSearch: {
+                        keyword: '',
+                        sortField: '',
+                        sortOrder: ''
+                    },
+                    productLoading: false,
                     currentPage: '1',
                     uploadedFiles: 0,
                     userDialogStatus: 'edit',
@@ -3064,8 +3077,8 @@
                     try {
                         this.productLoading = true;
                         const params = {
-                                page: this.pagination.currentPage,
-                                page_size: this.pagination.pageSize,
+                            page: this.pagination.currentPage,
+                            page_size: this.pagination.pageSize,
                             keyword: this.productSearch.keyword
                         };
                         if (this.productFilter.type) {
@@ -3088,6 +3101,13 @@
                         }
                         if (this.selectedFilters.is_public !== null) {
                             params.is_public = this.selectedFilters.is_public;
+                        }
+                        // 添加排序参数
+                        if (this.productSearch.sortField) {
+                            params.sort_field = this.productSearch.sortField;
+                        }
+                        if (this.productSearch.sortOrder) {
+                            params.sort_order = this.productSearch.sortOrder;
                         }
                         
                         const response = await axios.get('/products', { 
@@ -5799,6 +5819,18 @@
                 },
                 handleStatusFilterChange(value) {
                     this.selectedFilters.status = value;
+                    this.handleProductSearch();
+                },
+                handleSortChange(column) {
+                    // 处理排序逻辑
+                    if (column.order === null) {
+                        // 取消排序
+                        this.productSearch.sortField = '';
+                        this.productSearch.sortOrder = '';
+                    } else {
+                        this.productSearch.sortField = column.prop;
+                        this.productSearch.sortOrder = column.order === 'ascending' ? 'asc' : 'desc';
+                    }
                     this.handleProductSearch();
                 },
             }
