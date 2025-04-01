@@ -27,7 +27,7 @@ export default {
                         <el-button type="primary" @click="showAddDialog">新增商品</el-button>
                     </div>
                     
-                    <el-table :data="products" style="width: 100%">
+                    <el-table :data="products" style="width: 100%" :max-height="tableMaxHeight">
                         <el-table-column prop="id" label="ID" width="180"></el-table-column>
                         <el-table-column prop="name" label="商品名称"></el-table-column>
                         <el-table-column prop="price" label="价格"></el-table-column>
@@ -96,7 +96,14 @@ export default {
                 type: 0,
                 images: []
             },
-            isEdit: false
+            isEdit: false,
+            windowHeight: window.innerHeight,
+        }
+    },
+    computed: {
+        tableMaxHeight() {
+            // 减去头部高度(60px)、工具栏高度(60px)和底部边距(20px)
+            return this.windowHeight - 140
         }
     },
     created() {
@@ -107,7 +114,16 @@ export default {
             this.fetchProducts()
         }
     },
+    mounted() {
+        window.addEventListener('resize', this.handleResize)
+    },
+    beforeUnmount() {
+        window.removeEventListener('resize', this.handleResize)
+    },
     methods: {
+        handleResize() {
+            this.windowHeight = window.innerHeight
+        },
         async handleLogin() {
             try {
                 const response = await axios.post('/login', this.loginForm)

@@ -870,6 +870,7 @@
                                 style="width: 100%;" 
                                 v-loading="productLoading"
                                 ref="productTable"
+                                max-height="calc(100vh - 200px)"
                                 @selection-change="handleSelectionChange"
                                 @sort-change="handleSortChange">
                                 <el-table-column type="selection" width="55"></el-table-column>
@@ -909,7 +910,7 @@
                                         <el-popover placement="bottom" :width="120" trigger="click" v-model:visible="filterVisible.is_public">
                                             <template #reference>
                                                 <span :style="{ color: selectedFilters.is_public !== null ? '#inherit' : 'inherit' }" style="cursor: pointer">
-                                                    {{ selectedFilters.is_public === 1 ? '公开' : selectedFilters.is_public === 0 ? '私密' : '是否公开' }}
+                                                    {{ selectedFilters.is_public === 1 ? '公开' : selectedFilters.is_public === 0 ? '私密' : '全部' }}
                                                     <el-icon v-if="selectedFilters.is_public !== null"></el-icon>
                                                 </span>
                                             </template>
@@ -1271,24 +1272,6 @@
                                         </el-select>
                                     </el-form-item>
 
-                                    <!--el-form-item label="标签">
-                                        <div style="margin-bottom: 10px;">
-                                            <el-checkbox-group v-model="selectedPresetTags"
-                                                @change="handlePresetTagsChange">
-                                                <el-checkbox v-for="tag in presetTags" :key="tag" :label="tag">
-                                                    <span class="tag-label">{{ tag }}</span>
-                                                </el-checkbox>
-                                            </el-checkbox-group>
-                                        </div>
-                                        <el-select v-model="productForm.tags" multiple filterable allow-create
-                                            default-first-option :reserve-keyword="false" placeholder="可输入自定义标签"
-                                            @change="handleCustomTagChange" style="width: 100%">
-                                            <--el-option v-for="tag in allTagOptions" :key="tag" :label="tag"
-                                                :value="tag">
-                                            </el-option>
-                                        </el-select>
-                                    </el-form-item-->
-
                                     <el-form-item label="商品图片" prop="images">
                                         <el-upload 
                                             ref="uploadRef"
@@ -1296,13 +1279,13 @@
                                             :auto-upload="dialogType === 'add' ? false : true" 
                                             :multiple="true"
                                             :http-request="customUpload"
-                                            :before-upload="handleBeforeUpload"
+                                            :before-upload="handleBeforeUpload"                                        
                                             :on-success="handleUploadSuccess" 
                                             :on-remove="handleRemove"
                                             :on-error="handleUploadError" 
                                             :on-exceed="handleExceed"
                                             :file-list="fileList" 
-                                            :preview-src-list="previewSrcList"
+                                            :on-preview="handlePictureCardPreview"
                                             hide-on-click-modal
                                             accept=".jpg,.png,.jpeg,.gif,.webp"
                                             @change="handleFileChange">
@@ -1318,7 +1301,7 @@
                                                 :src="videoPreviewUrl" 
                                                 controls 
                                                 style="max-width: 100%; max-height: 300px; border-radius: 4px;"
-                                                @click="openVideoPreview">
+                                                >
                                             </video>
                                             <div class="video-preview-actions" style="margin-top: 10px;">
                                                 <el-button type="primary" size="small" @click="openVideoPreview">
@@ -2323,7 +2306,23 @@
             </el-table-column>
             <el-table-column label="操作" width="100">
                 <template #default="scope">
-                    <el-button type="danger" size="small" @click="handleRemoveStyle(scope.$index)">删除</el-button>
+                    <el-button-group>
+                        <el-button 
+                            type="primary" 
+                            size="small"
+                            :disabled="scope.$index === 0"
+                            @click="moveStyle(scope.$index, 'up')">
+                            上移
+                        </el-button>
+                        <el-button 
+                            type="primary" 
+                            size="small"
+                            :disabled="scope.$index === product_types.length - 1"
+                            @click="moveStyle(scope.$index, 'down')">
+                            下移
+                        </el-button>
+                        <el-button type="danger" size="small" @click="handleRemoveStyle(scope.$index)">删除</el-button>
+                    </el-button-group>
                 </template>
             </el-table-column>
         </el-table>
@@ -2562,6 +2561,36 @@
                 <el-button type="primary" @click="saveHiddenProducts">保存</el-button>
             </span>
         </template>
+    </el-dialog>
+
+    <!-- 图片预览对话框 -->
+    <el-dialog
+        v-model="dialogImageVisible"
+        width="70%"
+        top="5vh"
+        :append-to-body="true"
+        close-on-click-modal
+        center>
+        <img 
+            :src="dialogImageUrl" 
+            alt="预览图片" 
+            style="width: 100%; max-height: 70vh; object-fit: contain;" 
+        />
+    </el-dialog>
+
+    <!-- 视频预览对话框 -->
+    <el-dialog
+        v-model="videoDialogVisible"
+        width="70%"
+        top="5vh"
+        :append-to-body="true"
+        center>
+        <video 
+            :src="videoPreviewUrl" 
+            controls 
+            style="width: 100%; max-height: 70vh; object-fit: contain;" 
+            autoplay
+        ></video>
     </el-dialog>
 
     </div>
@@ -3020,6 +3049,10 @@
                     hiddenSearch: {
                         keyword: ''
                     },
+                    dialogImageUrl: '',
+                    tagDialogVisible: false,
+                    dialogImageVisible: false,
+                    videoDialogVisible: false,
                 }
             },
            // computed: {
@@ -3456,8 +3489,9 @@
 
 
                 handlePictureCardPreview(file) {
-                    this.dialogImageUrl = file.url
-                    this.dialogImageVisible = true
+                    console.log('预览图片:', file);
+                    this.dialogImageUrl = this.handleImageUrl(file.url);
+                    this.dialogImageVisible = true;
                 },
 
                 handleCancel() {
@@ -4806,6 +4840,20 @@
                 handleRemoveStyle(index) {
                     this.product_types.splice(index, 1);
                 },
+                // 移动款式位置
+                moveStyle(index, direction) {
+                    if (direction === 'up' && index > 0) {
+                        // 上移
+                        const temp = this.product_types[index];
+                        this.product_types[index] = this.product_types[index - 1];
+                        this.product_types[index - 1] = temp;
+                    } else if (direction === 'down' && index < this.product_types.length - 1) {
+                        // 下移
+                        const temp = this.product_types[index];
+                        this.product_types[index] = this.product_types[index + 1];
+                        this.product_types[index + 1] = temp;
+                    }
+                },
                 // 加载款式选项
                 async loadStyleOptions() {
                     try {
@@ -5219,64 +5267,7 @@
                 },
                 
                 openVideoPreview() {
-                    if (this.videoPreviewUrl) {
-                        // 创建一个全屏预览层
-                        const previewContainer = document.createElement('div');
-                        previewContainer.className = 'video-fullscreen-preview';
-                        previewContainer.style.cssText = `
-                            position: fixed;
-                            top: 0;
-                            left: 0;
-                            width: 100vw;
-                            height: 100vh;
-                            background-color: rgba(0, 0, 0, 0.9);
-                            display: flex;
-                            flex-direction: column;
-                            justify-content: center;
-                            align-items: center;
-                            z-index: 3000;
-                        `;
-                        
-                        // 创建视频元素
-                        const videoEl = document.createElement('video');
-                        videoEl.src = this.videoPreviewUrl;
-                        videoEl.controls = true;
-                        videoEl.autoplay = true;
-                        videoEl.style.cssText = `
-                            max-width: 90%;
-                            max-height: 80vh;
-                            border-radius: 4px;
-                        `;
-                        
-                        // 创建关闭按钮
-                        const closeBtn = document.createElement('button');
-                        closeBtn.innerHTML = '关闭预览';
-                        closeBtn.style.cssText = `
-                            margin-top: 20px;
-                            padding: 8px 15px;
-                            background-color: #409EFF;
-                            color: white;
-                            border: none;
-                            border-radius: 4px;
-                            cursor: pointer;
-                            font-size: 16px;
-                        `;
-                        closeBtn.onclick = () => {
-                            document.body.removeChild(previewContainer);
-                        };
-                        
-                        // 点击背景也可以关闭
-                        previewContainer.onclick = (e) => {
-                            if (e.target === previewContainer) {
-                                document.body.removeChild(previewContainer);
-                            }
-                        };
-                        
-                        // 添加到页面
-                        previewContainer.appendChild(videoEl);
-                        previewContainer.appendChild(closeBtn);
-                        document.body.appendChild(previewContainer);
-                    }
+                    this.videoDialogVisible = true;
                 },
                 
                 // 修改商品编辑方法，加载视频信息
