@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>杭州仟艺服饰后台管理系统</title>
     <!-- 引入样式 -->
-    <link rel="stylesheet" href="//unpkg.com/element-plus/dist/index.css" />
+    <link rel="stylesheet" href="/admin/lib/element-plus/index.css">
     <style>
         .login-container {
             width: 100%;
@@ -59,9 +59,10 @@
     </div>
 
     <!-- 引入依赖 -->
-    <script src="//unpkg.com/vue@3"></script>
-    <script src="//unpkg.com/element-plus"></script>
-    <script src="//unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="/admin/lib/vue/vue.global.min.js"></script>
+    <script src="/admin/lib/element-plus/index.full.min.js"></script>
+    <script src="/admin/lib/icons/icons-vue.js"></script>
+    <script src="/admin/lib/axios/axios.min.js"></script>
     <script>
         // 设置 axios 默认配置
         const isDevelopment = window.location.hostname === 'localhost' || 
@@ -130,6 +131,12 @@
                 }
             }
         })
+        
+        // 注册所有图标
+        for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+            app.component(key, component)
+        }
+        
         app.use(ElementPlus)
         app.mount('#app')
     </script>

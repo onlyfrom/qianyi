@@ -24,14 +24,13 @@ import random
 from sqlalchemy import inspect, text, func, desc, distinct, case, Text
 from sqlalchemy.sql import literal, literal_column
 from wxcloudrun.response import *
-#from .decorators import admin_required, permission_required
 from wxcloudrun.recommended import get_recommended_products, update_recommended_products
 import re
 
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
 WX_ENV = 'prod-9gd4jllic76d4842'
-API_URL = 'http://api.weixin.qq.com'
+API_URL = os.environ.get("APIURL", "http://api.weixin.qq.com")
 
 # 用户认证中间件
 def login_required(f):
