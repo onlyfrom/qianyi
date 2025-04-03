@@ -27,11 +27,12 @@ from wxcloudrun.response import *
 #from .decorators import admin_required, permission_required
 from wxcloudrun.recommended import get_recommended_products, update_recommended_products
 import re
+from sqlalchemy import cast, substring, Integer
 
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
 WX_ENV = 'prod-9gd4jllic76d4842'
-API_URL = 'http://api.weixin.qq.com'
+API_URL = 'https://api.weixin.qq.com'
 
 # 用户认证中间件
 def login_required(f):
@@ -815,6 +816,7 @@ def add_or_update_product(user_id):
         
         # 检查是否提供了商品ID
         product_id = data.get('id')
+        print(f'商品ID: {product_id}')
         if product_id:
             # 更新现有商品
             product = Product.query.get(product_id)
@@ -860,6 +862,7 @@ def add_or_update_product(user_id):
             product.updated_at = datetime.now()
         else:
             # 新增商品时的必需字段验证
+            print(f'新增商品!  字段验证: {data}')
             required_fields = ['name']
             if not all(field in data for field in required_fields):
                 missing_fields = [field for field in required_fields if field not in data]
@@ -880,22 +883,28 @@ def add_or_update_product(user_id):
             # 生成新的商品ID
             product_type = str(data['type']).zfill(2)  # 确保类型是两位数
             
-            # 查找当前类型下最大的编号
+            # 生成新的商品ID，格式为 QY{number}
+            # 查找当前最大的编号
             latest_product = Product.query.filter(
-                Product.id.like(f'qy{product_type}%')
-            ).order_by(Product.id.desc()).first()
+                Product.id.like('QY%')
+            ).order_by(
+                cast(substring(Product.id, 3), Integer).desc()  # 从第3个字符开始（跳过QY）转换为数字排序
+            ).first()
             
             if latest_product:
                 try:
-                    last_number = int(latest_product.id[4:])  # 跳过 'qyXX' 前缀
-                    new_number = str(last_number + 1).zfill(4)  # 确保是4位数
+                    # 获取当前最大ID的数字部分
+                    last_number = int(latest_product.id[2:])  # 跳过 'QY' 前缀
+                    # 直接加1，保持原有位数
+                    new_number = str(last_number + 1)
                 except ValueError:
-                    new_number = '0001'
+                    new_number = '1'
             else:
-                new_number = '0001'
+                new_number = '1'
             
-            # 生成新的商品ID
-            new_product_id = f'qy{product_type}{new_number}'
+            # 生成新的商品ID，格式为 QY{number}
+            new_product_id = f'QY{new_number}'
+            print(f'新增商品ID: {new_product_id}')
             
             # 创建新商品
             product = Product(
@@ -908,7 +917,6 @@ def add_or_update_product(user_id):
                 price_d=price_d,
                 cost_price=cost_price,
                 type=data.get('type', 1),
-                specs_info=json.dumps(data.get('specs_info', {})),
                 specs=json.dumps(data.get('specs', {})),
                 images=json.dumps(data.get('images', [])),
                 status=status,
@@ -925,6 +933,7 @@ def add_or_update_product(user_id):
             
         try:
             db.session.commit()
+            print(f'商品保存成功: {product.id}')
             return jsonify({
                 'message': '商品保存成功',
                 'product_id': product.id,

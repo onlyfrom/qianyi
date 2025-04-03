@@ -3020,7 +3020,7 @@
                         yarn: null,
                         composition: null,
                         status: 1,
-                        is_public: 0
+                        is_public: null
                     },
                     colorImageDialogVisible: false,
                     selectedImageUrl: '',
@@ -3519,7 +3519,7 @@
                         yarn: '',
                         composition: '',
                         status: 1,
-                        is_public: 1
+                        is_public: 0
 
                     };
                     
@@ -4719,7 +4719,7 @@
                         composition: '',
                         specs: [],
                         status: 1,
-                        is_public: 1
+                        is_public: 0
                     };
                 },
                 showBatchStyleDialog() {
@@ -5388,7 +5388,7 @@
                         yarn: '',               // 材质
                         composition: '',         // 成分
                         status: 1,          // 默认上架
-                        is_public: 1            // 默认公开
+                        is_public: 0            // 默认私密
                     };
                     // 清空文件列表
                     if (this.$refs.uploadRef) {
