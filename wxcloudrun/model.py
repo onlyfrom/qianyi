@@ -119,7 +119,9 @@ class User(db.Model):
             'status': self.status,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
         }
+    
 
+# 商品模型
 class Product(db.Model):
     __tablename__ = 'products'
     
@@ -145,6 +147,7 @@ class Product(db.Model):
     yarn = db.Column(db.Text)
     composition = db.Column(db.Text)
 
+# 库存记录模型
 class StockRecord(db.Model):
     __tablename__ = 'stock_records'
     
@@ -157,6 +160,7 @@ class StockRecord(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
     color = db.Column(db.String(50))
 
+# 颜色库存模型
 class ColorStock(db.Model):
     __tablename__ = 'color_stocks'
     
@@ -167,6 +171,7 @@ class ColorStock(db.Model):
     stock = db.Column(db.Integer, default=0)
     __table_args__ = (db.UniqueConstraint('product_id', 'color'),)
 
+# 商品浏览记录模型
 class ProductView(db.Model):
     __tablename__ = 'product_views'
     
@@ -176,6 +181,7 @@ class ProductView(db.Model):
     ip_address = db.Column(db.String(50))
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
 
+# 采购订单模型
 class PurchaseOrder(db.Model):
     __tablename__ = 'purchase_orders'
     
@@ -188,6 +194,7 @@ class PurchaseOrder(db.Model):
     handler_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
 
+# 采购订单商品模型
 class PurchaseOrderItem(db.Model):
     __tablename__ = 'purchase_order_items'
     
@@ -198,33 +205,38 @@ class PurchaseOrderItem(db.Model):
     price = db.Column(db.Float, nullable=False)
     color = db.Column(db.String(50))
 
+# 发货订单模型
 class DeliveryOrder(db.Model):
     __tablename__ = 'delivery_orders'
     
-    id = db.Column(db.Integer, primary_key=True)
-    order_number = db.Column(db.String(50), unique=True, nullable=False)
-    customer_name = db.Column(db.String(80), nullable=False)
-    customer_phone = db.Column(db.String(20))
-    delivery_address = db.Column(db.String(255), nullable=False)
-    delivery_date = db.Column(db.String(20))
-    delivery_time_slot = db.Column(db.String(50))
-    status = db.Column(db.Integer, default=0)  # 0:待配送 1:配送中 2:已完成 3:已取消
-    remark = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
-    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
-    delivery_by = db.Column(db.Integer, db.ForeignKey('users.id'))
-    delivery_image = db.Column(db.Text)  # JSON字符串
+    id = db.Column(db.Integer, primary_key=True)  # 主键 发货订单ID
+    order_number = db.Column(db.String(50), unique=True, nullable=False)  # 关联采购单号
+    customer_name = db.Column(db.String(80), nullable=False)  # 客户姓名
+    customer_phone = db.Column(db.String(20))  # 客户电话
+    delivery_address = db.Column(db.String(255), nullable=False)  # 配送地址
+    delivery_date = db.Column(db.String(20))  # 发货日期
+    delivery_time_slot = db.Column(db.String(50))  # 配送时间段
+    status = db.Column(db.Integer, default=0)  # 0开单，1已发货，2已签收，4异常，3已退货
+    remark = db.Column(db.Text)  # 备注
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)  # 创建时间
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)  # 更新时间
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))  # 创建者
+    delivery_by = db.Column(db.Integer, db.ForeignKey('users.id'))  # 发货人
+    delivery_image = db.Column(db.Text)  # 打包图
 
+# 发货订单商品模型
 class DeliveryItem(db.Model):
     __tablename__ = 'delivery_items'
     
-    id = db.Column(db.Integer, primary_key=True)
-    delivery_id = db.Column(db.Integer, db.ForeignKey('delivery_orders.id'), nullable=False)
-    product_id = db.Column(db.String(80), db.ForeignKey('products.id'), nullable=False)
-    quantity = db.Column(db.Integer, nullable=False)
-    color = db.Column(db.String(50))
+    id = db.Column(db.Integer, primary_key=True)  # 主键 发货订单商品ID
+    delivery_id = db.Column(db.Integer, db.ForeignKey('delivery_orders.id'), nullable=False)  # 关联发货订单ID
+    product_id = db.Column(db.String(80), db.ForeignKey('products.id'), nullable=False)  # 关联商品ID
+    quantity = db.Column(db.Integer, nullable=False)  # 数量
+    price = db.Column(db.Float, nullable=False)  # 单价
+    extra = db.Column(db.Text)  # 附加费用 (JSON字符串)
+    color = db.Column(db.String(50))  # 颜色
 
+# 推送订单模型
 class PushOrder(db.Model):
     __tablename__ = 'push_orders'
     
@@ -244,6 +256,7 @@ class PushOrder(db.Model):
     user = db.relationship('User', foreign_keys=[user_id], backref='push_orders')
     target_user = db.relationship('User', foreign_keys=[target_user_id], backref='received_push_orders')
 
+# 推送订单商品模型
 class PushOrderProduct(db.Model):
     __tablename__ = 'push_order_products'
     
@@ -255,6 +268,7 @@ class PushOrderProduct(db.Model):
     specs_info = db.Column(db.Text, default='{}')  # JSON字符串
     created_at = db.Column(db.DateTime, default=datetime.now)
 
+# 系统设置模型
 class SystemSettings(db.Model):
     __tablename__ = 'system_settings'
     
@@ -265,6 +279,7 @@ class SystemSettings(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 
+# 购物车项目模型    
 class CartItem(db.Model):
     """购物车项目"""
     __tablename__ = 'cart_items'

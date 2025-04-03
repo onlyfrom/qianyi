@@ -9,7 +9,7 @@ def generate_token(user_id):
         payload = {
             'user_id': user_id,
             'iat': datetime.utcnow(),
-            'exp': datetime.utcnow() + timedelta(hours=1)
+            'exp': datetime.utcnow() + timedelta(hours=48)
         }
         return jwt.encode(payload, config.JWT_SECRET_KEY, algorithm='HS256')
     except Exception as e:
