@@ -27,12 +27,11 @@ from wxcloudrun.response import *
 #from .decorators import admin_required, permission_required
 from wxcloudrun.recommended import get_recommended_products, update_recommended_products
 import re
-from sqlalchemy import cast, substring, Integer
 
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
 WX_ENV = 'prod-9gd4jllic76d4842'
-API_URL = 'http://api.weixin.qq.com'
+API_URL = 'https://api.weixin.qq.com'
 
 # 用户认证中间件
 def login_required(f):
@@ -885,24 +884,20 @@ def add_or_update_product(user_id):
             
             # 生成新的商品ID，格式为 QY{number}
             # 查找当前最大的编号
-            latest_product = Product.query.filter(
+            all_products = Product.query.filter(
                 Product.id.like('QY%')
-            ).order_by(
-                cast(substring(Product.id, 3), Integer).desc()  # 从第3个字符开始（跳过QY）转换为数字排序
-            ).first()
+            ).all()
             
-            if latest_product:
+            max_number = 0
+            for product in all_products:
                 try:
-                    # 获取当前最大ID的数字部分
-                    last_number = int(latest_product.id[2:])  # 跳过 'QY' 前缀
-                    # 直接加1，保持原有位数
-                    new_number = str(last_number + 1)
+                    num = int(product.id[2:])  # 跳过 'QY' 前缀
+                    if num > max_number:
+                        max_number = num
                 except ValueError:
-                    new_number = '1'
-            else:
-                new_number = '1'
+                    continue
             
-            # 生成新的商品ID，格式为 QY{number}
+            new_number = str(max_number + 1)
             new_product_id = f'QY{new_number}'
             print(f'新增商品ID: {new_product_id}')
             
