@@ -32,7 +32,7 @@ from sqlalchemy import cast, substring, Integer
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
 WX_ENV = 'prod-9gd4jllic76d4842'
-API_URL = 'https://api.weixin.qq.com'
+API_URL = 'http://api.weixin.qq.com'
 
 # 用户认证中间件
 def login_required(f):
