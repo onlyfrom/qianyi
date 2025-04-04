@@ -3415,7 +3415,7 @@
                         const random = Math.random().toString(36).substr(2, 6);
                         const ext = file.name.split('.').pop();
                         const fileName = `${timestamp}_${random}.${ext}`;
-                        const path = `products/${this.productForm.id}/${fileName}`;
+                        const path = `products/${this.productForm.id ? this.productForm.id : this.tempProductId}/${fileName}`;
                         
                         const uploadResponse = await axios.post('/get_uploadfileUrl', {
                             path: path
@@ -3550,8 +3550,6 @@
                             image: spec.image || ''
                         }));
 
-                         //如果有待上传的图片，处理上传
-
                         const submitData = {
                             id: this.productForm.id,
                             name: this.productForm.name.trim(),
@@ -3587,7 +3585,7 @@
                             this.uploadedFiles = 0;
                             console.log('商品创建/更新成功返回:', response.data.product_id);
                             this.tempProductId = response.data.product_id;
-                            await new Promise(resolve => setTimeout(resolve, 200));
+                            await new Promise(resolve => setTimeout(resolve, 500));
                             await uploadComponent.submit();   
                             console.log('商品创建/更新成功返回:', this.tempProductId);
                         }
@@ -4683,8 +4681,15 @@
                                 console.log('更新商品图片成功:', productsResponse);   
                                 this.uploadedFiles++;
                                 console.log('已上传文件数:', this.uploadedFiles);
-                                if (this.uploadedFiles >= this.totalFiles) {
-                                    this.imagesLoading.close();
+                                
+                                // 修改这里的逻辑
+                                if (this.uploadedFiles >= this.totalFiles && this.imagesLoading) {
+                                    try {
+                                        this.imagesLoading.close();
+                                    } catch (e) {
+                                        console.warn('关闭loading失败:', e);
+                                    }
+                                    this.imagesLoading = null;  // 清空引用
                                     this.loadProducts();
                                 }
                                 ElementPlus.ElMessage.success('图片上传成功');
@@ -4701,6 +4706,15 @@
                         };
                     } catch (error) {
                         console.error('上传失败:', error);
+                        // 确保在出错时也能正确关闭loading
+                        if (this.imagesLoading) {
+                            try {
+                                this.imagesLoading.close();
+                            } catch (e) {
+                                console.warn('关闭loading失败:', e);
+                            }
+                            this.imagesLoading = null;
+                        }
                         ElementPlus.ElMessage.error('图片上传失败：' + error.message);
                         throw error;
                     }
@@ -5458,6 +5472,7 @@
                                 this.uploadedFiles = 0;
                                 console.log('商品创建/更新成功返回:', response.data.product_id);
                                 this.tempProductId = response.data.product_id;
+                                
                                 await new Promise(resolve => setTimeout(resolve, 200));
                                 await uploadComponent.submit();   
                                 console.log('商品创建/更新成功返回:', this.tempProductId);

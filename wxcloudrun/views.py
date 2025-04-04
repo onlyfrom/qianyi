@@ -30,7 +30,7 @@ import re
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
 WX_ENV = 'prod-9gd4jllic76d4842'
-API_URL = os.environ.get("APIURL", "http://api.weixin.qq.com")
+API_URL = os.environ.get("APIURL", "https://api.weixin.qq.com")
 
 # 用户认证中间件
 def login_required(f):
@@ -99,7 +99,7 @@ def admin_required(f):
                 return jsonify({'error': '用户不存在'}), 404
                 
             # 验证用户类型和角色
-            if user.user_type != 1 or user.role != 'admin':
+            if user.user_type != 1 or (user.role != 'admin' and user.role != 'ADMIN' and user.role != 'normal_admin'):
                 print(f"当前用户信息: ID={user.id}, 用户名={user.username}, 角色={user.role}, 用户类型={user.user_type}")
                 print('需要管理员权限')
                 return jsonify({'error': '需要管理员权限'}), 403
@@ -197,7 +197,7 @@ def check_staff_permission(permission):
                 
                 print(f'当前用户信息: {user.user_type}, {user.role}')
                 # 管理员拥有所有权限
-                if user.user_type == 1 or user.role == 'admin':
+                if user.user_type == 1 or user.role == 'admin' or user.role == 'normalAdmin':
                     # 将用户信息存储在请求上下文中
                     setattr(g, 'admin_user', user)
                     return f(*args, **kwargs)
@@ -2050,7 +2050,10 @@ def create_purchase_order(user_id):
                 product_id=item['product_id'],
                 quantity=item['quantity'],
                 price=item['price'],
-                color=item.get('color', '')
+                color=item.get('color', ''),
+                logo_price=item.get('logo_price', 0.0),  # 加标价格
+                accessory_price=item.get('accessory_price', 0.0),  # 辅料价格
+                packaging_price=item.get('packaging_price', 0.0)  # 包装价格
             )
             db.session.add(order_item)
 
@@ -2137,6 +2140,7 @@ def get_purchase_orders(user_id):
                                 'image': json.loads(product.images)[0] if product.images else None,
                                 'total_quantity': 0,
                                 'total_amount': 0,
+                                'total_amount_extra': 0,
                                 'specs': []
                             }
                         
@@ -2145,14 +2149,18 @@ def get_purchase_orders(user_id):
                             'color': item.color,
                             'quantity': item.quantity,
                             'price': float(item.price),
-                            'subtotal': item.quantity * float(item.price)
+                            'logo_price': float(item.logo_price),  # 加标价格
+                            'accessory_price': float(item.accessory_price),  # 辅料价格
+                            'packaging_price': float(item.packaging_price),  # 包装价格
+                            'total': item.quantity * float(item.price),
+                            'extra': item.quantity * (float(item.logo_price) + float(item.accessory_price) + float(item.packaging_price))
                         }
                         merged_products[item.product_id]['specs'].append(spec_info)
                         
                         # 更新总数量和总金额
                         merged_products[item.product_id]['total_quantity'] += item.quantity
-                        merged_products[item.product_id]['total_amount'] += spec_info['subtotal']
-                        
+                        merged_products[item.product_id]['total_amount'] += spec_info['total']
+                        merged_products[item.product_id]['total_amount_extra'] += spec_info['extra']
                     except Exception as e:
                         print(f"处理订单项时出错: {str(e)}")
                         continue
@@ -2164,8 +2172,9 @@ def get_purchase_orders(user_id):
                 order_data = {
                     'id': order.id,
                     'order_number': order.order_number,
-                    'total_amount': float(order.total_amount),
+                    'total_amount': sum(item['total_amount'] for item in merged_products.values()),
                     'total_quantity': sum(item['total_quantity'] for item in merged_products.values()),
+                    'total_amount_extra': sum(item['total_amount_extra'] for item in merged_products.values()),
                     'status': order.status,
                     'remark': order.remark,
                     'created_at': order.created_at.isoformat() if order.created_at else None,
@@ -2196,6 +2205,7 @@ def get_purchase_orders(user_id):
         print(f'获取采购单列表失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '获取采购单列表失败'}), 500
+
 
 # 更新采购单状态
 @app.route('/purchase_orders/<int:order_id>', methods=['PUT'])
@@ -2232,9 +2242,99 @@ def update_purchase_order(user_id, order_id):
         return jsonify({'error': '更新采购单状态失败'}), 500
 
 
+# 编辑采购单商品信息
+@app.route('/purchase_orders/<int:order_id>/items', methods=['PUT'])
+@login_required
+def update_purchase_order_items(user_id, order_id):
+    try:
+        # 检查权限
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': '用户不存在'}), 404
+            
+        # 获取采购单
+        order = PurchaseOrder.query.get(order_id)
+        if not order:
+            return jsonify({'error': '采购单不存在'}), 404
+            
+        # 非管理员只能编辑自己的采购单
+        if user.user_type != 1 and order.user_id != user_id:
+            return jsonify({'error': '无权限编辑此采购单'}), 403
+            
+        # 只有待处理状态的采购单可以编辑
+        if order.status != 0:
+            return jsonify({'error': '只有待处理的采购单可以编辑'}), 400
+            
+        data = request.json
+        items = data.get('items', [])
+        
+        if not items:
+            return jsonify({'error': '缺少商品信息'}), 400
+            
+        # 清除原有商品信息
+        PurchaseOrderItem.query.filter_by(order_id=order_id).delete()
+        
+        # 添加新的商品信息
+        total_amount = 0
+        for item_data in items:
+            product_id = item_data.get('product_id')
+            quantity = item_data.get('quantity', 0)
+            price = item_data.get('price', 0)
+            color = item_data.get('color', '')
+            logo_price = item_data.get('logo_price', 0)
+            accessory_price = item_data.get('accessory_price', 0)
+            packaging_price = item_data.get('packaging_price', 0)
+            
+            if not product_id or quantity <= 0:
+                continue
+                
+            # 检查产品是否存在
+            product = Product.query.get(product_id)
+            if not product:
+                continue
+                
+            # 创建新的订单项
+            item = PurchaseOrderItem(
+                order_id=order_id,
+                product_id=product_id,
+                quantity=quantity,
+                price=price,
+                color=color,
+                logo_price=logo_price,
+                accessory_price=accessory_price,
+                packaging_price=packaging_price
+            )
+            db.session.add(item)
+            
+            # 计算总金额
+            item_total = quantity * float(price) + float(logo_price) + float(accessory_price) + float(packaging_price)
+            total_amount += item_total
+            
+        # 更新采购单总金额
+        order.total_amount = total_amount
+        order.updated_at = datetime.now()
+        
+        try:
+            db.session.commit()
+            return jsonify({
+                'message': '采购单商品信息更新成功',
+                'total_amount': float(total_amount)
+            }), 200
+        except Exception as e:
+            db.session.rollback()
+            print(f'更新采购单商品信息失败: {str(e)}')
+            print(f'错误追踪:\n{traceback.format_exc()}')
+            return jsonify({'error': '更新采购单商品信息失败'}), 500
+            
+    except Exception as e:
+        print(f'处理采购单商品信息更新请求失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '更新采购单商品信息失败'}), 500
+
+
 # 添加用户管理相关接口
 @app.route('/users', methods=['GET'])
-@admin_required
+@check_staff_permission('users.view')   
 def get_users(user_id):
     try:       
         # 获取查询参数
@@ -3097,6 +3197,9 @@ def get_purchase_order(user_id, order_id):
                     'quantity': item.quantity,
                     'price': float(item.price),
                     'color': item.color,
+                    'logo_price': float(item.logo_price),  # 加标价格
+                    'accessory_price': float(item.accessory_price),  # 辅料价格
+                    'packaging_price': float(item.packaging_price),  # 包装价格
                     'image': json.loads(product.images)[0] if product.images else None,
                     'subtotal': item.quantity * float(item.price)
                 })

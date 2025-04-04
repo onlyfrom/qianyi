@@ -187,11 +187,11 @@ class PurchaseOrder(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     order_number = db.Column(db.String(50), unique=True, nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False) # 下单人
     total_amount = db.Column(db.Float, default=0)
     status = db.Column(db.Integer, default=0)  # 0:待处理 1:已处理 2:已取消
     remark = db.Column(db.Text)
-    handler_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    handler_id = db.Column(db.Integer, db.ForeignKey('users.id')) # 处理人
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
 
 # 采购订单商品模型
@@ -203,6 +203,9 @@ class PurchaseOrderItem(db.Model):
     product_id = db.Column(db.String(80), db.ForeignKey('products.id'), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
     price = db.Column(db.Float, nullable=False)
+    logo_price = db.Column(db.Float, default=0.0)  # 加标价格
+    accessory_price = db.Column(db.Float, default=0.0)  # 辅料价格
+    packaging_price = db.Column(db.Float, default=0.0)  # 包装价格
     color = db.Column(db.String(50))
 
 # 发货订单模型
