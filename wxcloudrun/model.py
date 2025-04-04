@@ -286,7 +286,6 @@ class SystemSettings(db.Model):
 class CartItem(db.Model):
     """购物车项目"""
     __tablename__ = 'cart_items'
-    
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     product_id = db.Column(db.String(100), db.ForeignKey('products.id'), nullable=False)
@@ -310,5 +309,12 @@ class CartItem(db.Model):
             'specs_info': json.loads(self.specs_info) if self.specs_info else {},
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
-            'product': self.product.to_dict() if self.product else None
+            'product_name': self.product.name if self.product else "未知商品",
+            'price': self.product.price if self.product else 0,
+            'product': {
+                'id': self.product.id,
+                'name': self.product.name,
+                'price': self.product.price,
+                'images': json.loads(self.product.images) if self.product and self.product.images else []
+            } if self.product else None
         } 
