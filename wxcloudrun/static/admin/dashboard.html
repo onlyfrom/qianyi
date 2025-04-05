@@ -4577,55 +4577,66 @@
                 // 处理文件移除
                 async handleRemove(file) {
                     try {
-                        const index = this.fileList.indexOf(file);
-
-                        if (index !== -1) {
-                            // 从文件列表中移除
-                            this.fileList.splice(index, 1);                            
-                            // 更新商品图片列表
-                            this.productForm.images = this.fileList.map(file => this.httpstocloud(file.url));
-
+                        console.log('删除前文件列表长度:', this.fileList.length);
+                        console.log('删除文件:', file);
+                        
+                        // 使用uid查找更准确，因为Element Plus的on-remove事件是在用户点击删除按钮后调用的
+                        // 此时文件已经从fileList中移除
+                        const fileIndex = this.fileList.findIndex(item => item.uid === file.uid);
+                        console.log('找到的文件索引:', fileIndex);
+                        
+                        // 检查fileList中是否已有要删除的文件（可能已经被组件本身移除）
+                        const fileExists = fileIndex !== -1;
+                        
+                        if (fileExists) {
+                            // 如果文件还在fileList中，手动删除
+                            this.fileList.splice(fileIndex, 1);
+                        }
+                        
+                        console.log('删除后文件列表长度:', this.fileList.length);
+                        
+                        // 无论如何都更新商品图片列表
+                        this.productForm.images = this.fileList.map(file => this.httpstocloud(file.url));
+                        
+                        // 如果是编辑模式，直接更新商品信息
+                        if (this.dialogType === 'edit' && this.productForm.id) {
+                            const specs = this.productForm.specs.map(spec => ({
+                                color: spec.color,
+                                stock: parseInt(spec.stock) || 0
+                            }));
                             
-                            // 如果是编辑模式，直接更新商品信息
-                            if (this.dialogType === 'edit' && this.productForm.id) {
-                                const specs = this.productForm.specs.map(spec => ({
-                                    color: spec.color,
-                                    stock: parseInt(spec.stock) || 0
-                                }));
-                                
-                                const submitData = {
-                                    id: this.productForm.id,
-                                    name: this.productForm.name.trim(),
-                                    description: this.productForm.description.trim(),
-                                    price: parseFloat(this.productForm.price) || 0,
-                                    cost_price: parseFloat(this.productForm.cost_price) || 0,
-                                    price_b: parseFloat(this.productForm.price_b) || 0,
-                                    price_c: parseFloat(this.productForm.price_c) || 0,
-                                    price_d: parseFloat(this.productForm.price_d) || 0,
-                                    specs: specs,
-                                    images: this.productForm.images,
-                                    type: parseInt(this.productForm.style) || 1,
-                                    stock: specs.reduce((sum, spec) => sum + (parseInt(spec.stock) || 0), 0),
-                                    stock_warning: parseInt(this.productForm.stock_warning) || 10,
-                                    size: (this.productForm.size || '').trim(),
-                                    weight: parseFloat(this.productForm.weight) || 0,
-                                    yarn: (this.productForm.yarn || '').trim(),
-                                    composition: (this.productForm.composition || '').trim()
+                            const submitData = {
+                                id: this.productForm.id,
+                                name: this.productForm.name.trim(),
+                                description: this.productForm.description.trim(),
+                                price: parseFloat(this.productForm.price) || 0,
+                                cost_price: parseFloat(this.productForm.cost_price) || 0,
+                                price_b: parseFloat(this.productForm.price_b) || 0,
+                                price_c: parseFloat(this.productForm.price_c) || 0,
+                                price_d: parseFloat(this.productForm.price_d) || 0,
+                                specs: specs,
+                                images: this.productForm.images,
+                                type: parseInt(this.productForm.style) || 1,
+                                stock: specs.reduce((sum, spec) => sum + (parseInt(spec.stock) || 0), 0),
+                                stock_warning: parseInt(this.productForm.stock_warning) || 10,
+                                size: (this.productForm.size || '').trim(),
+                                weight: parseFloat(this.productForm.weight) || 0,
+                                yarn: (this.productForm.yarn || '').trim(),
+                                composition: (this.productForm.composition || '').trim()
 
-                                };
-                                console.log('提交数据:', submitData.images);
-                                const response = await axios.post(`/products`, submitData);
-                                if (response.status === 200) {
-                                    this.$message.success('删除图片成功');
-
-                                }
+                            };
+                            console.log('提交数据:', submitData.images);
+                            const response = await axios.post(`/products`, submitData);
+                            if (response.status === 200) {
+                                this.$message.success('商品信息更新成功');
                             }
                         }
                     } catch (error) {
-                        this.$message.error('删除图片失败：' + error.message);
-                        // 如果删除失败，恢复文件列表
+                        console.error('更新商品信息失败:', error);
+                        this.$message.error('更新商品信息失败：' + error.message);
+                        // 如果更新失败，恢复文件列表
                         this.fileList = [...this.fileList, file];
-                        this.productForm.images = this.fileList.map(file => file.url);
+                        this.productForm.images = this.fileList.map(file => this.httpstocloud(file.url));
                     }
                 },
                 async customUpload({ file }) {
