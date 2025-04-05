@@ -2539,7 +2539,7 @@ def update_user_profile(user_id):
 
 
 
-# 创建配送单
+# 创建发货单
 @app.route('/delivery_orders', methods=['POST'])
 @login_required
 def create_delivery_order(user_id):
@@ -2549,20 +2549,19 @@ def create_delivery_order(user_id):
             return jsonify({'error': '无效的请求数据'}), 400
         
         # 验证必要字段
-        required_fields = ['customer_name', 'customer_phone', 'delivery_address', 'items']
+        required_fields = ['customer_name', 'customer_phone', 'packages']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'error': f'缺少必要字段: {field}'}), 400
         
         # 生成订单号
-        order_number = 'D' + datetime.now().strftime('%Y%m%d%H%M%S') + str(random.randint(1000, 9999))
         
-        # 创建配送单
+        # 创建发货单
         delivery_order = DeliveryOrder(
-            order_number=order_number,
+            order_number=data['order_number'],
             customer_name=data['customer_name'],
             customer_phone=data['customer_phone'],
-            delivery_address=data['delivery_address'],
+            delivery_address=data['customer_address'],
             delivery_date=data.get('delivery_date'),
             delivery_time_slot=data.get('delivery_time_slot'),
             status=0,  # 待配送
@@ -2573,23 +2572,27 @@ def create_delivery_order(user_id):
         )
         
         db.session.add(delivery_order)
+        db.session.flush()  # 刷新会话以获取delivery_order.id，但不提交事务
         
-        # 添加配送商品
-        for item in data['items']:
-            delivery_item = DeliveryItem(
-                delivery_id=delivery_order.id,
-                product_id=item['product_id'],
-                quantity=item['quantity'],
-                color=item.get('color', '')
-            )
-            db.session.add(delivery_item)
+        # 添加商品
+        for items in data['packages']:
+            for item in items:
+                delivery_item = DeliveryItem(
+                    delivery_id=delivery_order.id,
+                    product_id=item['product_id'],
+                    order_number=data['order_number'],
+                    quantity=item['quantity'],
+                    color=item.get('color', ''),
+                    package_id=item.get('package_id', 0)
+                )
+                db.session.add(delivery_item)
 
         try:
             db.session.commit()
             return jsonify({
                 'message': '配送单创建成功',
                 'order_id': delivery_order.id,
-                'order_number': order_number
+                'order_number': delivery_order.order_number
             }), 201
         except Exception as e:
             db.session.rollback()
@@ -2607,10 +2610,9 @@ def get_delivery_orders(user_id):
     try:
         # 获取查询参数
         page = int(request.args.get('page', 1))
-        page_size = min(int(request.args.get('page_size', 10)), 50)
+        page_size = min(int(request.args.get('pageSize', 10)), 50)
         status = request.args.get('status')
-        keyword = request.args.get('keyword', '').strip()
-        date_range = request.args.get('date_range', '').split(',')
+        searchKey = request.args.get('searchKey', '').strip()
         
         # 检查用户类型
         user = User.query.get(user_id)
@@ -2632,8 +2634,8 @@ def get_delivery_orders(user_id):
             query = query.filter(DeliveryOrder.status == int(status))
             
         # 关键字搜索
-        if keyword:
-            search = f'%{keyword}%'
+        if searchKey:
+            search = f'%{searchKey}%'
             query = query.filter(db.or_(
                 DeliveryOrder.order_number.like(search),
                 DeliveryOrder.customer_name.like(search),
@@ -2641,12 +2643,6 @@ def get_delivery_orders(user_id):
                 DeliveryOrder.delivery_address.like(search),
                 Product.name.like(search)
             ))
-            
-        # 日期范围筛选
-        if len(date_range) == 2 and date_range[0] and date_range[1]:
-            query = query.filter(
-                DeliveryOrder.created_at.between(date_range[0], date_range[1])
-            )
             
         # 获取分页数据
         paginated_orders = query.order_by(DeliveryOrder.created_at.desc())\
@@ -2656,7 +2652,7 @@ def get_delivery_orders(user_id):
         for order in paginated_orders.items:
             # 获取订单明细
             items = []
-            for item in order.items:
+            for item in DeliveryItem.query.filter_by(delivery_id=order.id).all():
                 product = Product.query.get(item.product_id)
                 if product:
                     items.append({
@@ -2668,21 +2664,31 @@ def get_delivery_orders(user_id):
                         'image': json.loads(product.images)[0] if product.images else None
                     })
                     
+            # 状态文本映射
+            status_text_map = {
+                0: '已开单',
+                1: '已发货',
+                2: '已完成',
+                3: '已取消',
+                4: '异常'
+            }
+                    
             orders.append({
                 'id': order.id,
-                'order_number': order.order_number,
-                'customer_name': order.customer_name,
-                'customer_phone': order.customer_phone,
-                'delivery_address': order.delivery_address,
-                'delivery_date': order.delivery_date,
+                'orderNumber': order.order_number,
+                'customerName': order.customer_name,
+                'customerPhone': order.customer_phone,
+                'deliveryAddress': order.delivery_address,
+                'deliveryDate': order.delivery_date,
                 'delivery_time_slot': order.delivery_time_slot,
                 'status': order.status,
+                'statusText': status_text_map.get(order.status, '未知状态'),
                 'remark': order.remark,
-                'created_at': order.created_at.isoformat(),
-                'updated_at': order.updated_at.isoformat(),
+                'createdAt': order.created_at.isoformat(),
+                'updatedAt': order.updated_at.isoformat(),
                 'created_by': order.created_by,
                 'delivery_by': order.delivery_by,
-                'delivery_image': json.loads(order.delivery_image) if order.delivery_image else [],
+                'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else [],
                 'items': items
             })
             
@@ -2706,7 +2712,6 @@ def get_delivery_order_detail(user_id, order_id):
     try:
         # 获取配送单及相关信息
         order = DeliveryOrder.query\
-            .join(User, DeliveryOrder.created_by == User.id)\
             .filter(DeliveryOrder.id == order_id)\
             .first()
         
@@ -2723,50 +2728,63 @@ def get_delivery_order_detail(user_id, order_id):
 
         # 获取配送商品列表
         items = []
-        for item in order.items:
+        for item in DeliveryItem.query.filter_by(delivery_id=order.id).all():
             product = Product.query.get(item.product_id)
             if product:
+                product_image = json.loads(product.images)[0] if product.images else None
                 items.append({
                     'id': item.id,
                     'product_id': item.product_id,
                     'product_name': product.name,
                     'quantity': item.quantity,
                     'color': item.color,
-                    'image': json.loads(product.images)[0] if product.images else None
+                    'product_image': product_image
                 })
 
         # 获取创建者和配送员信息
         creator = User.query.get(order.created_by)
         delivery_user = User.query.get(order.delivery_by) if order.delivery_by else None
 
+        # 状态文本映射
+        status_text_map = {
+            0: '已开单',
+            1: '已发货',
+            2: '已完成',
+            3: '已取消',
+            4: '异常'
+        }
+
         # 格式化返回数据
         order_detail = {
             'id': order.id,
-            'order_number': order.order_number,
-            'customer_name': order.customer_name,
-            'customer_phone': order.customer_phone,
-            'delivery_address': order.delivery_address,
-            'delivery_date': order.delivery_date,
-            'delivery_time_slot': order.delivery_time_slot,
+            'orderNumber': order.order_number,
+            'customerName': order.customer_name,
+            'customerPhone': order.customer_phone,
+            'deliveryAddress': order.delivery_address,
+            'deliveryDate': order.delivery_date,
+            'deliveryTimeSlot': order.delivery_time_slot,
             'status': order.status,
+            'statusText': status_text_map.get(order.status, '未知状态'),
             'remark': order.remark,
-            'created_at': order.created_at.isoformat(),
-            'updated_at': order.updated_at.isoformat(),
+            'createdAt': order.created_at.isoformat(),
+            'updatedAt': order.updated_at.isoformat(),
             'creator': {
                 'id': creator.id,
                 'username': creator.username,
                 'nickname': creator.nickname
             } if creator else None,
-            'delivery_user': {
+            'deliveryUser': {
                 'id': delivery_user.id,
                 'username': delivery_user.username,
                 'nickname': delivery_user.nickname
             } if delivery_user else None,
-            'delivery_image': json.loads(order.delivery_image) if order.delivery_image else [],
-            'items': items
+            'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else []
         }
 
-        return jsonify({'order': order_detail}), 200
+        return jsonify({
+            'order': order_detail,
+            'items': items
+        }), 200
 
     except Exception as e:
         print(f'获取配送单详情失败: {str(e)}')
@@ -2821,11 +2839,11 @@ def get_delivery_orders_stats(user_id):
         cancelled = db.session.query(func.count(DeliveryOrder.id)).filter(DeliveryOrder.status == 3).scalar()
         
         stats = {
-            'total': total or 0,
-            'pending': pending or 0,
-            'delivering': delivering or 0,
-            'completed': completed or 0,
-            'cancelled': cancelled or 0
+            '': total or 0,  # 全部
+            0: pending or 0,  # 已开单
+            1: delivering or 0,  # 已发货
+            2: completed or 0,  # 已完成
+            3: cancelled or 0  # 已取消
         }
         
         print('统计数据:', json.dumps(stats, indent=2))
@@ -7046,3 +7064,55 @@ def update_hidden_products_route(user_id):
     """
     from .recommended import update_hidden_products
     return update_hidden_products()
+
+# 获取商品已发货数量
+@app.route('/shipped_quantities', methods=['GET'])
+@login_required
+def get_shipped_quantities(user_id):
+    try:
+        # 获取请求参数
+        product_id = request.args.get('product_id')
+        color = request.args.get('color', '')
+        order_number = request.args.get('order_number', '')
+        status = request.args.getlist('status')  # 使用getlist获取多个相同名称的参数
+        
+        print(f'获取到请求参数: {product_id}, {color}, {order_number}, 状态: {status}')
+        
+        if not product_id:
+            return jsonify({'error': '缺少商品ID参数'}), 400
+            
+        # 计算已发货数量
+        query = db.session.query(func.sum(DeliveryItem.quantity).label('total_shipped'))\
+            .filter(DeliveryItem.product_id == product_id)
+        
+        if order_number:
+            query = query.filter(DeliveryItem.order_number == order_number)
+
+        # 如果有颜色参数，添加颜色过滤条件
+        if color:
+            query = query.filter(DeliveryItem.color == color)
+            
+        # 只统计指定状态的订单
+        query = query.join(DeliveryOrder, DeliveryItem.delivery_id == DeliveryOrder.id)
+        
+        # 如果提供了状态参数，则过滤指定状态的订单，否则默认只计算已发货和已完成的
+        if status:
+            query = query.filter(DeliveryOrder.status.in_(status))
+        else:
+            # 默认只统计已发货和已完成状态的订单
+            query = query.filter(DeliveryOrder.status.in_(['shipped', 'completed']))
+            
+        result = query.scalar()
+        shipped_quantity = int(result) if result is not None else 0
+        
+        # 返回结果
+        return jsonify({
+            'product_id': product_id,
+            'color': color,
+            'shipped_quantity': shipped_quantity
+        }), 200
+        
+    except Exception as e:
+        print(f'获取已发货数量失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '获取已发货数量失败'}), 500

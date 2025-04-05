@@ -213,13 +213,13 @@ class DeliveryOrder(db.Model):
     __tablename__ = 'delivery_orders'
     
     id = db.Column(db.Integer, primary_key=True)  # 主键 发货订单ID
-    order_number = db.Column(db.String(50), unique=True, nullable=False)  # 关联采购单号
+    order_number = db.Column(db.String(50), nullable=False)  # 关联采购单号
     customer_name = db.Column(db.String(80), nullable=False)  # 客户姓名
     customer_phone = db.Column(db.String(20))  # 客户电话
-    delivery_address = db.Column(db.String(255), nullable=False)  # 配送地址
+    delivery_address = db.Column(db.String(255))  # 配送地址
     delivery_date = db.Column(db.String(20))  # 发货日期
     delivery_time_slot = db.Column(db.String(50))  # 配送时间段
-    status = db.Column(db.Integer, default=0)  # 0开单，1已发货，2已签收，4异常，3已退货
+    status = db.Column(db.Integer, default=0)  # 0:已开单，1:已发货，2:已完成，3:已取消，4:异常
     remark = db.Column(db.Text)  # 备注
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)  # 创建时间
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)  # 更新时间
@@ -233,11 +233,11 @@ class DeliveryItem(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)  # 主键 发货订单商品ID
     delivery_id = db.Column(db.Integer, db.ForeignKey('delivery_orders.id'), nullable=False)  # 关联发货订单ID
+    order_number = db.Column(db.String(50), nullable=False)  # 关联采购单号
     product_id = db.Column(db.String(80), db.ForeignKey('products.id'), nullable=False)  # 关联商品ID
     quantity = db.Column(db.Integer, nullable=False)  # 数量
-    price = db.Column(db.Float, nullable=False)  # 单价
-    extra = db.Column(db.Text)  # 附加费用 (JSON字符串)
     color = db.Column(db.String(50))  # 颜色
+    package_id = db.Column(db.String(10))  # 包装ID
 
 # 推送订单模型
 class PushOrder(db.Model):
