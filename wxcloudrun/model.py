@@ -290,6 +290,7 @@ class CartItem(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     product_id = db.Column(db.String(100), db.ForeignKey('products.id'), nullable=False)
     quantity = db.Column(db.Integer, default=1)  # 数量
+    price = db.Column(db.Float, nullable=False)  # 价格
     selected = db.Column(db.Boolean, default=True)  # 是否选中
     specs_info = db.Column(db.Text)  # 规格信息，JSON格式
     created_at = db.Column(db.DateTime, default=datetime.now)
@@ -306,11 +307,11 @@ class CartItem(db.Model):
             'product_id': self.product_id,
             'quantity': self.quantity,
             'selected': self.selected,
+            'price': self.price,
             'specs_info': json.loads(self.specs_info) if self.specs_info else {},
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
             'product_name': self.product.name if self.product else "未知商品",
-            'price': self.product.price if self.product else 0,
             'product': {
                 'id': self.product.id,
                 'name': self.product.name,

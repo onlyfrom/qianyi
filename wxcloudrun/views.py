@@ -2564,7 +2564,7 @@ def create_delivery_order(user_id):
             delivery_address=data['customer_address'],
             delivery_date=data.get('delivery_date'),
             delivery_time_slot=data.get('delivery_time_slot'),
-            status=0,  # 待配送
+            status=data.get('status', 1),  # 待配送
             remark=data.get('remark', ''),
             created_by=user_id,
             created_at=datetime.now(),
@@ -3181,66 +3181,109 @@ def add_header(response):
                 response.headers['Content-Type'] = 'application/javascript; charset=utf-8'
     return response
 
+
 # 获取采购单详情
 @app.route('/purchase_orders/<int:order_id>', methods=['GET'])
 @login_required
 def get_purchase_order(user_id, order_id):
     try:
-        # 获取采购单及相关信息
-        order = PurchaseOrder.query\
-            .join(User)\
-            .filter(PurchaseOrder.id == order_id)\
-            .first()
+        print(f'开始获取采购单详情: order_id={order_id}, user_id={user_id}')
+        
+        # 获取采购单
+        order = PurchaseOrder.query.filter_by(id=order_id).first()
         
         if not order:
+            print(f'采购单不存在: order_id={order_id}')
             return jsonify({'error': '采购单不存在'}), 404
         
+        # 获取下单用户信息
+        order_user = User.query.get(order.user_id)
+        if not order_user:
+            print(f'下单用户不存在: user_id={order.user_id}')
+            return jsonify({'error': '下单用户不存在'}), 404
+        
         # 检查权限（非管理员只能查看自己的订单）
-        user = User.query.get(user_id)
-        if not user:
+        current_user = User.query.get(user_id)
+        if not current_user:
+            print(f'当前用户不存在: user_id={user_id}')
             return jsonify({'error': '用户不存在'}), 404
         
-        if user.user_type != 1 and order.user_id != user_id:
+        if current_user.user_type != 1 and order.user_id != user_id:
+            print(f'无权限查看此采购单: user_id={user_id}, order_user_id={order.user_id}')
             return jsonify({'error': '无权限查看此采购单'}), 403
         
         # 获取订单明细
-        items = []
-        for item in order.items:
-            product = Product.query.get(item.product_id)
-            if product:
-                items.append({
-                    'id': item.id,
-                    'product_id': item.product_id,
-                    'product_name': product.name,
+        order_items = db.session.query(PurchaseOrderItem).filter(
+            PurchaseOrderItem.order_id == order.id
+        ).all()
+        
+        # 使用字典来临时存储合并的商品数据
+        merged_products = {}
+        
+        for item in order_items:
+            try:
+                product = Product.query.get(item.product_id)
+                if not product:
+                    continue
+                    
+                # 使用商品ID作为键
+                if item.product_id not in merged_products:
+                    merged_products[item.product_id] = {
+                        'id': product.id,
+                        'product_id': product.id,
+                        'product_name': product.name,
+                        'image': json.loads(product.images)[0] if product.images else None,
+                        'total_quantity': 0,
+                        'total_amount': 0,
+                        'total_amount_extra': 0,
+                        'specs': []
+                    }
+                
+                # 添加当前规格信息
+                spec_info = {
+                    'color': item.color,
                     'quantity': item.quantity,
                     'price': float(item.price),
-                    'color': item.color,
                     'logo_price': float(item.logo_price),  # 加标价格
                     'accessory_price': float(item.accessory_price),  # 辅料价格
                     'packaging_price': float(item.packaging_price),  # 包装价格
-                    'image': json.loads(product.images)[0] if product.images else None,
-                    'subtotal': item.quantity * float(item.price)
-                })
+                    'total': item.quantity * float(item.price),
+                    'extra': item.quantity * (float(item.logo_price) + float(item.accessory_price) + float(item.packaging_price))
+                }
+                merged_products[item.product_id]['specs'].append(spec_info)
+                
+                # 更新总数量和总金额
+                merged_products[item.product_id]['total_quantity'] += item.quantity
+                merged_products[item.product_id]['total_amount'] += spec_info['total']
+                merged_products[item.product_id]['total_amount_extra'] += spec_info['extra']
+            except Exception as e:
+                print(f"处理订单项时出错: {str(e)}")
+                continue
+        
+        # 将合并后的商品数据转换为列表
+        items = list(merged_products.values())
         
         # 格式化返回数据
         order_detail = {
             'id': order.id,
             'order_number': order.order_number,
-            'total_amount': float(order.total_amount),
+            'total_amount': sum(item['total_amount'] for item in merged_products.values()),
+            'total_quantity': sum(item['total_quantity'] for item in merged_products.values()),
+            'total_amount_extra': sum(item['total_amount_extra'] for item in merged_products.values()),
             'status': order.status,
-            'created_at': order.created_at.isoformat(),
             'remark': order.remark,
+            'created_at': order.created_at.isoformat() if order.created_at else None,
+            'items': items,
             'user': {
-                'id': order.user.id,
-                'username': order.user.username,
-                'nickname': order.user.nickname,
-                'phone': order.user.phone,
-                'address': order.user.address,
-                'contact': order.user.contact
-            },
-            'items': items
+                'id': order_user.id,
+                'username': order_user.username,
+                'nickname': order_user.nickname,
+                'avatar': order_user.avatar,
+                'phone': order_user.phone
+            }
         }
         
+        print(f'成功获取采购单详情: order_id={order_id}, 商品数量={len(items)}')
         return jsonify({'order': order_detail}), 200
     
     except Exception as e:
@@ -6555,6 +6598,7 @@ def add_to_cart(user_id):
         product_id = data['product_id']
         quantity = data.get('quantity', 1)
         specs_info = data.get('specs_info', {})
+        price = data.get('price', 0)
         
         # 检查商品是否存在
         product = Product.query.get(product_id)
@@ -6568,6 +6612,7 @@ def add_to_cart(user_id):
         cart_item = CartItem.query.filter_by(
             user_id=user_id,
             product_id=product_id,
+            price=price,
             specs_info=json.dumps(specs_info) if specs_info else None
         ).first()
         
@@ -6581,6 +6626,7 @@ def add_to_cart(user_id):
                 user_id=user_id,
                 product_id=product_id,
                 quantity=quantity,
+                price=price,
                 specs_info=json.dumps(specs_info) if specs_info else None
             )
             db.session.add(cart_item)
@@ -7096,11 +7142,11 @@ def get_shipped_quantities(user_id):
         query = query.join(DeliveryOrder, DeliveryItem.delivery_id == DeliveryOrder.id)
         
         # 如果提供了状态参数，则过滤指定状态的订单，否则默认只计算已发货和已完成的
-        if status:
-            query = query.filter(DeliveryOrder.status.in_(status))
-        else:
-            # 默认只统计已发货和已完成状态的订单
-            query = query.filter(DeliveryOrder.status.in_(['shipped', 'completed']))
+        #if status:
+        #    query = query.filter(DeliveryOrder.status.in_(status))
+        #else:
+        #    # 默认只统计已发货和已完成状态的订单
+        #    query = query.filter(DeliveryOrder.status.in_(['shipped', 'completed']))
             
         result = query.scalar()
         shipped_quantity = int(result) if result is not None else 0
