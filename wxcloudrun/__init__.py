@@ -113,5 +113,6 @@ def after_request(response):
 
 # 导入视图函数
 from . import views
+from . import stock_import
 
 

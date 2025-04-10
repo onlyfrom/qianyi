@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,6 +12,7 @@
     <script src="/admin/lib/icons/icons-vue.js"></script>
     <script src="/admin/lib/axios/axios.min.js"></script>
     <script src="/admin/lib/sortable/Sortable.min.js"></script>
+    <script src="components/ProductSelector.js"></script>
     <style>
         * {
             margin: 0;
@@ -711,6 +711,517 @@
             content: " 条";
         }
 
+        /* 发货单管理 */
+        .module-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ebeef5;
+        }
+
+        .module-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin: 0;
+        }
+
+        .module-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .filter-container {
+            margin-bottom: 20px;
+        }
+
+        .search-section {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .search-input {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .filter-options {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .batch-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #ecf5ff;
+            padding: 10px 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .selected-count {
+            font-size: 14px;
+            color: #606266;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .secondary-text {
+            font-size: 12px;
+            color: #909399;
+            margin-top: 5px;
+        }
+
+        .customer-info > div:first-child {
+            font-weight: bold;
+        }
+
+        .delivery-detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .detail-section {
+            margin-bottom: 25px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            padding-left: 10px;
+            border-left: 3px solid #409eff;
+        }
+
+        .remark-content {
+            background-color: #f8f8f8;
+            padding: 10px 15px;
+            border-radius: 4px;
+            color: #606266;
+            line-height: 1.6;
+        }
+
+        .image-gallery {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .delivery-image {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+
+        .delivery-image:hover {
+            transform: scale(1.05);
+        }
+
+        .log-detail {
+            font-size: 12px;
+            color: #909399;
+            margin-top: 5px;
+        }
+
+        .products-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .order-summary {
+            margin-top: 20px;
+            padding: 10px 15px;
+            background-color: #f8f8f8;
+            border-radius: 4px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 20px;
+        }
+
+        .summary-item {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .summary-item span:last-child {
+            font-weight: bold;
+            color: #409eff;
+        }
+
+        .upload-tip {
+            color: #909399;
+            font-size: 12px;
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        /* 打印样式 */
+        .print-container {
+            padding: 20px;
+            background-color: white;
+        }
+
+        .print-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .print-header h2 {
+            margin: 0;
+            padding: 0;
+        }
+
+        .print-order-number {
+            margin-top: 5px;
+            font-size: 14px;
+        }
+
+        .print-info {
+            margin-bottom: 20px;
+        }
+
+        .print-info-item {
+            margin-bottom: 8px;
+        }
+
+        .print-label {
+            font-weight: bold;
+            min-width: 60px;
+            display: inline-block;
+        }
+
+        .print-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        .print-table th,
+        .print-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .print-table th {
+            background-color: #f2f2f2;
+        }
+
+        .print-footer {
+            margin-top: 30px;
+        }
+
+        .print-remark {
+            margin-bottom: 20px;
+        }
+
+        .print-signatures {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 50px;
+        }
+
+        .print-signature {
+            width: 45%;
+        }
+
+        .signature-line {
+            border-bottom: 1px solid #000;
+            display: inline-block;
+            width: 150px;
+        }
+
+        .el-dialog__body {
+            padding: 20px;
+        }
+
+        .el-dialog__footer {
+            padding: 10px 20px 20px;
+            border-top: 1px solid #dcdfe6;
+        }
+        .batch-style-dialog {
+            width: 400px;
+            height: 400px;
+        }
+
+        /* 添加新样式 */
+        .color-images-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .color-image-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border: 1px solid #EBEEF5;
+            border-radius: 4px;
+        }
+
+        .selected-images {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .image-select-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .image-select-item {
+            width: 100px;
+            height: 100px;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .image-select-item:hover {
+            transform: scale(1.05);
+        }
+
+        .image-select-item.selected {
+            border-color: #409EFF;
+        }
+
+        .color-image-preview {
+            margin-left: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .color-image-preview:hover {
+            opacity: 0.8;
+        }
+
+        .image-select-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .image-select-item {
+            width: 100px;
+            height: 100px;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .image-select-item:hover {
+            transform: scale(1.05);
+        }
+
+        .image-select-item.selected {
+            border-color: #409EFF;
+        }
+
+        /* 添加图片选择相关样式 */
+        .image-select-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            padding: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .image-select-item {
+            width: 100px;
+            height: 100px;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .image-select-item:hover {
+            transform: scale(1.05);
+        }
+
+        .image-select-item.selected {
+            border-color: #409EFF;
+        }
+
+        .color-image-preview {
+            margin-left: 10px;
+            cursor: pointer;
+        }
+
+        .color-image-preview:hover {
+            opacity: 0.8;
+        }
+
+        /* 添加行内编辑样式 */
+        .editable-cell {
+            padding: 2px 0;
+        }
+
+        .editable-cell .el-input.is-small .el-input__wrapper {
+            padding: 1px 5px;
+        }
+
+        .editable-cell .el-input-number.is-small {
+            width: 50px;
+        }
+
+        .el-table .cell {
+            padding: 5px;
+        }
+
+        /* 添加到已有的 style 标签中 */
+        .spec-form-container {
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: row;
+            gap: 12px;
+        }
+
+        .spec-form-title {
+            font-size: 14px;
+            color: #606266;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+        }
+
+        .spec-form-title::before {
+            content: '';
+            width: 3px;
+            height: 14px;
+            background-color: #409EFF;
+            margin-right: 8px;
+            border-radius: 2px;
+        }
+
+        .spec-form-row {
+            display: flex;
+            width: 200rpx;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+
+        .spec-form-item {
+            display: flex;
+            flex-direction: row;
+            width: 200rpx;
+            gap: 12px;
+        }
+
+        .spec-form-item .el-form-item__label {
+            font-size: 13px;
+            color: #606266;
+            margin-bottom: 4px;
+        }
+
+        .recommended-products-container {
+            padding: 10px;
+        }
+
+        .recommended-list {
+            margin-top: 20px;
+        }
+
+        .recommended-list h4,
+        .search-results h4 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #409EFF;
+            padding-left: 10px;
+            border-left: 3px solid #409EFF;
+        }
+
+        .search-results {
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px dashed #EBEEF5;
+        }
+
+        /* 修改分页组件 */
+        .pagination-container {
+            margin-top: 20px;
+            text-align: right;
+        }
+
+        .pagination-dropdown .el-select-dropdown__item {
+            display: flex;
+        }
+
+        .pagination-dropdown .el-select-dropdown__item::before {
+            content: "每页 ";
+        }
+
+        .pagination-dropdown .el-select-dropdown__item::after {
+            content: " 条";
+        }
+
+        .delivery-detail-dialog {
+            .el-dialog__body {
+                padding: 20px;
+            }
+        }
+
+        .delivery-info {
+            margin-bottom: 20px;
+        }
+
+        .delivery-info .el-descriptions {
+            margin-bottom: 20px;
+        }
+
+        .product-list {
+            margin-top: 20px;
+        }
+
+        .product-list h3 {
+            margin-bottom: 15px;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .dialog-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .delivery-image {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
     </style>
 </head>
 
@@ -762,7 +1273,7 @@
                             <el-icon>
                                 <List />
                             </el-icon>
-                            <span>配送单管理</span>
+                            <span>发货单管理</span>
                         </el-menu-item>
                         <el-menu-item index="7">
                             <el-icon><share /></el-icon>
@@ -851,7 +1362,7 @@
                                 
                                 </el-switch>
                                 <!-- 筛选区域 -->
-                                <el-upload class="excel-uploader" action="/products/import" :headers="uploadHeaders"
+                                <el-upload class="excel-uploader" action="/products/import-stock" :headers="uploadHeaders"
                                     :on-success="handleImportSuccess" :on-error="handleImportError"
                                     :before-upload="beforeImportUpload" accept=".xlsx,.xls" :show-file-list="false">
                                     <el-button type="success">Excel导入</el-button>
@@ -1463,6 +1974,11 @@
                             <!-- 用户列表 -->
                             <el-button size="small" type="primary"
                                  @click="handleAddUser">新增用户</el-button>
+                                 <el-upload class="excel-uploader" action="/users/import-and-push" :headers="uploadHeaders"
+                                    :on-success="handleImportSuccess" :on-error="handleImportError"
+                                    :before-upload="beforeImportUpload" accept=".xlsx,.xls" :show-file-list="false">
+                                    <el-button type="success">客户导入</el-button>
+                                </el-upload>
                             <el-table :data="users" style="width: 100%">
                                 <el-table-column prop="id" label="ID" width="80"></el-table-column>
                                 <el-table-column prop="username" label="用户名" width="120"></el-table-column>
@@ -1710,6 +2226,9 @@
                                         </template>
                                     </el-input>
                                 </div>
+                                <div class="action-buttons">
+                                    <el-button type="primary" @click="showPlaceOrderDialog">代客下单</el-button>
+                                </div>
                             </div>
 
                             <!-- 采购单列表 -->
@@ -1730,7 +2249,7 @@
                                         {{ scope.row.total_quantity }}
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="order_number" label="采购金额" width="180">
+                                <el-table-column prop="order_number" label="采购金额" width="180" v-if="false">
                                     <template #default="scope">
                                         {{ scope.row.total_amount }}
                                     </template>
@@ -1850,271 +2369,210 @@
 
                         <!-- 配送单管理内容 -->
                         <div v-if="currentPage === '4'" class="content-container">
-                            <!-- 搜索栏 -->
-                            <div class="toolbar">
-                                <div class="search-bar">
-                                    <el-input v-model="deliverySearch.keyword" placeholder="搜索配送单号/客户名称" clearable
-                                        @keyup.enter="handleDeliverySearch">
+                            <div class="module-header">
+                                <h2 class="module-title">发货单管理</h2>
+                                <div class="module-actions">
+                                    <el-button @click="loadDeliveryOrders" icon="Refresh">刷新</el-button>
+                                    <el-button @click="exportDeliveryData" icon="Download">导出数据</el-button>
+                                </div>
+                            </div>
+                            
+                            <!-- 搜索和筛选 -->
+                            <div class="filter-container">
+                                <div class="search-section">
+                                    <el-input 
+                                        v-model="deliverySearch.keyword" 
+                                        placeholder="搜索发货单号/客户名称/电话" 
+                                        clearable
+                                        @keyup.enter="handleDeliverySearch"
+                                        prefix-icon="Search"
+                                        class="search-input"
+                                    >
                                         <template #append>
                                             <el-button @click="handleDeliverySearch">搜索</el-button>
                                         </template>
                                     </el-input>
-                                </div>
-                                <el-button type="primary" @click="showCreateDeliveryDialog">
-                                     新建配送单
-                                </el-button>
-                                
-                            </div>
-                            <div class="status-tabs">
-                                <el-radio-group v-model="deliverySearch.status" @change="handleDeliverySearch">
-                                    <el-radio-button label="all">
-                                        全部
-                                        <el-tag type="info" size="small" class="count-tag">{{ deliveryStats.total || 0 }}</el-tag>
-                                    </el-radio-button>
-                                    <el-radio-button label="0">
-                                        待配送
-                                        <el-tag type="warning" size="small" class="count-tag">{{ deliveryStats.pending || 0 }}</el-tag>
-                                    </el-radio-button>
-                                    <el-radio-button label="1">
-                                        配送中
-                                        <el-tag type="primary" size="small" class="count-tag">{{ deliveryStats.delivering || 0 }}</el-tag>
-                                    </el-radio-button>
-                                    <el-radio-button label="2">
-                                        已完成
-                                        <el-tag type="success" size="small" class="count-tag">{{ deliveryStats.completed || 0 }}</el-tag>
-                                    </el-radio-button>
-                                    <el-radio-button label="3">
-                                        已取消
-                                        <el-tag type="danger" size="small" class="count-tag">{{ deliveryStats.cancelled || 0 }}</el-tag>
-                                    </el-radio-button>
-                                </el-radio-group>
-                            </div>
-                            <!-- 配送单列表 -->
-                            <el-table :data="deliveryOrders" v-loading="deliveryLoading" border stripe>
-                                <el-table-column prop="order_number" label="配送单号" width="180">
-                                    <template #default="scope">
-                                        {{ scope.row.orderNumber }}
-                                    </template>
-                                </el-table-column>
-                                <el-table-column prop="customer_name" label="发货人" width="120">
-                                    <template #default="scope">
-                                        {{ scope.row.deliveryName }}
-                                    </template>
-                                </el-table-column>
-                                <el-table-column prop="customer_name" label="客户名称" width="120">
-                                    <template #default="scope">
-                                        {{ scope.row.customerName }}
-                                    </template>
-                                </el-table-column>
-                                <el-table-column prop="customer_phone" label="联系电话" width="120">
-                                    <template #default="scope">
-                                        {{ scope.row.customerPhone }}
-                                    </template>
-                                </el-table-column>
-                                <el-table-column prop="status" label="状态" width="100">
-                                    <template #default="scope">
-                                        <el-tag :type="getDeliveryStatusType(scope.row.status)">
-                                            {{ getDeliveryStatusText(scope.row.status) }}
-                                        </el-tag>
-                                    </template>
-                                </el-table-column>
-                                <el-table-column prop="created_at" label="创建时间" width="180">
-                                    <template #default="scope">
-                                        {{ formatDate(scope.row.createdAt) }}
-                                    </template>
-                                </el-table-column>
-                                <el-table-column label="操作" width="220" fixed="right">
-                                    <template #default="scope">
-                                        <el-button-group>
-                                            <el-button size="small"
-                                                @click="viewDeliveryDetail(scope.row)">查看</el-button>
-                                            <el-button v-if="scope.row.status === 0" size="small" type="success"
-                                                @click="handleStartDelivery(scope.row)">配送</el-button>
-                                            <el-button v-if="scope.row.status === 1" size="small" type="success"
-                                                @click="handleCompleteDelivery(scope.row)">完成</el-button>
-                                            <el-button v-if="scope.row.status === 0" size="small" type="danger"
-                                                @click="handleCancelDelivery(scope.row)">取消</el-button>
-                                            <el-button 
-                                                size="small" 
-                                                type="danger" 
-                                                @click="handleDeleteDelivery(scope.row)"
-                                                :disabled="![0, 3].includes(scope.row.status)" >                                                
-                                                删除    
-                                            </el-button>    
-                                        </el-button-group>
-                                    </template>
-                                </el-table-column>
-                            </el-table>
-
-                            <!-- 分页 -->
-                            <div class="pagination-container">
-                                <el-pagination v-model:current-page="deliveryPagination.currentPage"
-                                    v-model:page-size="deliveryPagination.pageSize" :total="deliveryPagination.total"
-                                    @current-change="handleDeliveryPageChange" layout="total, prev, pager, next" />
-                            </div>                            
-
-                            <!-- 新建配送单对话框 -->
-                            <el-dialog v-model="createDeliveryVisible" title="新建配送单" width="800px">
-                                <el-form :model="deliveryForm" label-width="100px">
-                                    <el-form-item label="客户名称" prop="customerName">
-                                        <el-input v-model="deliveryForm.customerName" />
-                                    </el-form-item>
-                                    <el-form-item label="联系电话" prop="customerPhone">
-                                        <el-input v-model="deliveryForm.customerPhone" />
-                                    </el-form-item>
-                                    <el-form-item label="配送地址" prop="deliveryAddress">
-                                        <el-input v-model="deliveryForm.deliveryAddress" />
-                                    </el-form-item>
-                                    <el-form-item label="配送日期" prop="deliveryDate">
-                                        <el-date-picker v-model="deliveryForm.deliveryDate" type="date" placeholder="选择配送日期" />
-                                    </el-form-item>
-                                    <el-form-item label="配送时段" prop="deliveryTimeSlot">
-                                        <el-select v-model="deliveryForm.deliveryTimeSlot" placeholder="选择配送时段">
-                                            <el-option label="上午" value="morning" />
-                                            <el-option label="下午" value="afternoon" />
-                                        </el-select>
-                                    </el-form-item>
-                                    <el-form-item label="备注" prop="remark">
-                                        <el-input v-model="deliveryForm.remark" type="textarea" />
-                                    </el-form-item>
                                     
-                                    <el-form-item label="商品列表">
-                                        <el-button type="primary" @click="showAddItemDialog">添加商品</el-button>
-                                        <el-table :data="deliveryForm.items" border style="margin-top: 10px;">
-                                            <el-table-column prop="productName" label="商品名称" >
-                                                <template #default="scope"> 
-                                                    {{ scope.row.productName }}
-                                                </template>
-                                            </el-table-column>
-                                            <el-table-column prop="color" label="颜色" width="120" >
-                                                <template #default="scope"> 
-                                                    {{ scope.row.color }}
-                                                </template>
-                                            </el-table-column>
-                                            <el-table-column prop="quantity" label="数量" width="120" >
-                                                <template #default="scope"> 
-                                                    {{ scope.row.quantity }}
-                                                </template>
-                                            </el-table-column>
-                                            <el-table-column label="操作" width="120">
-                                                <template #default="scope">
-                                                    <el-button type="danger" size="small" @click="removeDeliveryItem(scope.$index)">删除</el-button>
-                                                </template>
-                                            </el-table-column>
-                                        </el-table>
-                                    </el-form-item>
-                                </el-form>
-                                <template #footer>
-                                    <span class="dialog-footer">
-                                        <el-button @click="createDeliveryVisible = false">取消</el-button>
-                                        <el-button type="primary" @click="submitDeliveryForm">确定</el-button>
-                                    </span>
-                                </template>
-                            </el-dialog>
-
-                            <el-dialog v-model="addItemDialogVisible" title="添加商品" width="60%">
-                                <div class="search-bar" style="margin-bottom: 20px;">
-                                    <el-input
-                                        v-model="itemSearch.keyword"
-                                        placeholder="搜索商品"
-                                        clearable
-                                        @keyup.enter="handleItemSearch"
-                                    >
-                                        <template #append>
-                                            <el-button @click="handleItemSearch">搜索</el-button>
+                                    <div class="filter-options">
+                                        <el-select v-model="deliverySearch.timeRange" placeholder="时间范围" @change="handleDeliverySearch">
+                                            <el-option label="全部时间" value="" />
+                                            <el-option label="今天" value="today" />
+                                            <el-option label="昨天" value="yesterday" />
+                                            <el-option label="最近7天" value="week" />
+                                            <el-option label="最近30天" value="month" />
+                                            <el-option label="自定义" value="custom" />
+                                        </el-select>
+                                        
+                                        <template v-if="deliverySearch.timeRange === 'custom'">
+                                            <el-date-picker
+                                                v-model="deliverySearch.dateRange"
+                                                type="daterange"
+                                                range-separator="至"
+                                                start-placeholder="开始日期"
+                                                end-placeholder="结束日期"
+                                                value-format="YYYY-MM-DD"
+                                                @change="handleDeliverySearch"
+                                            />
                                         </template>
-                                    </el-input>
+                                    </div>
                                 </div>
-
-                                <el-table :data="searchProducts" border @selection-change="handleProductSelectionChange">
+                            </div>
+                            
+                            <!-- 发货单管理 -->
+                            <div>
+                                <el-tabs v-model="currentDeliveryTab" @tab-change="switchDeliveryTab" type="card">
+                                    <el-tab-pane 
+                                        v-for="(tab, index) in deliveryTabs" 
+                                        :key="index" 
+                                        :label="tab.name" 
+                                        :name="index"
+                                    >
+                                        <template #label>
+                                            <span>{{ tab.name }}</span>
+                                            <el-badge :value="getDeliveryCount(tab.status)" :type="getDeliveryBadgeType(tab.status)" :hidden="getDeliveryCount(tab.status) === 0" />
+                                        </template>
+                                    </el-tab-pane>
+                                </el-tabs>                            
+                                <el-table 
+                                    :data="deliveryOrders" 
+                                    v-loading="deliveryLoading" 
+                                    border 
+                                    stripe
+                                    :empty-text="currentDeliveryTab === 0 ? '暂无待发货单据，可以从采购单创建发货单' : '暂无发货单数据'"
+                                    style="height: calc(100vh - 400px)"
+                                    @selection-change="handleDeliverySelectionChange"
+                                >
                                     <el-table-column type="selection" width="55" >
-                                        <template #header>
-                                            <el-button type="danger" :disabled="!selectedProducts.length" @click="handleBatchDelete">
-                                                批量删除
+                                    </el-table-column>
+                                    <el-table-column prop="orderNumber" label="订单号" min-width="180" show-overflow-tooltip>
+                                        <template #default="scope">
+                                            <el-button link type="primary" @click="viewDeliveryDetail(scope.row)">
+                                                {{ scope.row.order_number || scope.row.orderNumber }}
                                             </el-button>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="id" label="款号" width="120" >
+                                    <el-table-column label="客户信息" min-width="200">
                                         <template #default="scope">
-                                            {{ scope.row.id }}
+                                            <div class="customer-info">
+                                                <div>{{ scope.row.customerName || scope.row.user?.nickname || '未知客户' }}</div>
+                                                <div class="secondary-text">{{ scope.row.customerPhone || scope.row.user?.phone || '无电话' }}</div>
+                                            </div>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="name" label="商品名称" >
+                                    <el-table-column label="商品信息" min-width="180">
                                         <template #default="scope">
-                                            {{ scope.row.name }}
+                                            <div>总数量: {{ scope.row.total_quantity }}件</div>
+                                            <!-- 只在待发货状态(status=0)显示待发数量 -->
+                                            <div v-if="scope.row.status === 0">待发数量: {{ scope.row.total_quantity - scope.row.total_shipped_quantity }}件</div>
+                                            <!-- 商品明细提示，所有状态都显示 -->
+                                            <div class="secondary-text" v-if="scope.row.items && scope.row.items.length > 0">
+                                                <el-tooltip placement="top">
+                                                    <template #content>
+                                                        <div v-for="(item, idx) in scope.row.items" :key="idx">
+                                                            {{ item.product_name }} {{ item.color ? `(${item.color})` : '' }}: {{ item.quantity }}件
+                                                        </div>
+                                                    </template>
+                                                    <el-tag size="small" :type="scope.row.status === 0 ? 'warning' : 'info'">查看商品明细</el-tag>
+                                                </el-tooltip>
+                                            </div>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column label="颜色" width="150">
+                                    <el-table-column prop="status" label="状态" width="100">
                                         <template #default="scope">
-                                            <el-select 
-                                                v-model="scope.row.selected_color" 
-                                                placeholder="选择颜色"
-                                                size="small"
-                                                style="width: 120px"
-                                            >
-                                                <el-option
-                                                    v-for="color in scope.row.colors"
-                                                    :key="color"
-                                                    :label="color"
-                                                    :value="color"
-                                                />
-                                            </el-select>
+                                            <el-tag :type="getDeliveryStatusType(scope.row.status)">
+                                                {{ getDeliveryStatusTextWithPartial(scope.row) }}
+                                            </el-tag>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column label="数量" width="150">
+                                    <el-table-column label="创建/更新时间" min-width="200">
                                         <template #default="scope">
-                                            <el-input-number 
-                                                v-model="scope.row.quantity" 
-                                                :min="1"
-                                                size="small"
-                                                style="width: 120px"
-                                            />
+                                            <div>创建: {{ formatDate(scope.row.createdAt || scope.row.created_at) }}</div>
+                                            <div class="secondary-text" v-if="scope.row.updatedAt">更新: {{ formatDate(scope.row.updatedAt) }}</div>
+                                        </template>
+                                    </el-table-column>
+                                    <el-table-column label="操作" width="200" fixed="right">
+                                        <template #default="scope">
+                                            <div class="action-buttons">
+                                                <template v-if="currentDeliveryTab === 0">
+                                                    <!-- 待发货状态 -->
+                                                    <el-button type="primary" size="small" @click="createDeliveryFromOrder(scope.row)">创建发货单</el-button>
+                                                </template>
+                                                <template v-else>
+                                                    <el-button-group>
+                                                        <!-- 查看按钮对所有状态都显示 -->
+                                                        <el-button 
+                                                            size="small"
+                                                            type="primary"
+                                                            plain
+                                                            @click="viewDeliveryDetail(scope.row)">
+                                                            查看详情
+                                                        </el-button>
+
+                                                        <!-- 待发货状态显示发货和取消按钮 -->
+                                                        <template v-if="scope.row.status === 0">
+                                                            <el-button 
+                                                                size="small"
+                                                                type="success"
+                                                                @click="handleDelivery(scope.row)">
+                                                                发货
+                                                            </el-button>
+                                                            <el-button 
+                                                                size="small"
+                                                                type="danger"
+                                                                @click="cancelDelivery(scope.row)">
+                                                                取消
+                                                            </el-button>
+                                                        </template>
+
+                                                        <!-- 已发货状态显示完成按钮 -->
+                                                        <template v-if="scope.row.status === 1">
+                                                            <el-button 
+                                                                size="small"
+                                                                type="success"
+                                                                @click="completeDelivery(scope.row)">
+                                                                完成
+                                                            </el-button>
+                                                        </template>
+
+                                                        <!-- 打印按钮对所有状态都显示 -->
+                                                        <el-button 
+                                                            size="small"
+                                                            type="info"
+                                                            plain
+                                                            @click="printDelivery(scope.row)">
+                                                            打印
+                                                        </el-button>
+                                                    </el-button-group>
+                                                </template>
+                                            </div>
                                         </template>
                                     </el-table-column>
                                 </el-table>
-
-                                <template #footer>
-                                    <span class="dialog-footer">
-                                        <el-button @click="addItemDialogVisible = false">取消</el-button>
-                                        <el-button type="primary" @click="confirmAddItems">确定</el-button>
-                                    </span>
-                                </template>
-                            </el-dialog> 
+                            </div>
                             
-
-                            <!-- 查看配送单详情对话框 -->
-                            <el-dialog v-model="viewDeliveryVisible" title="配送单详情" width="800px">
-                                <el-descriptions :column="2" border>
-                                    <el-descriptions-item label="订单编号">{{ currentDeliveryOrder?.orderNumber }}</el-descriptions-item>
-                                    <el-descriptions-item label="配送状态">{{ getDeliveryStatusText(currentDeliveryOrder?.status) }}</el-descriptions-item>
-                                    <el-descriptions-item label="客户名称">{{ currentDeliveryOrder?.customerName }}</el-descriptions-item>
-                                    <el-descriptions-item label="联系电话">{{ currentDeliveryOrder?.customerPhone }}</el-descriptions-item>
-                                    <el-descriptions-item label="配送地址">{{ currentDeliveryOrder?.deliveryAddress }}</el-descriptions-item>
-                                    <el-descriptions-item label="配送日期">{{ currentDeliveryOrder?.deliveryDate }}</el-descriptions-item>
-                                    <el-descriptions-item label="配送时段">{{ currentDeliveryOrder?.deliveryTimeSlot === 'morning' ? '上午' : '下午' }}</el-descriptions-item>
-                                    <el-descriptions-item label="备注">{{ currentDeliveryOrder?.remark }}</el-descriptions-item>
-                                    <el-descriptions-item label="创建人">{{ currentDeliveryOrder?.creatorName }}</el-descriptions-item>
-                                    <el-descriptions-item label="创建时间">{{ currentDeliveryOrder?.createdAt }}</el-descriptions-item>
-                                </el-descriptions>
-                                
-                                <el-table :data="currentDeliveryOrder?.items" border style="margin-top: 20px;">
-                                    <el-table-column prop="productName" label="商品名称" >
-                                        <template #default="scope">
-                                            {{ scope.row.productName }}
-                                        </template>
-                                    </el-table-column>
-                                    <el-table-column prop="color" label="颜色" width="120" >
-                                        <template #default="scope">
-                                            {{ scope.row.color }}
-                                        </template>
-                                    </el-table-column>
-                                    <el-table-column prop="quantity" label="数量" width="120" >
-                                        <template #default="scope">
-                                            {{ scope.row.quantity }}
-                                        </template>
-                                    </el-table-column>
-                                </el-table>
-                            </el-dialog>
+                            <!-- 批量操作工具栏 -->
+                            <div class="batch-actions" v-if="selectedDeliveries.length > 0">
+                                <span class="selected-count">已选择 {{ selectedDeliveries.length }} 项</span>
+                                <el-button-group>
+                                    <el-button size="small" type="primary" @click="batchMarkAsShipped" v-if="canBatchShip">批量标记发货</el-button>
+                                    <el-button size="small" type="success" @click="batchMarkAsCompleted" v-if="canBatchComplete">批量标记完成</el-button>
+                                    <el-button size="small" type="danger" @click="batchDelete" v-if="canBatchDelete">批量删除</el-button>
+                                    <el-button size="small" @click="batchPrint">批量打印</el-button>
+                                </el-button-group>
+                            </div>
+                            
+                            <!-- 分页 -->
+                            <div class="pagination-container">
+                                <el-pagination
+                                    v-model:current-page="deliveryPagination.currentPage"
+                                    v-model:page-size="deliveryPagination.pageSize"
+                                    :page-sizes="[10, 20, 50, 100]"
+                                    :total="deliveryPagination.total"
+                                    @current-change="handleDeliveryPageChange"
+                                    @size-change="handleDeliverySizeChange"
+                                    layout="total, sizes, prev, pager, next, jumper"
+                                />
+                            </div>
                         </div>
 
                         <!-- 推送单管理内容 -->
@@ -2293,7 +2751,7 @@
                 <el-button type="primary" @click="saveSystemSettings">保存</el-button>
             </span>
         </template>
-    </el-dialog>
+    </el-dialog>                                                      
 
     <!-- 商品款式设置对话框 -->
     <el-dialog title="商品款式设置" v-model="styleSettingsVisible" width="600px">
@@ -2592,8 +3050,331 @@
             autoplay
         ></video>
     </el-dialog>
+    
+    <!-- 发货单详情对话框 -->
+    <el-dialog
+        v-model="viewDeliveryVisible" 
+        title="发货单详情"
+        width="800px"
+        destroy-on-close
+    >
+        <div class="delivery-detail-header">            
+            <div class="delivery-detail-content">
+                <div class="detail-section">
+                    <h3 class="section-title">基本信息</h3>
+        <el-descriptions :column="2" border>
+                        <el-descriptions-item label="客户名称">{{ currentDeliveryOrder?.customerName }}</el-descriptions-item>
+                        <el-descriptions-item label="联系电话">{{ currentDeliveryOrder?.customerPhone }}</el-descriptions-item>
+                        <el-descriptions-item label="收货地址" :span="2">
+                            {{ currentDeliveryOrder?.deliveryAddress }}
+            </el-descriptions-item>
+                        <el-descriptions-item label="发货日期">{{ formatDate(currentDeliveryOrder?.deliveryDate) }}</el-descriptions-item>
+                        <el-descriptions-item label="创建时间">{{ formatDate(currentDeliveryOrder?.createdAt) }}</el-descriptions-item>
+        </el-descriptions>
+                </div>
+                
+                <div class="detail-section" v-if="currentDeliveryOrder?.remark">
+                    <h3 class="section-title">备注信息</h3>
+                    <div class="remark-content">
+                        {{ currentDeliveryOrder?.remark }}
+                    </div>
+                </div>
+                
+                <div class="detail-section">
+                    <h3 class="section-title">商品清单</h3>
+                    <el-table :data="currentDeliveryOrder?.items || []" border style="width: 100%">
+                        <el-table-column prop="productId" label="商品ID" width="120" >
+                            <template #default="scope">
+                                <el-tag size="small" type="info">{{ scope.row.product_id }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="productName" label="商品名称" min-width="180" >
+                            <template #default="scope">
+                                <el-tag size="small" type="info">{{ scope.row.product_name }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="color" label="颜色" width="120" >
+                            <template #default="scope">
+                                <el-tag size="small" type="info">{{ scope.row.color }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="quantity" label="数量" width="100" >
+                            <template #default="scope">
+                                <el-tag size="small" type="info">{{ scope.row.quantity }}</el-tag>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </div>
+                
+                <div class="detail-section" v-if="currentDeliveryOrder?.deliveryImage && currentDeliveryOrder.deliveryImage.length > 0">
+                    <h3 class="section-title">打包图片</h3>
+                    <div class="image-gallery">
+                        <el-image 
+                            v-for="(image, index) in currentDeliveryOrder.deliveryImage" 
+                            :key="index"
+                            :src="image"
+                            fit="cover"
+                            class="delivery-image"
+                            :preview-src-list="currentDeliveryOrder.deliveryImage"
+                        />
+                    </div>
+                </div>
+            </div>
+        </div>
 
-    </div>
+        <el-divider />
+
+        
+    </el-dialog>
+    
+    <!-- 新建发货单对话框 -->
+    <el-dialog 
+        v-model="createDeliveryVisible" 
+        title="新建发货单" 
+        width="900px"
+        destroy-on-close
+    >
+        <el-form :model="deliveryForm" label-width="100px">
+            <el-tabs>
+                <el-tab-pane label="基本信息">
+                    <el-form-item label="客户名称" prop="customerName">
+                        <el-input v-model="deliveryForm.customerName" placeholder="请输入客户名称" />
+                    </el-form-item>
+                    
+                    <el-form-item label="联系电话" prop="customerPhone">
+                        <el-input v-model="deliveryForm.customerPhone" placeholder="请输入联系电话" />
+                    </el-form-item>
+                    
+                    <el-form-item label="收货地址" prop="deliveryAddress">
+                        <el-input 
+                            v-model="deliveryForm.deliveryAddress" 
+                            type="textarea" 
+                            :rows="2"
+                            placeholder="请输入收货地址"
+                        />
+                    </el-form-item>
+                    
+                    <el-form-item label="发货日期" prop="deliveryDate">
+                        <el-date-picker 
+                            v-model="deliveryForm.deliveryDate" 
+                            type="date" 
+                            placeholder="选择发货日期"
+                            style="width: 100%"
+                        />
+                    </el-form-item>
+                    
+                    <el-form-item label="备注" prop="remark">
+                        <el-input 
+                            v-model="deliveryForm.remark" 
+                            type="textarea" 
+                            :rows="3"
+                            placeholder="请输入备注信息"
+                        />
+                    </el-form-item>
+                </el-tab-pane>
+                
+                <el-tab-pane label="包裹管理">
+                    <div class="packages-header">
+                        <h3>包裹列表</h3>
+                        <el-button type="primary" @click="addPackage">添加包裹</el-button>
+                    </div>
+                    
+                    <div v-for="(pkg, pkgIndex) in deliveryForm.packages" :key="pkgIndex" class="package-card">
+                        <div class="package-header">
+                            <h4>包裹 #{{ pkgIndex + 1 }}</h4>
+                            <el-button 
+                                type="danger" 
+                                size="small" 
+                                @click="deletePackage(pkgIndex)"
+                                :disabled="deliveryForm.packages.length <= 1"
+                            >删除包裹</el-button>
+                        </div>
+                        
+                        <el-table :data="pkg.items" border style="margin-top: 10px;">
+                            <el-table-column prop="productName" label="商品名称" min-width="180">
+                    <template #default="scope">
+                                    <div>
+                                        {{ scope.row.product_name }}
+                                        <div class="service-tags">
+                                            <el-tag v-if="scope.row.packaging_price > 0" size="small" type="info">包装</el-tag>
+                                            <el-tag v-if="scope.row.logo_price > 0" size="small" type="info">打标</el-tag>
+                                            <el-tag v-if="scope.row.accessory_price > 0" size="small" type="info">辅料</el-tag>
+                                        </div>
+                                    </div>
+                    </template>
+                </el-table-column>
+                            <el-table-column prop="color" label="颜色" width="120" >
+                                <template #default="scope">
+                                    <el-tag size="small" type="info">{{ scope.row.color }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="quantity" label="数量" width="120">
+                                <template #default="scope">
+                                    <el-input-number 
+                                        v-model="scope.row.quantity" 
+                                        :min="1" 
+                                        :max="scope.row.max_quantity || 999"
+                                        controls-position="right"
+                                        size="small"
+                                        style="width: 100px;"
+                                    />
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="max_quantity" label="待发数量" width="120" >
+                                <template #default="scope">
+                                    <el-tag size="small" type="info">{{ scope.row.max_quantity }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="100">
+                                <template #default="scope">
+                                    <el-button 
+                                        type="danger" 
+                                        size="small" 
+                                        @click="removeItem(pkgIndex, scope.$index)"
+                                    >删除</el-button>
+                                </template>
+                            </el-table-column>
+            </el-table>
+                        
+                        <div class="add-item-row">
+                            <el-button 
+                                type="primary" 
+                                size="small" 
+                                @click="showAddProductPopup(pkgIndex)"
+                            >添加商品add</el-button>
+        </div>
+                    </div>
+                </el-tab-pane>
+                
+                <el-tab-pane label="打包图片">
+                    <el-upload
+                        action="#"
+                        list-type="picture-card"
+                        :auto-upload="false"
+                        :file-list="deliveryImageFiles"
+                        :on-preview="handlePictureCardPreview"
+                        :on-remove="handleDeliveryImageRemove"
+                    >
+                        <i class="el-icon-plus"></i>
+                    </el-upload>
+                </el-tab-pane>
+            </el-tabs>
+            
+            <div style="text-align: right; margin-top: 20px;">
+                <el-button @click="createDeliveryVisible = false">取消</el-button>
+                <el-button type="primary" @click="submitDeliveryForm">确定</el-button>
+            </div>
+        </el-form>
+    </el-dialog>
+    
+    <!-- 添加商品对话框 -->
+    <el-dialog v-model="addProductPopupVisible" title="选择商品" width="70%">
+        <div class="popup-header">
+            <el-button type="primary" @click="addAllProducts">添加全部</el-button>
+        </div>
+        
+        <el-table :data="availableProducts" border @selection-change="handleProductSelectionChange">
+            <el-table-column type="selection" width="55" >
+                <template #default="scope">
+                    <el-checkbox v-model="selectedProducts" :value="scope.row" />
+                </template>
+            </el-table-column>
+            <el-table-column prop="productName" label="商品名称" min-width="180">
+                <template #default="scope">
+                    <div>
+                        {{ scope.row.product_name }}
+                        <div class="service-tags">
+                            <el-tag v-if="scope.row.packaging_price > 0" size="small" type="info">包装</el-tag>
+                            <el-tag v-if="scope.row.logo_price > 0" size="small" type="info">打标</el-tag>
+                            <el-tag v-if="scope.row.accessory_price > 0" size="small" type="info">辅料</el-tag>
+                        </div>
+                    </div>
+                </template>
+            </el-table-column>
+            <el-table-column prop="color" label="颜色" width="120" >
+                <template #default="scope">
+                    <el-tag size="small" type="info">{{ scope.row.color }}</el-tag>
+                </template>
+            </el-table-column>
+            <el-table-column prop="max_quantity" label="待发数量" width="120" >
+                <template #default="scope">
+                    <el-tag size="small" type="info">{{ scope.row.max_quantity }}</el-tag>
+                </template>
+            </el-table-column>
+        </el-table>
+        
+        <template #footer>
+            <span class="dialog-footer">
+                <el-button @click="addProductPopupVisible = false">取消</el-button>
+                <el-button type="primary" @click="confirmAddProducts">确定</el-button>
+            </span>
+        </template>
+    </el-dialog>
+    
+    <!-- 添加代客下单对话框 -->
+    <el-dialog v-model="placeOrderDialogVisible" title="代客下单" width="60%">
+        <el-form :model="placeOrderForm" label-width="100px">
+            <el-form-item label="选择客户">
+                <el-select v-model="placeOrderForm.userId" placeholder="请选择客户" filterable remote
+                    :remote-method="searchUsers" :loading="userSearchLoading" style="width: 100%">
+                    <el-option v-for="user in userSearchResults" :key="user.id" :label="user.nickname || user.username"
+                        :value="user.id">
+                        <span>{{ user.nickname || user.username }}</span>
+                        <span style="float: right; color: #8492a6; font-size: 13px">{{ user.phone || '无电话' }}</span>
+                    </el-option>
+                </el-select>
+            </el-form-item>
+            
+            <el-form-item label="备注">
+                <el-input v-model="placeOrderForm.remark" type="textarea" rows="3" placeholder="请输入备注信息"></el-input>
+            </el-form-item>
+            
+            <el-form-item label="商品列表">
+                <div class="product-list">
+                    <el-table :data="placeOrderForm.items" border stripe>
+                        <el-table-column prop="name" label="商品名称" width="200">
+                            <template #default="scope">
+                                <div>
+                                    {{ scope.row.name }}
+                                    <div class="service-tags">
+                                        <el-tag v-if="scope.row.packaging" size="small" type="info">包装</el-tag>
+                                        <el-tag v-if="scope.row.logo" size="small" type="info">打标</el-tag>
+                                    </div>
+                                </div>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="quantity" label="数量" width="100"></el-table-column>
+                        <el-table-column prop="price" label="单价" width="120"></el-table-column>
+                        <el-table-column label="操作" width="100">
+                            <template #default="scope">
+                                <el-button type="danger" size="small" @click="removePlaceOrderItem(scope.$index)">删除</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                    
+                    <div class="add-product-button" style="margin-top: 10px;">
+                        <el-button type="primary" @click="showProductSelector">添加商品</el-button>
+                                    </div>
+                </div>
+            </el-form-item>
+        </el-form>
+        
+        <template #footer>
+            <div class="dialog-footer">
+                <el-button @click="placeOrderDialogVisible = false">取消</el-button>
+                <el-button type="primary" @click="submitPlaceOrder">提交订单</el-button>
+                                </div>
+                            </template>
+    </el-dialog>
+
+    <!-- 使用商品选择组件 -->
+    <product-selector 
+        v-model="productSelectorVisible" 
+        title="选择商品" 
+        @add-product="addPlaceOrderItem"
+        @close="productSelectorVisible = false">
+    </product-selector>
+                                </div>
 
 
 
@@ -2892,8 +3673,16 @@
                     // 配送单相关数据
                     deliverySearch: {
                         keyword: '',
-                        status: 'all'  // 默认显示全部
+                        timeRange: '',
+                        dateRange: null
                     },
+                    deliveryTabs: [
+                        { name: '待发货', status: 0, type: 'normal' },
+                        { name: '已发货', status: 1, type: 'normal' },
+                        { name: '已完成', status: 2, type: 'normal' },
+                        { name: '已取消', status: 3, type: 'normal' }
+                    ],
+                    currentDeliveryTab: 0,
                     deliveryLoading: false,
                     deliveryOrders: [],
                     deliveryPagination: {
@@ -2911,8 +3700,10 @@
                         deliveryDate: '',
                         deliveryTimeSlot: '',
                         remark: '',
-                        items: []
+                        items: [],
+                        packages:[]
                     },
+                    selectedOrder: null,  // 添加selectedOrder初始化
                     addItemDialogVisible: false,
                     addItemForm: {
                         productName: '',
@@ -3053,13 +3844,51 @@
                     tagDialogVisible: false,
                     dialogImageVisible: false,
                     videoDialogVisible: false,
+                    pendingOrdersVisible: false,
+                    pendingOrdersLoading: false,
+                    pendingOrders: [],
+                    pendingOrdersSearch: {
+                        keyword: ''
+                    },
+                    pendingOrdersPagination: {
+                        currentPage: 1,
+                        pageSize: 10,
+                        total: 0
+                    },
+                    selectedPurchaseOrder: null,
+                    deliveryImageFiles: [],
+                    itemSearchLoading: false,
+                    selectedDeliveries: [],
+                    canBatchShip: false,
+                    canBatchComplete: false,
+                    canBatchDelete: false,
+                    submitting: false,
+                    printData: {
+                        orderNumber: '',
+                        customerName: '',
+                        customerPhone: '',
+                        deliveryAddress: '',
+                        deliveryDate: '',
+                        items: []
+                    },
+                    printPreviewVisible: false,
+                    tableHeight: '400px',
+                    addProductPopupVisible: false,  // 添加这个属性
+                    currentPackageIndex: -1,        // 添加这个属性
+                    availableProducts: [],           // 添加这个属性
+                    
+                    // 代客下单相关数据
+                    placeOrderDialogVisible: false,
+                    placeOrderForm: {
+                        userId: null,
+                        remark: '',
+                        items: []
+                    },
+                    userSearchResults: [],
+                    userSearchLoading: false,
+                    productSelectorVisible: false,
                 }
             },
-           // computed: {
-            //    allTagOptions() {
-            //        return [...new Set([...this.presetTags, ...this.productForm.tags])]
-            //    }
-            //},
             created() {
                 // 检查登录状态
                 const token = localStorage.getItem('token');
@@ -3099,6 +3928,32 @@
                     } else if (index === '7') {
                         this.loadPushOrders();
                     }
+                },
+                calculateTotalPendingQuantity(order) {
+                    if (!order || !order.items || !Array.isArray(order.items)) {
+                        return 0;
+                    }
+                    
+                    let totalPending = 0;
+                    for (const item of order.items) {
+                        if (item.specs && Array.isArray(item.specs)) {
+                            // 如果有规格，计算所有规格的总数量
+                            for (const spec of item.specs) {
+                                // 如果有已发数量，则用总数量减去已发数量
+                                const pendingQty = spec.pending_quantity !== undefined 
+                                    ? spec.pending_quantity 
+                                    : (spec.quantity - (spec.shipped_quantity || 0));
+                                totalPending += pendingQty;
+                            }
+                        } else {
+                            // 没有规格，直接计算商品的待发数量
+                            const pendingQty = item.pending_quantity !== undefined 
+                                ? item.pending_quantity 
+                                : (item.quantity - (item.shipped_quantity || 0));
+                            totalPending += pendingQty;
+                        }
+                    }
+                    return totalPending;
                 },
                 handleLogout() {
                     // 清除登录信息
@@ -3202,110 +4057,125 @@
                         this.initSortable();
                     }, 300);
                 },
-
-                showCreateDeliveryDialog() {
-                    this.createDeliveryVisible = true;
-                    this.currentDeliveryOrder = null;
-                    this.deliveryForm = {
-                        customerName: '无',
-                        customerPhone: '13000000000',
-                        deliveryAddress: '无',
-                        deliveryDate: new Date().toISOString().split('T')[0],
-                        deliveryName: '猪猪',
-                        deliveryTimeSlot: 'morning',
-                        remark: '无',
-                        items: []
-                    };
-                },
-
-                handleEdit(row) {
-                    this.dialogType = 'edit'
-                    this.editingProductId = row.id
-                    
-                    // 解析数据
-                    const images = typeof row.images === 'string' ? JSON.parse(row.images) : (row.images || []);
-                    const specs = typeof row.specs === 'string' ? JSON.parse(row.specs) : (row.specs || []);
-                    const tags = typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags || []);
-                    
-                    // 设置文件列表
-                    this.fileList = images.map(url => ({
-                        name: url.split('/').pop(),
-                        url: this.handleImageUrl(url),
-                        status: 'success'
-                    }));
-                    
-                    // 更新预览图片列表
-                    this.previewSrcList = this.fileList.map(file => file.url);
-                    
-                    // 处理视频文件
-                    if (row.video_url) {
-                        const videoUrl = this.handleImageUrl(row.video_url);
-                        this.videoPreviewUrl = videoUrl;
-                        this.videoFileList = [{
-                            name: row.video_url.split('/').pop(),
-                            url: videoUrl,
-                            status: 'success'
-                        }];
-                    } else {
-                        this.videoPreviewUrl = '';
-                        this.videoFileList = [];
+                
+                // 加载待发货订单
+                async loadPendingOrders() {
+                    try {
+                        this.pendingOrdersLoading = true;
+                        const response = await axios.get('/purchase_orders', {
+                            params: {
+                                status: 1, // 状态1表示待发货
+                                page: this.pendingOrdersPagination.currentPage,
+                                pageSize: this.pendingOrdersPagination.pageSize,
+                                keyword: this.pendingOrdersSearch.keyword
+                            }
+                        });
+                        
+                        if (response.status === 200) {
+                            this.pendingOrders = response.data.orders;
+                            this.pendingOrdersPagination.total = response.data.total;
+                        } else {
+                            throw new Error('加载待发货订单失败');
+                        }
+                    } catch (error) {
+                        this.handleAxiosError(error, '加载待发货订单失败');
+                    } finally {
+                        this.pendingOrdersLoading = false;
                     }
-                    
-                    // 设置表单数据
-                    this.productForm = {
-                        id: row.id,
-                        name: row.name,
-                        price: parseFloat(row.price) || 0,
-                        cost_price: parseFloat(row.cost_price) || 0,
-                        price_b: parseFloat(row.price_b) || 0,
-                        price_c: parseFloat(row.price_c) || 0,
-                        price_d: parseFloat(row.price_d) || 0,
-                        description: row.description || '',
-                        style: parseInt(row.type) || 1,
-                        colors: specs.map(spec => spec.color),  // 提取颜色列表
-                        specs: specs,  // 保存完整的规格数据（包含库存）
-                        tags: tags,
-                        images: images,
-                        video_url: row.video_url || '',
-                        stock: parseInt(row.stock) || 0,
-                        stock_warning: parseInt(row.stock_warning) || 10,
-                        created_at: row.created_at,
-                        size: row.size || '',
-                        weight: parseFloat(row.weight) || 0,
-                        yarn: row.yarn || '',
-                        composition: row.composition || '',
-                        status: row.status || 1,
-                        is_public: row.is_public || 0
-                    };
+                },
+                
+                // 待发货订单搜索
+                handlePendingOrdersSearch() {
+                    this.pendingOrdersPagination.currentPage = 1;
+                    this.loadPendingOrders();
+                },
+                
+                // 待发货订单分页
+                handlePendingOrdersPageChange(page) {
+                    this.pendingOrdersPagination.currentPage = page;
+                    this.loadPendingOrders();
+                },
+                
+                // 从订单创建发货单
+                async createDeliveryFromOrder(order) {
+                    try {
+                        // 获取订单详情，确保有完整数据
+                        const response = await axios.get(`/purchase_orders/${order.id}`);
+                        this.handleOrderSelect(order);
+                        console.log('response:', response);
+                        if (response.status === 200) {
+                            const orderDetail = response.data.order;
+                            
+                            // 跳转到创建发货单页面
+                            this.pendingOrdersVisible = false;
+                            
+                            // 准备发货单表单数据
+                            this.createDeliveryVisible = true;
+                            this.deliveryForm = {
+                                customerName: orderDetail.user?.nickname || '无',
+                                customerPhone: orderDetail.user?.phone || '',
+                                deliveryAddress: orderDetail.user?.address || '',
+                                deliveryDate: new Date().toISOString().split('T')[0],
+                                deliveryName: '',
+                                remark: '',
+                                items: [],
+                                packages: [{
+                                    items: []
+                                }],
+                                orderNumber: orderDetail.order_number // 关联原订单号
+                            };
 
-                    // 解析标签数据
-                    const uniqueTags = [...new Set(tags)];
-                    
-                    // 更新预设标签的选中状态
-                    this.selectedPresetTags = uniqueTags.filter(tag => this.presetTags.includes(tag));
-                    
-                    // 设置预设颜色的选中状态
-                    this.selectedPresetColors = specs
-                        .map(spec => spec.color)
-                        .filter(color => this.presetColors.includes(color));
-
-                    // 设置自定义颜色
-                    this.customColorInput = specs.map(spec => spec.color);
-                    this.customColorOptions = specs
-                        .map(spec => spec.color)
-                        .filter(color => !this.presetColors.includes(color));
-
-                    // 直接设置所有标签到 productForm.tags
-                    this.productForm.tags = uniqueTags;
-
-                    // 最后再打开对话框
-                    this.$nextTick(() => {
-                        this.dialogVisible = true;
-                        // 延迟初始化排序功能，确保DOM已更新
-                        setTimeout(() => {
-                            this.initSortable();
-                        }, 300);
-                    });
+                            console.log("deliveryForm:",this.deliveryForm);
+                            console.log("orderDetail:",orderDetail);
+                            const firstPackage = this.deliveryForm.packages[0];
+                            // 自动添加所有商品到第一个包裹
+                            if (orderDetail.items && orderDetail.items.length > 0) {
+                                
+                                orderDetail.items.forEach(item => {
+                                    if (item.specs && item.specs.length > 0) {
+                                        item.specs.forEach(spec => {
+                                            console.log("spec:",spec);
+                                            if ((spec.quantity - spec.shipped_quantity) > 0) {
+                                                firstPackage.items.push({
+                                                    product_id: item.product_id,
+                                                    product_name: item.product_name,
+                                                    color: spec.color,
+                                                    quantity: spec.quantity,
+                                                    max_quantity: spec.quantity - spec.shipped_quantity,
+                                                    price: spec.price,
+                                                    spec_id: spec.id,
+                                                    packaging_price: spec.packaging_price || item.packaging_price || 0,
+                                                    logo_price: spec.logo_price || item.logo_price || 0,
+                                                    accessory_price: spec.accessory_price || item.accessory_price || 0
+                                                });
+                                            }
+                                        });
+                                    } else if (item.pending_quantity > 0) {
+                                        firstPackage.items.push({
+                                            product_id: item.product_id,
+                                            product_name: item.product_name,
+                                            color: '',
+                                            quantity: item.pending_quantity,
+                                            max_quantity: item.pending_quantity,
+                                            price: item.price,
+                                            packaging_price: item.packaging_price || 0,
+                                            logo_price: item.logo_price || 0,
+                                            accessory_price: item.accessory_price || 0
+                                        });
+                                    }
+                                });
+                                console.log("firstPackage:",firstPackage);
+                            }
+                            this.deliveryForm.packages[0] = firstPackage;
+                            
+                            // 初始化空的发货单表单
+                            // 之后用户需要手动添加要发货的商品
+                        } else {
+                            throw new Error('获取订单详情失败');
+                        }
+                    } catch (error) {
+                        this.handleAxiosError(error, '创建发货单失败');
+                    }
                 },
 
                 handleDeliveryPageChange(page, pageSize) {
@@ -3348,8 +4218,6 @@
                         .map(tag => tag.trim())
                         .filter(tag => tag !== '');
                 },
-                
-
                 // 添加图片压缩方法
                 async compressImage(file) {
                     return new Promise((resolve, reject) => {
@@ -3453,41 +4321,6 @@
                     }
                 },
 
-
-                handleUploadSuccess(response, file, fileList) {
-                    console.log('上传成功:', response);
-                    
-                    // 更新文件列表
-                    this.fileList = fileList.map(file => {
-                        return {
-                            name: file.name,
-                            url: file.url || (response.url && file.uid === file.uid ? response.url : ''),
-                            status: file.status,
-                            uid: file.uid
-                        };
-                    });
-                    
-                    // 更新商品图片列表
-                    if (response.url) {
-                        this.uploadedFiles++;
-                        if (!this.productForm.images) this.productForm.images = [];
-                        this.productForm.images.push(response.url);
-                        console.log('文件上传成功:', response.url);
-                    }
-                    
-                    // 检查是否所有文件都上传完成
-                    const allFilesUploaded = fileList.every(file => 
-                        file.status === 'success' || file.status === 'fail'
-                    );
-                    
-                    if (allFilesUploaded || this.uploadedFiles >= this.totalFiles) {
-                        this.closeLoading(); // 所有文件上传完成，关闭 loading
-                    }
-                    
-                    this.checkUploadComplete();
-                },
-
-
                 handlePictureCardPreview(file) {
                     console.log('预览图片:', file);
                     this.dialogImageUrl = this.handleImageUrl(file.url);
@@ -3496,8 +4329,7 @@
 
                 handleCancel() {
                     // 清空表单
-                    this.productForm = {
-                        id: '',
+                    this.productForm = {id: '', 
                         name: '',
                         price: 0,
                         cost_price: 0,
@@ -3596,11 +4428,6 @@
                         this.handleAxiosError(error, '保存商品失败');
                     }
                 },
-
-                getStyleLabel(styleValue) {
-                    const style = this.styleOptions.find(option => option.id === styleValue);
-                    return style ? style.name : '未知';
-                },
                 
                 getSpecs(specs) {
                     if (!specs) return [];
@@ -3613,11 +4440,6 @@
                         }
                     }
                     return Array.isArray(specs) ? specs : [];
-                },
-
-                getColors(specs) {
-                    const specArray = this.getSpecs(specs);
-                    return specArray.map(spec => spec.color);
                 },
 
                 handlePresetTagsChange(value) {
@@ -4123,35 +4945,100 @@
                     }
                 },
 
-                // 加载配送单列表
+                // 加载发货单列表
                 async loadDeliveryOrders() {
                     try {
-                        const [ordersResponse, statsResponse] = await Promise.all([
-                            axios.get('/delivery_orders', {
+                        this.deliveryLoading = true; // 显示加载状态
+                        
+                        // 根据当前标签页状态决定要请求的数据类型
+                        const currentTab = this.deliveryTabs[this.currentDeliveryTab];
+                        console.log('加载发货单数据，当前标签:', currentTab.name, '状态:', currentTab.status);
+                        console.log('当前页码:', this.deliveryPagination.currentPage);
+                        console.log('每页数量:', this.deliveryPagination.pageSize);
+                        
+                        let response;
+                        
+                        // 判断是否需要从采购单获取数据（待发货状态）
+                        if (currentTab.status === 0) {
+                            // 加载采购单作为待发货数据
+                            console.log('从采购单接口获取待发货数据');
+                            response = await axios.get('/purchase_orders', {
                                 params: {
+                                    status: 1, // 状态1表示待发货的采购单
                                     page: this.deliveryPagination.currentPage,
-                                    page_size: this.deliveryPagination.pageSize,
-                                    keyword: this.deliverySearch.keyword,
-                                    status: this.deliverySearch.status === 'all' ? '' : this.deliverySearch.status
+                                    pageSize: this.deliveryPagination.pageSize,
+                                    keyword: this.deliverySearch.keyword
                                 }
-                            }),
-                            axios.get('/delivery_orders/stats')
-                        ]);
-                        
-                        console.log('配送单列表:', ordersResponse.data);
-                        
-                        if (ordersResponse.status === 200) {
-                            this.deliveryOrders = ordersResponse.data.orders;
-                            this.deliveryPagination.total = ordersResponse.data.total;
+                            });
+                            console.log('采购单数据结果:', response.data);
+                        } else {
+                            // 加载常规发货单数据
+                            const params = {
+                                page: this.deliveryPagination.currentPage,
+                                pageSize: this.deliveryPagination.pageSize,
+                                keyword: this.deliverySearch.keyword
+                            };
+                            
+                            // 如果不是"全部"标签，则添加状态过滤
+                            if (currentTab.status !== 'all') {
+                                params.status = parseInt(currentTab.status);
+                            }
+                            
+                            console.log('请求发货单数据，参数:', params);
+                            response = await axios.get('/delivery_orders', { params });
+                            console.log('发货单数据结果:', response.data);
                         }
-
-                        if (statsResponse.status === 200) {
-                            this.deliveryStats = statsResponse.data.data;
-                            console.log('配送单统计:', this.deliveryStats);
+                        
+                        // 处理响应结果
+                        if (response.status === 200) {
+                            this.deliveryOrders = response.data.orders || [];
+                            this.deliveryPagination.total = response.data.total || 0;
+                        }
+                        
+                        // 同时加载待发货数量统计（如果不是在待发货标签页）
+                        if (currentTab.status !== 0) {
+                            this.loadPendingOrdersCount();
+                        }
+                        
+                    } catch (error) {
+                        console.error('加载发货单列表失败:', error);
+                        this.handleAxiosError(error, '加载发货单列表失败');
+                    } finally {
+                        this.deliveryLoading = false; // 停止加载中状态
+                    }
+                },
+                
+                // 加载待发货订单数量
+                async loadPendingOrdersCount() {
+                    try {
+                        const response = await axios.get('/purchase_orders', {
+                            params: {
+                                status: 1,
+                                pageSize: 1,
+                                page: 1
+                            }
+                        });
+                        
+                        if (response.status === 200) {
+                            this.deliveryStats.pending = response.data.total || 0;
                         }
                     } catch (error) {
-                        this.handleAxiosError(error, '加载配送单列表失败');
+                        console.error('加载待发货订单数量失败:', error);
                     }
+                },
+
+                // 切换发货单标签页
+                switchDeliveryTab(index) {
+                    const tabIndex = parseInt(index);
+                    console.log('开始切换标签页，当前索引:', tabIndex);
+                    console.log('切换到标签页:', this.deliveryTabs[tabIndex].name);
+                    this.currentDeliveryTab = tabIndex;
+                    this.deliveryPagination.currentPage = 1;
+                    this.deliveryOrders = []; // 清空数据
+                    this.deliveryLoading = true; // 显示加载中
+                    
+                    console.log('开始加载新标签页数据');
+                    this.loadDeliveryOrders();
                 },
 
                 // 搜索配送单
@@ -4163,9 +5050,9 @@
                 // 获取配送单状态类型
                 getDeliveryStatusType(status) {
                     const types = {
-                        0: 'warning',   // 待配送
-                        1: 'success',   // 配送中
-                        2: 'danger',    // 已完成
+                        0: 'warning',   // 待发货
+                        1: 'success',   // 已发货
+                        2: 'success',   // 已完成
                         3: 'info'       // 已取消
                     };
                     return types[status] || 'info';
@@ -4174,8 +5061,8 @@
                 // 获取配送单状态文本
                 getDeliveryStatusText(status) {
                     const texts = {
-                        0: '待配送',
-                        1: '配送中',
+                        0: '待发货',
+                        1: '已发货',
                         2: '已完成',
                         3: '已取消'
                     };
@@ -4185,34 +5072,34 @@
                 // 开始配送
                 async handleStartDelivery(order) {
                     try {
-                        await ElementPlus.ElMessageBox.confirm('确定要开始配送这个配送单吗？');
+                        await ElementPlus.ElMessageBox.confirm('确定要标记这个发货单为已发货吗？');
                         const response = await axios.put(`/delivery_orders/${order.id}/status`, {
                             status: 1
                         });
 
                         if (response.status === 200) {
-                            ElementPlus.ElMessage.success('配送单已开始配送');
+                            ElementPlus.ElMessage.success('发货单已标记为已发货');
                             this.loadDeliveryOrders();
                         }   
                     } catch (error) {
-                        this.handleAxiosError(error, '开始配送失败');
+                        this.handleAxiosError(error, '标记已发货失败');
                     }
                 },  
 
                 // 完成配送
                 async handleCompleteDelivery(order) {
                     try {
-                        await ElementPlus.ElMessageBox.confirm('确定要完成这个配送单吗？');
+                        await ElementPlus.ElMessageBox.confirm('确定要标记这个发货单为已完成吗？');
                         const response = await axios.put(`/delivery_orders/${order.id}/status`, {
                             status: 2
                         });
 
                         if (response.status === 200) {
-                            ElementPlus.ElMessage.success('配送单已完成');
+                            ElementPlus.ElMessage.success('发货单已标记为已完成');
                             this.loadDeliveryOrders();
                         }
                     } catch (error) {
-                        this.handleAxiosError(error, '完成配送失败');
+                        this.handleAxiosError(error, '标记已完成失败');
                     }   
                 },
 
@@ -4225,26 +5112,26 @@
                             this.viewDeliveryVisible = true;
                         }
                     } catch (error) {
-                        this.handleAxiosError(error, '获取配送单详情失败');
+                        this.handleAxiosError(error, '获取发货单详情失败');
                     }
                 },
 
                 // 接受配送单
                 async handleAcceptDelivery(order) {
                     try {
-                        await ElementPlus.ElMessageBox.confirm('确定要接受这个配送单吗？');
+                        await ElementPlus.ElMessageBox.confirm('确定要接受这个发货单吗？');
                         const response = await axios.put(`/delivery_orders/${order.id}/status`, {
                             status: 1
                         });
 
                         if (response.status === 200) {
-                            ElementPlus.ElMessage.success('配送单已接受');
+                            ElementPlus.ElMessage.success('发货单已接受');
                             this.deliveryDetailVisible = false;
                             this.loadDeliveryOrders();
                         }
                     } catch (error) {
                         if (error !== 'cancel') {
-                            this.handleAxiosError(error, '接受配送单失败');
+                            this.handleAxiosError(error, '接受发货单失败');
                         }
                     }
                 },
@@ -4252,7 +5139,7 @@
                 // 删除配送单
                 async handleDeleteDelivery(order) {
                     try {
-                        await ElementPlus.ElMessageBox.confirm('确定要删除这个配送单吗？', '警告', {
+                        await ElementPlus.ElMessageBox.confirm('确定要删除这个发货单吗？', '警告', {
                             confirmButtonText: '确定',
                             cancelButtonText: '取消',
                             type: 'warning'
@@ -4260,18 +5147,18 @@
 
                         const response = await axios.delete(`/delivery_orders/${order.id}`);
                         if (response.status === 200) {
-                            ElementPlus.ElMessage.success('配送单删除成功');
+                            ElementPlus.ElMessage.success('发货单删除成功');
                             this.loadDeliveryOrders();
                         }
                     } catch (error) {
-                        this.handleAxiosError(error, '删除配送单失败');
+                        this.handleAxiosError(error, '删除发货单失败');
                     }
                 },
 
                 // 取消配送单
                 async handleCancelDelivery(order) {
                     try {
-                        await ElementPlus.ElMessageBox.confirm('确定要取消这个配送单吗？', '警告', {
+                        await ElementPlus.ElMessageBox.confirm('确定要取消这个发货单吗？', '警告', {
                             confirmButtonText: '确定',
                             cancelButtonText: '取消',
                             type: 'warning'
@@ -4282,13 +5169,13 @@
                         });
 
                         if (response.status === 200) {
-                            ElementPlus.ElMessage.success('配送单已取消');
+                            ElementPlus.ElMessage.success('发货单已取消');
                             this.deliveryDetailVisible = false;
                             this.loadDeliveryOrders();
                         }
                     } catch (error) {
                         if (error !== 'cancel') {
-                            this.handleAxiosError(error, '取消配送单失败');
+                            this.handleAxiosError(error, '取消发货单失败');
                         }
                     }
                 },            
@@ -4296,100 +5183,85 @@
                 // 提交配送单表单
                 async submitDeliveryForm() {
                     try {
-                        const response = await axios.post('/delivery_orders', this.deliveryForm);
+                        // 检查是否有商品数量超过待发数量10%
+                        let hasExceededQuantity = false;
+                        let exceededItems = [];
+                        
+                        this.deliveryForm.packages.forEach((pkg, pkgIndex) => {
+                            pkg.items.forEach(item => {
+                                const qty = parseInt(item.quantity);
+                                const maxQty = parseInt(item.max_quantity);
+                                const exceedPercentage = ((qty - maxQty) / maxQty) * 100;
+                                
+                                if (exceedPercentage > 10) {
+                                    hasExceededQuantity = true;
+                                    exceededItems.push({
+                                        packageIndex: pkgIndex + 1,
+                                        productName: item.productName,
+                                        color: item.color || '默认',
+                                        quantity: qty,
+                                        maxQuantity: maxQty,
+                                        exceedPercentage: exceedPercentage.toFixed(1)
+                                    });
+                                }
+                            });
+                        });
+                        
+                        // 如果有超过待发数量10%的商品，显示确认对话框
+                        if (hasExceededQuantity) {
+                            let message = '以下商品数量超过待发数量10%：\n\n';
+                            exceededItems.forEach(item => {
+                                message += `包裹${item.packageIndex} - ${item.productName}${item.color ? `(${item.color})` : ''}\n`;
+                                message += `数量: ${item.quantity}, 待发: ${item.maxQuantity}, 超出: ${item.exceedPercentage}%\n\n`;
+                            });
+                            message += '是否确认提交？';
+                            
+                            await ElementPlus.ElMessageBox.confirm(message, '数量超出提示', {
+                                confirmButtonText: '确认提交',
+                                cancelButtonText: '返回修改',
+                                type: 'warning'
+                            });
+                        }
+                        
+                        // 按包裹ID分组商品
+                        const packageArrays = this.deliveryForm.packages.map(pkg => {
+                            return pkg.items
+                                .filter(item => parseInt(item.quantity) > 0)
+                                .map(item => ({
+                                    product_id: item.product_id,
+                                    quantity: parseInt(item.quantity),
+                                    color: item.color || '',
+                                    package_id: pkg.packageId,
+                                }));
+                        }).filter(items => items.length > 0);
+                        
+                        const deliveryData = {
+                            customer_name: this.deliveryForm.customerName,
+                            customer_id: this.selectedOrder.user.id,
+                            customer_phone: this.deliveryForm.customerPhone,
+                            customer_address: this.deliveryForm.deliveryAddress,
+                            order_number: this.deliveryForm.orderNumber,
+                            delivery_date: this.deliveryForm.deliveryDate,
+                            status: 1,
+                            remark: this.deliveryForm.remark || '',
+                            packages: packageArrays
+                        };
+                        
+                        const response = await axios.post('/delivery_orders', deliveryData);
                         if (response.status === 201 || response.status === 200) {
-                            ElementPlus.ElMessage.success('配送单已提交成功');
+                            ElementPlus.ElMessage.success('发货单已提交成功');
                             this.createDeliveryVisible = false;
                             this.loadDeliveryOrders();
                         }
                     } catch (error) {
-                        this.handleAxiosError(error, '提交配送单失败');
-                    }
-                },
-
-                // 显示添加商品对话框
-                showAddItemDialog() {
-                    this.addItemDialogVisible = true;
-                    this.selectedProducts = [];
-                },
-
-                // 搜索商品
-                async handleItemSearch() {
-                    try {
-                        const response = await axios.get('/products', {
-                            params: {
-                                keyword: this.itemSearch.keyword
-                            }
-                        });
-                        if (response.status === 200) {
-                            this.searchProducts = response.data.products.map(product => ({
-                                ...product,
-                                selected_color: '',
-                                quantity: 1,
-                                colors: this.getSpecs(product.specs).map(spec => spec.color)
-                            }));
+                        if (error !== 'cancel') {
+                            this.handleAxiosError(error, '提交发货单失败');
                         }
-                    } catch (error) {
-                        this.handleAxiosError(error, '搜索商品失败');
                     }
                 },
-
                 // 处理商品选择
                 handleProductSelectionChange(selection) {
                     this.selectedProducts = selection;
-                },
-
-                // 确认添加商品
-                confirmAddItems() {
-                    const validProducts = this.selectedProducts.filter(
-                        product => product.selected_color && product.quantity > 0
-                    );
-
-                    if (validProducts.length === 0) {
-                        ElementPlus.ElMessage.warning('请选择商品颜色和数量');
-                        return;
-                    }
-
-                    const newItems = validProducts.map(product => ({
-                        productId: product.id,
-                        productName: product.name,
-                        color: product.selected_color,
-                        quantity: parseInt(product.quantity),
-                        productImage: product.image || null
-                    }));
-
-                    // 检查是否有重复商品
-                    for (const newItem of newItems) {
-                        const existingItem = this.deliveryForm.items.find(
-                            item => item.productId === newItem.productId && item.color === newItem.color
-                        );
-                        if (existingItem) {
-                            existingItem.quantity += newItem.quantity;
-                        } else {
-                            this.deliveryForm.items.push(newItem);
-                        }
-                    }
-
-                    this.addItemDialogVisible = false;
-                    this.selectedProducts = [];
-                    this.itemSearch.keyword = '';
-                    this.searchProducts = [];
-                },
-
-                // 移除配送单商品
-                removeDeliveryItem(index) {
-                    this.deliveryForm.items.splice(index, 1);
-                    this.calculateTotal();
-                },
-
-                // 处理配送单图像上传
-                handleDeliveryImageSuccess(response, file) {
-                    // 实现处理配送单图像上传的逻辑
-                },
-
-                // 处理配送单图像上传前的逻辑
-                beforeDeliveryImageUpload(file) {
-                    // 实现处理配送单图像上传前的逻辑
                 },
 
                 async handleBatchDelete() {
@@ -4418,38 +5290,6 @@
                             this.handleAxiosError(error, '批量删除失败');
                         }
                     }
-                },
-                handleBatchUpdateStock() {
-                    this.batchStockDialogVisible = true;
-                },
-                async confirmBatchUpdateStock() {
-                    try {
-                        const productIds = this.selectedProducts.map(p => p.id);
-                        const response = await axios.post('/products/batch/stock', {
-                            product_ids: productIds,
-                            mode: this.batchStockForm.mode,
-                            value: this.batchStockForm.value
-                        });
-                        
-                        if (response.data.code === 200) {
-                            ElementPlus.ElMessage.success(response.data.message);
-                            this.batchStockDialogVisible = false;
-                            this.loadProducts();
-                        }
-                    } catch (error) {
-                        this.handleAxiosError(error, '修改库存失败');
-                    }
-                },
-                calculateTotal() {
-                    this.deliveryForm.total_quantity = this.deliveryForm.items.reduce(
-                        (sum, item) => sum + item.quantity, 
-                        0
-                    );
-                },
-                // 显示采购单列表
-                showPurchaseListDialog() {
-                    this.purchaseListVisible = true;
-                    this.loadPurchaseOrders();
                 },
                 async loadPushOrders() {
                     try {
@@ -4498,16 +5338,7 @@
                 getImageUrl(path) {
                     return this.httpsBaseUrl + path;
 
-                },
-                // 添加文件大小检查方法
-                checkFileSize(file) {
-                    const maxSize = 5 * 1024 * 1024; // 5MB 限制
-                    if (file.size > maxSize) {
-                        this.$message.error('文件大小不能超过5MB');
-                        return false;
-                    }
-                    return true;
-                },                
+                },          
              
                 // 处理图片链接
                 handleImageUrl(url) {
@@ -4528,12 +5359,6 @@
                         return '';
                     }
                 },
-
-                // 修改文件列表的显示方法
-                handleFilePreview(file) {
-                    const url = this.handleImageUrl(file.url);
-                    window.open(url);
-                },
                
 
                 // 处理文件变化
@@ -4546,33 +5371,6 @@
                 // 处理超出限制
                 handleExceed(files, fileList) {
                     this.$message.warning(`最多只能上传 9 张图片`);
-                },
-
-                // 提交表单时保存商品信息
-                async submitForm() {
-                    try {
-                        // 更新商品图片列表
-                        this.productForm.images = this.fileList.map(file => file.url);
-                        
-                        // 根据dialogType决定是新增还是编辑
-                        if (this.dialogType === 'add') {
-                            const response = await axios.post('/products', this.productForm);
-                            if (response.status === 200) {
-                                this.$message.success('添加商品成功');
-                                this.dialogVisible = false;
-                                this.loadProducts();
-                            }
-                    } else {
-                            const response = await axios.put(`/products/${this.productForm.id}`, this.productForm);
-                            if (response.status === 200) {
-                                this.$message.success('更新商品成功');
-                                this.dialogVisible = false;
-                                this.loadProducts();
-                            }
-                        }
-                    } catch (error) {
-                        this.handleAxiosError(error, this.dialogType === 'add' ? '添加商品失败' : '更新商品失败');
-                    }
                 },
                 // 处理文件移除
                 async handleRemove(file) {
@@ -4729,10 +5527,6 @@
                         ElementPlus.ElMessage.error('图片上传失败：' + error.message);
                         throw error;
                     }
-                },
-                handleFilterChange() {
-                    this.pagination.currentPage = 1; // 重置到第一页
-                    this.loadProducts();
                 },
                 handleDialogClose() {
                     this.loadProducts(); // 刷新商品列表数据
@@ -4924,14 +5718,6 @@
                         this.closeLoading(); // 所有文件处理完成，关闭 loading
                     }
                 },
-                // 显示 loading
-                showLoading() {
-                    this.imagesLoading = ElementPlus.ElLoading.service({
-                        lock: true,
-                        text: '图片上传中...',
-                        background: 'rgba(0, 0, 0, 0.7)'
-                    });
-                },
                 
                 // 关闭 loading
                 closeLoading() {
@@ -4941,7 +5727,7 @@
                     }
                 },
                 onImageLoad(e) {
-                   // console.log('图片加载完成', e);
+                    console.log('图片加载完成', e);
                 },
                 // 更新筛选选项
                 updateFilters() {
@@ -5008,19 +5794,6 @@
                     }
                 },
 
-                // 筛选方法
-                filterHandler(value, row, column) {
-                    const property = column.property;
-                    if (!value) return true;
-                    return row[property] === value;
-                },
-
-                // 重置筛选
-                resetFilters() {
-                    this.$refs.productTable.clearFilter();
-                    this.loadProducts();
-                },
-
                 // 重置特定筛选条件
                 resetSpecificFilter(filterType) {
                     this.selectedFilters[filterType] = null;
@@ -5045,11 +5818,6 @@
                     this.productFilter.page = 1;
                     // 重新加载数据
                     this.loadProducts();
-                },
-                selectColorImage(colorIndex) {
-                    this.currentColorIndex = colorIndex;
-                    this.selectedImageUrl = this.productForm.colors[colorIndex].imageUrl || '';
-                    this.colorImageDialogVisible = true;
                 },
 
                 selectImage(file) {
@@ -5086,9 +5854,6 @@
                     );
                 },
 
-                removeColorImage(colorIndex) {
-                    this.productForm.colors[colorIndex].imageUrl = '';
-                },
                 handleColorImageClick(index) {
                     this.currentColorIndex = index;
                     this.selectedImageUrl = this.productForm.specs[index].image || '';
@@ -5850,6 +6615,751 @@
                     }
                     this.handleProductSearch();
                 },
+                // 获取发货单对应状态的数量
+                getDeliveryCount(status) {
+                    if (status === 0) return this.deliveryStats.pending || 0;
+                    if (status === 1) return this.deliveryStats.delivering || 0;
+                    if (status === 2) return this.deliveryStats.completed || 0;
+                    if (status === 3) return this.deliveryStats.cancelled || 0;
+                    return 0;
+                },
+
+                // 获取发货单状态对应的徽章类型
+                getDeliveryBadgeType(status) {
+                    const types = {
+                        0: 'warning',
+                        1: 'success',
+                        2: 'primary',
+                        3: 'info'
+                    };
+                    return types[status] || 'info';
+                },
+
+                // 处理发货单页面大小变更
+                handleDeliverySizeChange(size) {
+                    this.deliveryPagination.pageSize = size;
+                    this.loadDeliveryOrders();
+                },
+
+                // 计算订单商品总数
+                getOrderItemsCount(order) {
+                    if (!order || !order.items || !Array.isArray(order.items)) {
+                        return 0;
+                    }
+                    
+                    let totalItems = 0;
+                    for (const item of order.items) {
+                        totalItems += parseInt(item.quantity) || 0;
+                    }
+                    return totalItems;
+                },
+
+                // 处理发货单选择变化
+                handleDeliverySelectionChange(selection) {
+                    this.selectedDeliveries = selection;
+                    
+                    // 判断是否可以进行批量操作
+                    this.canBatchShip = selection.some(item => item.status === 0);
+                    this.canBatchComplete = selection.some(item => item.status === 1);
+                    this.canBatchDelete = selection.some(item => [0, 3].includes(item.status));
+                },
+
+                // 批量标记为已发货
+                async batchMarkAsShipped() {
+                    try {
+                        const eligibleOrders = this.selectedDeliveries.filter(order => order.status === 0);
+                        if (eligibleOrders.length === 0) {
+                            ElementPlus.ElMessage.warning('没有可标记为已发货的订单');
+                            return;
+                        }
+                        
+                        await ElementPlus.ElMessageBox.confirm(
+                            `确定要将选中的 ${eligibleOrders.length} 个订单标记为已发货吗？`,
+                            '批量操作'
+                        );
+                        
+                        let successCount = 0;
+                        let failCount = 0;
+                        
+                        for (const order of eligibleOrders) {
+                            try {
+                                const response = await axios.put(`/delivery_orders/${order.id}/status`, {
+                                    status: 1
+                                });
+                                
+                                if (response.status === 200) {
+                                    successCount++;
+                                } else {
+                                    failCount++;
+                                }
+                            } catch (error) {
+                                console.error(`标记订单 ${order.id} 失败:`, error);
+                                failCount++;
+                            }
+                        }
+                        
+                        if (successCount > 0) {
+                            ElementPlus.ElMessage.success(`成功标记 ${successCount} 个订单为已发货`);
+                            this.loadDeliveryOrders();
+                        }
+                        
+                        if (failCount > 0) {
+                            ElementPlus.ElMessage.warning(`${failCount} 个订单标记失败`);
+                        }
+                    } catch (error) {
+                        if (error !== 'cancel') {
+                            console.error('批量标记失败:', error);
+                            ElementPlus.ElMessage.error('批量标记失败');
+                        }
+                    }
+                },
+
+                // 批量标记为已完成
+                async batchMarkAsCompleted() {
+                    try {
+                        const eligibleOrders = this.selectedDeliveries.filter(order => order.status === 1);
+                        if (eligibleOrders.length === 0) {
+                            ElementPlus.ElMessage.warning('没有可标记为已完成的订单');
+                            return;
+                        }
+                        
+                        await ElementPlus.ElMessageBox.confirm(
+                            `确定要将选中的 ${eligibleOrders.length} 个订单标记为已完成吗？`,
+                            '批量操作'
+                        );
+                        
+                        let successCount = 0;
+                        let failCount = 0;
+                        
+                        for (const order of eligibleOrders) {
+                            try {
+                                const response = await axios.put(`/delivery_orders/${order.id}/status`, {
+                                    status: 2
+                                });
+                                
+                                if (response.status === 200) {
+                                    successCount++;
+                                } else {
+                                    failCount++;
+                                }
+                            } catch (error) {
+                                console.error(`标记订单 ${order.id} 失败:`, error);
+                                failCount++;
+                            }
+                        }
+                        
+                        if (successCount > 0) {
+                            ElementPlus.ElMessage.success(`成功标记 ${successCount} 个订单为已完成`);
+                            this.loadDeliveryOrders();
+                        }
+                        
+                        if (failCount > 0) {
+                            ElementPlus.ElMessage.warning(`${failCount} 个订单标记失败`);
+                        }
+                    } catch (error) {
+                        if (error !== 'cancel') {
+                            console.error('批量标记失败:', error);
+                            ElementPlus.ElMessage.error('批量标记失败');
+                        }
+                    }
+                },
+
+                // 批量删除
+                async batchDelete() {
+                    try {
+                        const eligibleOrders = this.selectedDeliveries.filter(order => [0, 3].includes(order.status));
+                        if (eligibleOrders.length === 0) {
+                            ElementPlus.ElMessage.warning('没有可删除的订单');
+                            return;
+                        }
+                        
+                        await ElementPlus.ElMessageBox.confirm(
+                            `确定要删除选中的 ${eligibleOrders.length} 个订单吗？此操作不可恢复！`,
+                            '批量操作',
+                            {
+                                confirmButtonText: '确定删除',
+                                cancelButtonText: '取消',
+                                type: 'warning'
+                            }
+                        );
+                        
+                        let successCount = 0;
+                        let failCount = 0;
+                        
+                        for (const order of eligibleOrders) {
+                            try {
+                                const response = await axios.delete(`/delivery_orders/${order.id}`);
+                                
+                                if (response.status === 200) {
+                                    successCount++;
+                                } else {
+                                    failCount++;
+                                }
+                            } catch (error) {
+                                console.error(`删除订单 ${order.id} 失败:`, error);
+                                failCount++;
+                            }
+                        }
+                        
+                        if (successCount > 0) {
+                            ElementPlus.ElMessage.success(`成功删除 ${successCount} 个订单`);
+                            this.loadDeliveryOrders();
+                        }
+                        
+                        if (failCount > 0) {
+                            ElementPlus.ElMessage.warning(`${failCount} 个订单删除失败`);
+                        }
+                    } catch (error) {
+                        if (error !== 'cancel') {
+                            console.error('批量删除失败:', error);
+                            ElementPlus.ElMessage.error('批量删除失败');
+                        }
+                    }
+                },
+
+                // 批量打印
+                batchPrint() {
+                    if (this.selectedDeliveries.length === 0) {
+                        ElementPlus.ElMessage.warning('请先选择要打印的订单');
+                        return;
+                    }
+                    
+                    // 如果只选择了一个订单，直接打开打印预览
+                    if (this.selectedDeliveries.length === 1) {
+                        this.printDeliveryOrder(this.selectedDeliveries[0]);
+                        return;
+                    }
+                    
+                    // TODO: 实现批量打印功能
+                    ElementPlus.ElMessage.info('批量打印功能正在开发中...');
+                },
+
+                // 打印发货单
+                printDeliveryOrder(order) {
+                    // 设置打印数据
+                    this.printData = {
+                        orderNumber: order.orderNumber,
+                        customerName: order.customerName || order.user?.nickname || '未知客户',
+                        customerPhone: order.customerPhone || order.user?.phone || '无',
+                        deliveryAddress: order.deliveryAddress || '无',
+                        deliveryDate: order.deliveryDate || order.createdAt,
+                        items: order.items || [],
+                        remark: order.remark || ''
+                    };
+                    
+                    // 打开打印预览对话框
+                    this.printPreviewVisible = true;
+                },
+
+                // 执行打印操作
+                printDocument() {
+                    this.$nextTick(() => {
+                        const printContents = this.$refs.printContainer.innerHTML;
+                        const originalContents = document.body.innerHTML;
+                        
+                        // 创建一个新窗口进行打印
+                        const printWindow = window.open('', '_blank');
+                        printWindow.document.open();
+                        printWindow.document.write(`
+                            <html>
+                                <head>
+                                    <title>发货单打印</title>
+                                    <style>
+                                        @media print {
+                                            body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+                                            .print-header { text-align: center; margin-bottom: 20px; }
+                                            .print-header h2 { margin: 0; padding: 0; }
+                                            .print-order-number { margin-top: 5px; font-size: 14px; }
+                                            .print-info { margin-bottom: 20px; }
+                                            .print-info-item { margin-bottom: 8px; }
+                                            .print-label { font-weight: bold; min-width: 60px; display: inline-block; }
+                                            .print-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                                            .print-table th, .print-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                                            .print-table th { background-color: #f2f2f2; }
+                                            .print-footer { margin-top: 30px; }
+                                            .print-remark { margin-bottom: 20px; }
+                                            .print-signatures { display: flex; justify-content: space-between; margin-top: 50px; }
+                                            .print-signature { width: 45%; }
+                                            .signature-line { border-bottom: 1px solid #000; display: inline-block; width: 150px; }
+                                        }
+                                    </style>
+                                </head>
+                                <body>
+                                    ${printContents}
+                                </body>
+                            </html>
+                        `);
+                        printWindow.document.close();
+                        
+                        // 等待内容加载完成后打印
+                        printWindow.onload = function() {
+                            printWindow.print();
+                            printWindow.close();
+                        };
+                        
+                        this.printPreviewVisible = false;
+                    });
+                },
+
+                // 导出发货单数据
+                exportDeliveryData() {
+                    try {
+                        // 根据当前过滤条件准备数据
+                        const currentTab = this.deliveryTabs[this.currentDeliveryTab];
+                        const statusText = this.getDeliveryStatusText(currentTab.status);
+                        const fileName = `发货单数据_${statusText}_${new Date().toLocaleDateString()}.csv`;
+                        
+                        // 如果没有数据，提示用户
+                        if (this.deliveryOrders.length === 0) {
+                            ElementPlus.ElMessage.warning('没有可导出的数据');
+                            return;
+                        }
+                        
+                        // 准备CSV内容
+                        const headers = ['发货单号', '客户名称', '联系电话', '收货地址', '商品数量', '状态', '创建时间'];
+                        let csvContent = headers.join(',') + '\n';
+                        
+                        for (const order of this.deliveryOrders) {
+                            const row = [
+                                order.orderNumber,
+                                `"${order.customerName || order.user?.nickname || '未知'}"`,
+                                `"${order.customerPhone || order.user?.phone || '无'}"`,
+                                `"${order.deliveryAddress || '无'}"`,
+                                this.getOrderItemsCount(order),
+                                this.getDeliveryStatusText(order.status),
+                                formatDate(order.createdAt || order.created_at)
+                            ];
+                            csvContent += row.join(',') + '\n';
+                        }
+                        
+                        // 创建并下载CSV文件
+                        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                        const link = document.createElement('a');
+                        link.href = URL.createObjectURL(blob);
+                        link.setAttribute('download', fileName);
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        ElementPlus.ElMessage.success('数据导出成功');
+                    } catch (error) {
+                        console.error('导出数据失败:', error);
+                        ElementPlus.ElMessage.error('导出数据失败');
+                    }
+                },
+
+                // 处理发货单操作
+                handleDeliveryAction(command, order) {
+                    switch (command) {
+                        case 'view':
+                            this.viewDeliveryDetail(order);
+                            break;
+                        case 'start':
+                            this.handleStartDelivery(order);
+                            break;
+                        case 'complete':
+                            this.handleCompleteDelivery(order);
+                            break;
+                        case 'cancel':
+                            this.handleCancelDelivery(order);
+                            break;
+                        case 'print':
+                            this.printDeliveryOrder(order);
+                            break;
+                        case 'delete':
+                            this.handleDeleteDelivery(order);
+                            break;
+                    }
+                },
+
+                // 处理发货单图片变更
+                handleDeliveryImageChange(file, fileList) {
+                    this.deliveryImageFiles = fileList;
+                },
+
+                // 移除发货单图片
+                handleDeliveryImageRemove(file, fileList) {
+                    this.deliveryImageFiles = fileList;
+                },
+
+                // 计算订单总数量
+                calculateTotalQuantity() {
+                    let total = 0;
+                    if (this.deliveryForm.items && this.deliveryForm.items.length > 0) {
+                        for (const item of this.deliveryForm.items) {
+                            total += parseInt(item.quantity) || 0;
+                        }
+                    }
+                    return total;
+                },
+
+                // 显示创建发货单对话框
+                showCreateDeliveryDialog() {
+                    this.deliveryForm = {
+                        customerName: '',
+                        customerPhone: '',
+                        deliveryAddress: '',
+                        deliveryDate: new Date().toISOString().split('T')[0],
+                        remark: '',
+                        packages: [{
+                            items: []
+                        }]
+                    };
+                    this.deliveryImageFiles = [];
+                    this.createDeliveryVisible = true;
+                },
+                
+                // 添加包裹
+                addPackage() {
+                    // 初始化 deliveryForm 如果不存在
+                    if (!this.deliveryForm) {
+                        this.deliveryForm = {
+                            customerName: '',
+                            customerPhone: '',
+                            deliveryAddress: '',
+                            deliveryDate: new Date().toISOString().split('T')[0],
+                            remark: '',
+                            packages: []
+                        };
+                    }
+                    
+                    // 初始化 packages 数组如果不存在
+                    if (!this.deliveryForm.packages) {
+                        this.deliveryForm.packages = [];
+                    }
+                    
+                    // 创建新包裹并添加到数组中
+                    const newPackage = {
+                        items: []
+                    };
+                    this.deliveryForm.packages.push(newPackage);
+                    
+                    // 显示成功消息
+                    ElementPlus.ElMessage.success('新包裹已添加');
+                },
+                
+                // 删除包裹
+                deletePackage(index) {
+                    if (this.deliveryForm.packages.length <= 1) {
+                        ElementPlus.ElMessage.warning('至少保留一个包裹');
+                        return;
+                    }
+                    
+                    ElementPlus.ElMessageBox.confirm('确定要删除此包裹吗？', '提示', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).then(() => {
+                        this.deliveryForm.packages.splice(index, 1);
+                    }).catch(() => {});
+                },
+                
+                // 从包裹中移除商品
+                removeItem(packageIndex, itemIndex) {
+                    this.deliveryForm.packages[packageIndex].items.splice(itemIndex, 1);
+                },
+                
+                // 打开添加商品弹窗
+                showAddProductPopup(packageIndex) {   
+                    
+                    // 更新当前包裹索引
+                    this.currentPackageIndex = packageIndex;
+                    
+                    // 打开弹窗
+                    this.addProductPopupVisible = true;
+                    
+                    // 加载可选商品
+                    this.loadAvailableProducts();
+                    
+                },
+                
+                // 隐藏添加商品弹窗
+                hideAddProductPopup() {
+                    this.addProductPopupVisible = false;
+                },
+                
+                // 加载可选商品
+                async loadAvailableProducts() {
+                    try {
+                        // 获取当前包裹
+                        const currentPackage = this.deliveryForm.packages[this.currentPackageIndex];
+                        if (!currentPackage) {
+                            this.availableProducts = [];
+                            return;
+                        }
+
+                        // 创建一个Map来跟踪每个商品ID和颜色组合已分配的数量
+                        const allocatedQuantities = new Map();
+                        
+                        // 遍历所有包裹，统计已分配的商品数量
+                        this.deliveryForm.packages.forEach(pkg => {
+                            pkg.items.forEach(item => {
+                                const key = `${item.product_id}-${item.color}`;
+                                allocatedQuantities.set(
+                                    key, 
+                                    (allocatedQuantities.get(key) || 0) + item.quantity
+                                );
+                            });
+                        });
+
+                        // 从订单中筛选出可选商品
+                        const available = [];
+                        
+                        this.selectedOrder.items.forEach(orderItem => {
+                            if (orderItem.specs && orderItem.specs.length > 0) {
+                                // 处理有规格的商品
+                                orderItem.specs.forEach(spec => {
+                                    const key = `${orderItem.product_id}-${spec.color}`;
+                                    const allocatedQty = allocatedQuantities.get(key) || 0;
+                                    const pendingQuantity = spec.quantity - (spec.shipped_quantity || 0) - allocatedQty;
+                                    
+                                    if (pendingQuantity > 0) {
+                                        available.push({
+                                            product_id: orderItem.product_id,
+                                            product_name: orderItem.product_name,
+                                            color: spec.color,
+                                            max_quantity: pendingQuantity,
+                                            quantity: pendingQuantity,  // 添加quantity字段
+                                            price: spec.price,
+                                            packaging_price: spec.packaging_price || orderItem.packaging_price || 0,
+                                            logo_price: spec.logo_price || orderItem.logo_price || 0,
+                                            accessory_price: spec.accessory_price || orderItem.accessory_price || 0
+                                        });
+                                    }
+                                });
+                            } else {
+                                // 处理没有规格的商品
+                                const key = `${orderItem.product_id}-`;
+                                const allocatedQty = allocatedQuantities.get(key) || 0;
+                                const pendingQuantity = orderItem.quantity - (orderItem.shipped_quantity || 0) - allocatedQty;
+                                
+                                if (pendingQuantity > 0) {
+                                    available.push({
+                                        product_id: orderItem.product_id,
+                                        product_name: orderItem.product_name,
+                                        color: '',
+                                        max_quantity: pendingQuantity,
+                                        quantity: pendingQuantity,  // 添加quantity字段
+                                        price: orderItem.price,
+                                        packaging_price: orderItem.packaging_price || 0,
+                                        logo_price: orderItem.logo_price || 0,
+                                        accessory_price: orderItem.accessory_price || 0
+                                    });
+                                }
+                            }
+                        });
+
+                        this.availableProducts = available;
+                        
+                    } catch (error) {
+                        console.error('加载可选商品失败:', error);
+                        ElementPlus.ElMessage.error('加载商品失败');
+                        this.availableProducts = [];
+                    }
+                },
+                
+                // 添加所有可选商品
+                addAllProducts() {
+                    if (this.currentPackageIndex >= 0 && this.currentPackageIndex < this.deliveryForm.packages.length) {
+                        const currentPackage = this.deliveryForm.packages[this.currentPackageIndex];
+                        
+                        this.availableProducts.forEach(product => {
+                            currentPackage.items.push({
+                                ...product,
+                                quantity: product.max_quantity,
+                                packaging_price: product.packaging_price || 0,
+                                logo_price: product.logo_price || 0,
+                                accessory_price: product.accessory_price || 0
+                            });
+                        });
+                        
+                        this.addProductPopupVisible = false;
+                    }
+                },
+                
+                // 确认添加选中的商品
+                confirmAddProducts() {
+                    if (this.currentPackageIndex >= 0 && this.currentPackageIndex < this.deliveryForm.packages.length) {
+                        const currentPackage = this.deliveryForm.packages[this.currentPackageIndex];
+                        
+                        if (!this.selectedProducts || this.selectedProducts.length === 0) {
+                            ElementPlus.ElMessage.warning('请选择要添加的商品');
+                            return;
+                        }
+                        
+                        this.selectedProducts.forEach(product => {
+                            currentPackage.items.push({
+                                product_id: product.product_id,
+                                product_name: product.product_name,
+                                color: product.color || '',
+                                quantity: product.max_quantity,
+                                max_quantity: product.max_quantity,
+                                price: product.price,
+                                packaging_price: product.packaging_price || 0,
+                                logo_price: product.logo_price || 0,
+                                accessory_price: product.accessory_price || 0
+                            });
+                        });
+                        
+                        this.addProductPopupVisible = false;
+                        this.selectedProducts = []; // 清空选择
+                        ElementPlus.ElMessage.success('商品添加成功');
+                    }
+                },
+                
+                getDeliveryStatusTextWithPartial(order) {
+                    const status = this.currentDeliveryTab;
+                    console.log(status);
+                    if (status === 0 || status === null) {
+                        // 如果是待发货状态，检查是否部分发货
+                        if (order.total_shipped_quantity > 0 && order.total_shipped_quantity < order.total_quantity) {
+                            return '已部分发货';
+                        }
+                        return '待发货';
+                    } else if (status === 1) {
+                        return '已发货';
+                    } else if (status === 2) {
+                        return '已完成';
+                    } else if (status === 3) {
+                        return '已取消';
+                    } else {
+                        return '未知状态';
+                    }
+                },
+                hideAddProductPopup() {
+                    this.addProductPopupVisible = false;
+                },
+                // 处理选择订单
+                handleOrderSelect(order) {
+                    this.selectedOrder = order;
+                    // 重置包裹列表
+                    this.deliveryForm.packages = [];
+                    // 创建第一个包裹
+                    this.deliveryForm.packages.push({
+                        items: []
+                    });
+                    // 关闭订单选择弹窗
+                    this.purchaseListVisible = false;
+                },
+                handleDelivery(order) {
+                    // 处理发货的逻辑
+                    console.log('发货:', order);
+                },
+                cancelDelivery(order) {
+                    // 处理取消发货的逻辑
+                    console.log('取消发货:', order);
+                },
+                completeDelivery(order) {
+                    // 处理完成发货的逻辑
+                    console.log('完成发货:', order);
+                },
+                printDelivery(order) {
+                    // 处理打印发货单的逻辑
+                    console.log('打印发货单:', order);
+                },
+                
+                // 显示代客下单对话框
+                showPlaceOrderDialog() {
+                    this.placeOrderForm = {
+                        userId: null,
+                        remark: '',
+                        items: []
+                    };
+                    this.placeOrderDialogVisible = true;
+                },
+                
+                // 搜索用户
+                async searchUsers(query) {
+                    if (query.length < 1) {
+                        this.userSearchResults = [];
+                        return;
+                    }
+                    
+                    try {
+                        this.userSearchLoading = true;
+                        const response = await axios.get('/users/search', {
+                            params: {
+                                keyword: query
+                            }
+                        });
+                        
+                        if (response.status === 200) {
+                            this.userSearchResults = response.data.users;
+                        }
+                    } catch (error) {
+                        console.error('搜索用户失败:', error);
+                        ElementPlus.ElMessage.error('搜索用户失败');
+                    } finally {
+                        this.userSearchLoading = false;
+                    }
+                },
+                
+                // 显示商品选择器
+                showProductSelector() {
+                    this.productSelectorVisible = true;
+                },
+                
+                // 添加商品到代客下单表单
+                addPlaceOrderItem(product) {
+                    // 检查是否已存在相同商品
+                    const existingItem = this.placeOrderForm.items.find(item => 
+                        item.name === product.name && 
+                        item.color === product.color && 
+                        item.packaging === product.packaging && 
+                        item.logo === product.logo
+                    );
+                    
+                    if (existingItem) {
+                        // 如果存在相同商品，更新数量
+                        existingItem.quantity += product.quantity;
+                    } else {
+                        // 如果不存在，添加新商品
+                        this.placeOrderForm.items.push({
+                            product_id: product.id,
+                            name: product.name,
+                            color: product.color,
+                            quantity: parseInt(product.quantity),
+                            price: parseFloat(product.price),
+                            packaging: product.packaging,
+                            packaging_price: parseFloat(product.packaging_price),
+                            logo_price: parseFloat(product.logo_price)
+                        });
+                    }
+                },
+                
+                // 从代客下单表单中移除商品
+                removePlaceOrderItem(index) {
+                    this.placeOrderForm.items.splice(index, 1);
+                },
+                
+                // 提交代客下单
+                async submitPlaceOrder() {
+                    if (!this.placeOrderForm.userId) {
+                        ElementPlus.ElMessage.warning('请选择客户');
+                        return;
+                    }
+                    
+                    if (this.placeOrderForm.items.length === 0) {
+                        ElementPlus.ElMessage.warning('请添加至少一个商品');
+                        return;
+                    }
+                    
+                    try {
+                        const response = await axios.post('/purchase_orders', {
+                            user_id: this.placeOrderForm.userId,
+                            remark: this.placeOrderForm.remark,
+                            items: this.placeOrderForm.items
+                        });
+                        
+                        if (response.status === 200) {
+                            ElementPlus.ElMessage.success('代客下单成功');
+                            this.placeOrderDialogVisible = false;
+                            this.loadPurchaseOrders();
+                        }
+                    } catch (error) {
+                        this.handleAxiosError(error, '代客下单失败');
+                    }
+                },
             }
         })
         
@@ -5864,8 +7374,10 @@
             zIndex: 3000
         })
 
+        // 注册商品选择器组件
+        app.component('product-selector', window.ProductSelector);
+
         app.mount('#app')
     </script>
 </body>
-
 </html>

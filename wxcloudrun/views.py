@@ -2025,8 +2025,10 @@ def create_purchase_order(user_id):
         order_number = datetime.now().strftime('%Y%m%d%H%M%S') + str(random.randint(1000, 9999))
         
         # 计算总金额
-        total_amount = sum(item.get('price', 0) * item.get('quantity', 0) for item in data['items'])
-        
+        total_amount = sum(float(item.get('price', 0)) * float(item.get('quantity', 0)) for item in data['items'])
+        print(len(data['items']))
+        if len(data['items']) == 0:
+            return jsonify({'error': '请添加至少一个商品'}), 400
         # 创建采购单
         purchase_order = PurchaseOrder(
             order_number=order_number,
@@ -2096,7 +2098,7 @@ def get_purchase_orders(user_id):
         )
         
         # 如果不是管理员，限制只能查看自己的订单
-        if current_user.user_type != 1:  # 假设 1 表示管理员
+        if current_user.role != 'admin' and current_user.role != 'STAFF':  # 假设 1 表示管理员
             query = query.filter(PurchaseOrder.user_id == user_id)
             
         # 添加筛选条件
@@ -2137,13 +2139,23 @@ def get_purchase_orders(user_id):
                                 'id': product.id,
                                 'product_id': product.id,
                                 'product_name': product.name,
-                                'image': json.loads(product.images)[0] if product.images else None,
+                                'image': (lambda x: json.loads(x)[0] if x and x.strip() and json.loads(x) else None)(product.images),
                                 'total_quantity': 0,
                                 'total_amount': 0,
                                 'total_amount_extra': 0,
                                 'specs': []
                             }
                         
+                        # 查询该商品规格的已发货数量
+                        shipped_quantity = 0
+                        if item.color:
+                            # 查询相同商品ID和颜色的已发货数量
+                            shipped_result = db.session.query(func.sum(DeliveryItem.quantity)).filter(
+                                DeliveryItem.product_id == item.product_id,
+                                DeliveryItem.color == item.color,
+                                DeliveryItem.order_number == order.order_number
+                            ).scalar()
+                            shipped_quantity = int(shipped_result) if shipped_result is not None else 0
                         # 添加当前规格信息
                         spec_info = {
                             'color': item.color,
@@ -2153,10 +2165,11 @@ def get_purchase_orders(user_id):
                             'accessory_price': float(item.accessory_price),  # 辅料价格
                             'packaging_price': float(item.packaging_price),  # 包装价格
                             'total': item.quantity * float(item.price),
-                            'extra': item.quantity * (float(item.logo_price) + float(item.accessory_price) + float(item.packaging_price))
+                            'extra': item.quantity * (float(item.logo_price) + float(item.accessory_price) + float(item.packaging_price)),
+                            'shipped_quantity': shipped_quantity  # 添加已发货数量字段
                         }
                         merged_products[item.product_id]['specs'].append(spec_info)
-                        
+                       
                         # 更新总数量和总金额
                         merged_products[item.product_id]['total_quantity'] += item.quantity
                         merged_products[item.product_id]['total_amount'] += spec_info['total']
@@ -2175,6 +2188,7 @@ def get_purchase_orders(user_id):
                     'total_amount': sum(item['total_amount'] for item in merged_products.values()),
                     'total_quantity': sum(item['total_quantity'] for item in merged_products.values()),
                     'total_amount_extra': sum(item['total_amount_extra'] for item in merged_products.values()),
+                    'total_shipped_quantity': sum(sum(spec['shipped_quantity'] for spec in item['specs']) for item in merged_products.values()),
                     'status': order.status,
                     'remark': order.remark,
                     'created_at': order.created_at.isoformat() if order.created_at else None,
@@ -2558,7 +2572,9 @@ def create_delivery_order(user_id):
         
         # 创建发货单
         delivery_order = DeliveryOrder(
+
             order_number=data['order_number'],
+            customer_id=data['customer_id'],
             customer_name=data['customer_name'],
             customer_phone=data['customer_phone'],
             delivery_address=data['customer_address'],
@@ -2689,7 +2705,10 @@ def get_delivery_orders(user_id):
                 'created_by': order.created_by,
                 'delivery_by': order.delivery_by,
                 'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else [],
-                'items': items
+                'items': items,
+                'total_quantity': sum(item['quantity'] for item in items),
+                'total_items': len(items)  # 添加商品总数字段
+                
             })
             
         return jsonify({
@@ -2831,19 +2850,31 @@ def get_delivery_orders_stats(user_id):
         print('开始获取配送单统计数据')
         print('='*50)
         
+        # 检查用户类型
+        user = User.query.get(user_id)
+        user_type = user.user_type
+        
         # 使用SQLAlchemy进行数据库操作
-        total = db.session.query(func.count(DeliveryOrder.id)).scalar()
-        pending = db.session.query(func.count(DeliveryOrder.id)).filter(DeliveryOrder.status == 0).scalar()
-        delivering = db.session.query(func.count(DeliveryOrder.id)).filter(DeliveryOrder.status == 1).scalar()
-        completed = db.session.query(func.count(DeliveryOrder.id)).filter(DeliveryOrder.status == 2).scalar()
-        cancelled = db.session.query(func.count(DeliveryOrder.id)).filter(DeliveryOrder.status == 3).scalar()
+        # 构建基础查询
+        query = db.session.query(DeliveryOrder.id)
+        
+        # 非管理员只能看到自己的数据
+        if user_type != 1:
+            query = query.filter(DeliveryOrder.customer_id == user_id)
+            
+        # 统计数据
+        total = query.count()
+        pending = query.filter(DeliveryOrder.status == 0).count()
+        delivering = query.filter(DeliveryOrder.status == 1).count()
+        completed = query.filter(DeliveryOrder.status == 2).count()
+        cancelled = query.filter(DeliveryOrder.status == 3).count()
         
         stats = {
-            '': total or 0,  # 全部
-            0: pending or 0,  # 已开单
-            1: delivering or 0,  # 已发货
-            2: completed or 0,  # 已完成
-            3: cancelled or 0  # 已取消
+            'all': total or 0,  # 全部
+            '0': pending or 0,  # 已开单
+            '1': delivering or 0,  # 已发货
+            '2': completed or 0,  # 已完成
+            '3': cancelled or 0  # 已取消
         }
         
         print('统计数据:', json.dumps(stats, indent=2))
@@ -3248,8 +3279,20 @@ def get_purchase_order(user_id, order_id):
                     'accessory_price': float(item.accessory_price),  # 辅料价格
                     'packaging_price': float(item.packaging_price),  # 包装价格
                     'total': item.quantity * float(item.price),
-                    'extra': item.quantity * (float(item.logo_price) + float(item.accessory_price) + float(item.packaging_price))
+                    'extra': item.quantity * (float(item.logo_price) + float(item.accessory_price) + float(item.packaging_price)),
+                    'shipped_quantity': 0  # 添加已发货数量字段，默认为0
                 }
+                
+                # 查询该商品规格的已发货数量
+                if item.color:
+                    # 查询相同商品ID和颜色的已发货数量
+                    shipped_result = db.session.query(func.sum(DeliveryItem.quantity)).filter(
+                        DeliveryItem.product_id == item.product_id,
+                        DeliveryItem.color == item.color,
+                        DeliveryItem.order_number == order.order_number
+                    ).scalar()
+                    spec_info['shipped_quantity'] = int(shipped_result) if shipped_result is not None else 0
+                
                 merged_products[item.product_id]['specs'].append(spec_info)
                 
                 # 更新总数量和总金额
@@ -3270,6 +3313,7 @@ def get_purchase_order(user_id, order_id):
             'total_amount': sum(item['total_amount'] for item in merged_products.values()),
             'total_quantity': sum(item['total_quantity'] for item in merged_products.values()),
             'total_amount_extra': sum(item['total_amount_extra'] for item in merged_products.values()),
+            'total_shipped_quantity': sum(sum(spec['shipped_quantity'] for spec in item['specs']) for item in merged_products.values()),
             'status': order.status,
             'remark': order.remark,
             'created_at': order.created_at.isoformat() if order.created_at else None,
@@ -4613,9 +4657,9 @@ def search_users(user_id):
                 User.nickname.like(search),
                 User.phone.like(search)
             ),
-            User.user_type == 0,  # 只搜索普通用户
+            User.role == 'customer',  # 只搜索客户角色
             User.status == 1      # 只搜索启用状态的用户
-        ).limit(10).all()
+        ).limit(20).all()
         
         # 格式化返回数据
         users_list = [{
@@ -7140,13 +7184,7 @@ def get_shipped_quantities(user_id):
             
         # 只统计指定状态的订单
         query = query.join(DeliveryOrder, DeliveryItem.delivery_id == DeliveryOrder.id)
-        
-        # 如果提供了状态参数，则过滤指定状态的订单，否则默认只计算已发货和已完成的
-        #if status:
-        #    query = query.filter(DeliveryOrder.status.in_(status))
-        #else:
-        #    # 默认只统计已发货和已完成状态的订单
-        #    query = query.filter(DeliveryOrder.status.in_(['shipped', 'completed']))
+
             
         result = query.scalar()
         shipped_quantity = int(result) if result is not None else 0
@@ -7162,3 +7200,4 @@ def get_shipped_quantities(user_id):
         print(f'获取已发货数量失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '获取已发货数量失败'}), 500
+    

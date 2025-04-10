@@ -214,6 +214,7 @@ class DeliveryOrder(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)  # 主键 发货订单ID
     order_number = db.Column(db.String(50), nullable=False)  # 关联采购单号
+    customer_id = db.Column(db.Integer, nullable=False)  # 关联客户ID
     customer_name = db.Column(db.String(80), nullable=False)  # 客户姓名
     customer_phone = db.Column(db.String(20))  # 客户电话
     delivery_address = db.Column(db.String(255))  # 配送地址
