@@ -2238,7 +2238,7 @@
                                         {{ scope.row.order_number }}
                                     </template>
                                 </el-table-column>
-                                <el-table-column prop="user_name" label="采购人" width="120">
+                                <el-table-column prop="user_name" label="客户名称" width="120">
                                     <template #default="scope">
                                         {{ scope.row.user_name }}
 
@@ -2273,9 +2273,9 @@
                                                 @click="viewPurchaseDetail(scope.row)">查看</el-button>
                                             <el-button v-if="scope.row.status === 0" size="small" type="success"
                                                 @click="handleAcceptPurchase(scope.row)">接受</el-button>
-                                            <el-button v-if="scope.row.status === 0" size="small" type="danger"
+                                            <el-button v-if="scope.row.status === 0 || scope.row.status === 1" size="small" type="danger"
                                                 @click="handleCancelPurchase(scope.row)">取消</el-button>
-                                            <el-button size="small" type="primary"
+                                            <el-button size="small" type="primary" v-if="false"
                                                 @click="createFromPurchase(scope.row.id)">生成配送单</el-button>
                                         </el-button-group>
                                     </template>
@@ -2291,78 +2291,78 @@
 
                             <!-- 采购单详情对话框 -->
                             <el-dialog v-model="purchaseDetailVisible" title="采购单详情" width="60%">
-                                <div v-if="currentPurchaseOrder">
+                                <div v-if="currentPurchaseOrder && currentPurchaseOrder.order">
                                     <el-descriptions :column="2" border>
-                                        <el-descriptions-item label="采购单号">{{ currentPurchaseOrder.order_number
-                                            }}</el-descriptions-item>
-                                        <el-descriptions-item label="创建时间">{{
-                                            formatDate(currentPurchaseOrder.created_at) }}</el-descriptions-item>
+                                        <el-descriptions-item label="采购单号">{{ currentPurchaseOrder.order.order_number }}</el-descriptions-item>
+                                        <el-descriptions-item label="创建时间">{{ formatDate(currentPurchaseOrder.order.created_at) }}</el-descriptions-item>
                                         <el-descriptions-item label="状态">
-                                            <el-tag :type="getPurchaseStatusType(currentPurchaseOrder.status)">
-                                                {{ getPurchaseStatusText(currentPurchaseOrder.status) }}
+                                            <el-tag :type="getPurchaseStatusType(currentPurchaseOrder.order.status)">
+                                                {{ getPurchaseStatusText(currentPurchaseOrder.order.status) }}
                                             </el-tag>
                                         </el-descriptions-item>
-                                        <el-descriptions-item label="采购人">{{ currentPurchaseOrder.user_name
-                                            }}</el-descriptions-item>
-                                        <el-descriptions-item label="备注" :span="2">{{ currentPurchaseOrder.remark || '无'
-                                            }}</el-descriptions-item>
+                                        <el-descriptions-item label="客户信息">
+                                            <div>
+                                                <div>姓名：{{ currentPurchaseOrder.order.user?.nickname || currentPurchaseOrder.order.user?.username || '未知' }}</div>
+                                                <div>电话：{{ currentPurchaseOrder.order.user?.phone || '无' }}</div>
+                                            </div>
+                                        </el-descriptions-item>
+                                        <el-descriptions-item label="备注" :span="2">{{ currentPurchaseOrder.order.remark || '无' }}</el-descriptions-item>
                                     </el-descriptions>
 
                                     <el-divider>商品明细</el-divider>
 
-                                    <el-table :data="currentPurchaseOrder.items" border>
+                                    <el-table :data="currentPurchaseOrder.order.items" border>
                                         <el-table-column prop="product_name" label="商品名称" >
                                             <template #default="scope">
                                                 {{ scope.row.product_name }}
                                             </template>
                                         </el-table-column>
-                                        <el-table-column prop="product_name" label="款号"  width="60">
+                                        <el-table-column prop="product_id" label="款号"  width="60">
                                             <template #default="scope">
                                                 {{ scope.row.product_id }}
                                             </template>
                                         </el-table-column>
-                                        <el-table-column prop="quantity" label="数量" width="60" >
+                                        <el-table-column label="规格" width="200">
                                             <template #default="scope">
-                                                {{ scope.row.quantity }}
+                                                <div v-for="spec in scope.row.specs" :key="spec.color">
+                                                    <el-tag size="small" style="margin: 2px">
+                                                        {{ spec.color }}: {{ spec.quantity }}件
+                                                        <span v-if="spec.shipped_quantity > 0">(已发{{ spec.shipped_quantity }}件)</span>
+                                                    </el-tag>
+                                                </div>
                                             </template>
                                         </el-table-column>
-                                        <el-table-column prop="color" label="颜色" width="60" >
+                                        <el-table-column label="总数量" width="80">
                                             <template #default="scope">
-                                                {{ scope.row.color }}
+                                                {{ scope.row.total_quantity }}
                                             </template>
                                         </el-table-column>
-                                        <el-table-column prop="price" label="单价" width="120">
+                                        <el-table-column label="总金额" width="120">
                                             <template #default="scope">
-                                                ¥{{ scope.row.price }}
-                                            </template>
-                                        </el-table-column>
-                                        <el-table-column label="小计" width="120">
-                                            <template #default="scope">
-                                                ¥{{ (scope.row.price * scope.row.quantity).toFixed(2) }}
+                                                ¥{{ scope.row.total_amount.toFixed(2) }}
                                             </template>
                                         </el-table-column>
                                     </el-table>
 
-                                    <div class="total-amount">
-                                        总金额：¥{{ currentPurchaseOrder.total_amount }}
+                                    <div class="total-amount" style="margin-top: 20px;">
+                                        <div>商品总数：{{ currentPurchaseOrder.order.total_quantity }}件</div>
+                                        <div>总金额：¥{{ currentPurchaseOrder.order.total_amount.toFixed(2) }}</div>
+                                    </div>
                                     <div class="dialog-footer" style="margin-top: 20px; text-align: right;">
                                         <el-button @click="purchaseDetailVisible = false">关闭</el-button>
                                         <el-button 
-                                            v-if="currentPurchaseOrder.status === 0"
+                                            v-if="currentPurchaseOrder.order.status === 0"
                                             type="success" 
-                                            @click="handleAcceptPurchase(currentPurchaseOrder)">
+                                            @click="handleAcceptPurchase(currentPurchaseOrder.order)">
                                             接受订单
                                         </el-button>
                                         <el-button 
-                                            v-if="currentPurchaseOrder.status === 0"
+                                            v-if="currentPurchaseOrder.order.status === 0 || currentPurchaseOrder.order.status === 1"
                                             type="danger"
-                                            @click="handleCancelPurchase(currentPurchaseOrder)">
+                                            @click="handleCancelPurchase(currentPurchaseOrder.order)">
                                             取消订单
                                         </el-button>
                                     </div>
-                                        
-                                    </div>
-                                    
                                 </div>
                             </el-dialog>
                         </div>
@@ -2463,7 +2463,7 @@
                                         <template #default="scope">
                                             <div>总数量: {{ scope.row.total_quantity }}件</div>
                                             <!-- 只在待发货状态(status=0)显示待发数量 -->
-                                            <div v-if="scope.row.status === 0">待发数量: {{ scope.row.total_quantity - scope.row.total_shipped_quantity }}件</div>
+                                            <div v-if="scope.row.total_quantity - scope.row.total_shipped_quantity > 0">待发数量: {{ scope.row.total_quantity - scope.row.total_shipped_quantity }}件</div>
                                             <!-- 商品明细提示，所有状态都显示 -->
                                             <div class="secondary-text" v-if="scope.row.items && scope.row.items.length > 0">
                                                 <el-tooltip placement="top">
@@ -3063,13 +3063,10 @@
                 <div class="detail-section">
                     <h3 class="section-title">基本信息</h3>
         <el-descriptions :column="2" border>
-                        <el-descriptions-item label="客户名称">{{ currentDeliveryOrder?.customerName }}</el-descriptions-item>
-                        <el-descriptions-item label="联系电话">{{ currentDeliveryOrder?.customerPhone }}</el-descriptions-item>
-                        <el-descriptions-item label="收货地址" :span="2">
-                            {{ currentDeliveryOrder?.deliveryAddress }}
-            </el-descriptions-item>
-                        <el-descriptions-item label="发货日期">{{ formatDate(currentDeliveryOrder?.deliveryDate) }}</el-descriptions-item>
-                        <el-descriptions-item label="创建时间">{{ formatDate(currentDeliveryOrder?.createdAt) }}</el-descriptions-item>
+                        <el-descriptions-item label="客户名称">{{ currentDeliveryOrder?.order.customerName }}</el-descriptions-item>
+                        <el-descriptions-item label="联系电话">{{ currentDeliveryOrder?.order.customerPhone }}</el-descriptions-item>
+                        <el-descriptions-item label="发货日期">{{ formatDate(currentDeliveryOrder?.order.deliveryDate) }}</el-descriptions-item>
+                        <el-descriptions-item label="创建时间">{{ formatDate(currentDeliveryOrder?.order.createdAt) }}</el-descriptions-item>
         </el-descriptions>
                 </div>
                 
@@ -3083,27 +3080,21 @@
                 <div class="detail-section">
                     <h3 class="section-title">商品清单</h3>
                     <el-table :data="currentDeliveryOrder?.items || []" border style="width: 100%">
-                        <el-table-column prop="productId" label="商品ID" width="120" >
-                            <template #default="scope">
-                                <el-tag size="small" type="info">{{ scope.row.product_id }}</el-tag>
-                            </template>
+                        <el-table-column prop="product_id" label="商品ID" width="120" >                          
                         </el-table-column>
-                        <el-table-column prop="productName" label="商品名称" min-width="180" >
-                            <template #default="scope">
-                                <el-tag size="small" type="info">{{ scope.row.product_name }}</el-tag>
-                            </template>
+                        <el-table-column prop="product_name" label="商品名称" min-width="180" >
                         </el-table-column>
-                        <el-table-column prop="color" label="颜色" width="120" >
-                            <template #default="scope">
-                                <el-tag size="small" type="info">{{ scope.row.color }}</el-tag>
-                            </template>
+                        <el-table-column prop="color" label="颜色" width="120" >                         
                         </el-table-column>
-                        <el-table-column prop="quantity" label="数量" width="100" >
-                            <template #default="scope">
-                                <el-tag size="small" type="info">{{ scope.row.quantity }}</el-tag>
-                            </template>
+                        <el-table-column prop="quantity" label="数量" width="100" >                         
+                        </el-table-column>
+                        <!--el-table-column prop="price" label="单价" width="100" v-if = "userInfo.role === 'admin'"-->                         
                         </el-table-column>
                     </el-table>
+                    <div class="total-info" style="margin-top: 20px;" >
+                        <div class="section-title">总件数: {{ currentDeliveryOrder?.order.total_quantity }}</div>
+                        <div class="section-title" v-if = "userInfo.role === 'admin'">总价: {{ currentDeliveryOrder?.order.totalPrice }}</div>
+                    </div>
                 </div>
                 
                 <div class="detail-section" v-if="currentDeliveryOrder?.deliveryImage && currentDeliveryOrder.deliveryImage.length > 0">
@@ -3135,17 +3126,15 @@
         destroy-on-close
     >
         <el-form :model="deliveryForm" label-width="100px">
-            <el-tabs>
+            <el-tabs v-model="activeTab">
                 <el-tab-pane label="基本信息">
                     <el-form-item label="客户名称" prop="customerName">
                         <el-input v-model="deliveryForm.customerName" placeholder="请输入客户名称" />
-                    </el-form-item>
-                    
-                    <el-form-item label="联系电话" prop="customerPhone">
+                    </el-form-item>                    
+                    <el-form-item label="联系电话" prop="customerPhone" >
                         <el-input v-model="deliveryForm.customerPhone" placeholder="请输入联系电话" />
-                    </el-form-item>
-                    
-                    <el-form-item label="收货地址" prop="deliveryAddress">
+                    </el-form-item>                    
+                    <el-form-item label="收货地址" prop="deliveryAddress" >
                         <el-input 
                             v-model="deliveryForm.deliveryAddress" 
                             type="textarea" 
@@ -3171,7 +3160,7 @@
                             placeholder="请输入备注信息"
                         />
                     </el-form-item>
-                </el-tab-pane>
+                                    </el-tab-pane>
                 
                 <el-tab-pane label="包裹管理">
                     <div class="packages-header">
@@ -3201,7 +3190,7 @@
                                             <el-tag v-if="scope.row.accessory_price > 0" size="small" type="info">辅料</el-tag>
                                         </div>
                                     </div>
-                    </template>
+                                        </template>
                 </el-table-column>
                             <el-table-column prop="color" label="颜色" width="120" >
                                 <template #default="scope">
@@ -3257,8 +3246,8 @@
                     >
                         <i class="el-icon-plus"></i>
                     </el-upload>
-                </el-tab-pane>
-            </el-tabs>
+                                    </el-tab-pane>
+                                </el-tabs>
             
             <div style="text-align: right; margin-top: 20px;">
                 <el-button @click="createDeliveryVisible = false">取消</el-button>
@@ -3315,14 +3304,18 @@
     <el-dialog v-model="placeOrderDialogVisible" title="代客下单" width="60%">
         <el-form :model="placeOrderForm" label-width="100px">
             <el-form-item label="选择客户">
-                <el-select v-model="placeOrderForm.userId" placeholder="请选择客户" filterable remote
-                    :remote-method="searchUsers" :loading="userSearchLoading" style="width: 100%">
+                <el-select v-model="placeOrderForm.userId" placeholder="请选择客户（搜索客户）" filterable remote
+                    :remote-method="searchUsers" :loading="userSearchLoading" style="width: 100%"
+                    @change="handleUserSelect">
                     <el-option v-for="user in userSearchResults" :key="user.id" :label="user.nickname || user.username"
                         :value="user.id">
                         <span>{{ user.nickname || user.username }}</span>
                         <span style="float: right; color: #8492a6; font-size: 13px">{{ user.phone || '无电话' }}</span>
                     </el-option>
                 </el-select>
+                <div v-if="selectedUserType" style="margin-top: 8px;">
+                    客户类型: <el-tag size="small" :type="selectedUserType === 'A类客户' ? 'success' : selectedUserType === 'B类客户' ? 'warning' : selectedUserType === 'C类客户' ? 'info' : 'primary'">{{ selectedUserType }}</el-tag>
+                </div>
             </el-form-item>
             
             <el-form-item label="备注">
@@ -3337,14 +3330,34 @@
                                 <div>
                                     {{ scope.row.name }}
                                     <div class="service-tags">
-                                        <el-tag v-if="scope.row.packaging" size="small" type="info">包装</el-tag>
-                                        <el-tag v-if="scope.row.logo" size="small" type="info">打标</el-tag>
+                                        <el-tag v-if="scope.row.packaging_price > 0" size="small" type="info">包装</el-tag>
+                                        <el-tag v-if="scope.row.logo_price > 0" size="small" type="info">打标</el-tag>
                                     </div>
                                 </div>
                             </template>
                         </el-table-column>
-                        <el-table-column prop="quantity" label="数量" width="100"></el-table-column>
-                        <el-table-column prop="price" label="单价" width="120"></el-table-column>
+                        <el-table-column prop="quantity" label="数量" width="110">
+                            <template #default="scope">
+                                <el-input-number 
+                                    v-model="scope.row.quantity" 
+                                    :min="1" 
+                                    size="small"
+                                    controls-position="right"
+                                    style="width: 95px;"
+                                />
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="price" label="单价" width="110" v-if = "userInfo.role === 'admin'">
+                            <template #default="scope">
+                                <el-input-number 
+                                    v-model="scope.row.price" 
+                                    :min="0" 
+                                    size="small"
+                                    controls-position="right"
+                                    style="width: 95px;"
+                                />
+                            </template>
+                        </el-table-column>
                         <el-table-column label="操作" width="100">
                             <template #default="scope">
                                 <el-button type="danger" size="small" @click="removePlaceOrderItem(scope.$index)">删除</el-button>
@@ -3372,7 +3385,9 @@
         v-model="productSelectorVisible" 
         title="选择商品" 
         @add-product="addPlaceOrderItem"
-        @close="productSelectorVisible = false">
+        @close="productSelectorVisible = false"
+        :user-type="placeOrderForm.userType"
+    >
     </product-selector>
                                 </div>
 
@@ -3473,7 +3488,7 @@
         const app = Vue.createApp({
             data() {
                 return {
-                    activeTab: '0',
+                    activeTab: '1',
                     userInfo: JSON.parse(localStorage.getItem('userInfo') || '{}'),
                     productSearch: {
                         keyword: '',
@@ -3887,6 +3902,7 @@
                     userSearchResults: [],
                     userSearchLoading: false,
                     productSelectorVisible: false,
+                    selectedUserType: '', // 添加选中用户类型
                 }
             },
             created() {
@@ -4064,7 +4080,7 @@
                         this.pendingOrdersLoading = true;
                         const response = await axios.get('/purchase_orders', {
                             params: {
-                                status: 1, // 状态1表示待发货
+                                status: [0, 1], // 状态0表示待处理，1表示待发货
                                 page: this.pendingOrdersPagination.currentPage,
                                 pageSize: this.pendingOrdersPagination.pageSize,
                                 keyword: this.pendingOrdersSearch.keyword
@@ -4723,6 +4739,7 @@
                         const response = await axios.get('/user/profile');
                         if (response.status === 200 && response.data.user) {
                             this.userInfo = response.data.user;
+                            console.log('当前用户信息:', this.userInfo);
                             // 更新本地存储
                             localStorage.setItem('userInfo', JSON.stringify(response.data.user));
 
@@ -4964,7 +4981,7 @@
                             console.log('从采购单接口获取待发货数据');
                             response = await axios.get('/purchase_orders', {
                                 params: {
-                                    status: 1, // 状态1表示待发货的采购单
+                                    status: [0, 1], // 状态0表示待处理，1表示待发货
                                     page: this.deliveryPagination.currentPage,
                                     pageSize: this.deliveryPagination.pageSize,
                                     keyword: this.deliverySearch.keyword
@@ -5013,7 +5030,7 @@
                     try {
                         const response = await axios.get('/purchase_orders', {
                             params: {
-                                status: 1,
+                                status: [0, 1], // 状态0表示待处理，1表示待发货
                                 pageSize: 1,
                                 page: 1
                             }
@@ -5107,6 +5124,7 @@
                 async viewDeliveryDetail(order) {
                     try {
                         const response = await axios.get(`/delivery_orders/${order.id}`);
+                        console.log('获取发货单详情',response);
                         if (response.status === 200) {
                             this.currentDeliveryOrder = response.data;
                             this.viewDeliveryVisible = true;
@@ -5238,8 +5256,8 @@
                         const deliveryData = {
                             customer_name: this.deliveryForm.customerName,
                             customer_id: this.selectedOrder.user.id,
-                            customer_phone: this.deliveryForm.customerPhone,
-                            customer_address: this.deliveryForm.deliveryAddress,
+                            customer_phone: this.deliveryForm.customerPhone || '',
+                            customer_address: this.deliveryForm.deliveryAddress || '',
                             order_number: this.deliveryForm.orderNumber,
                             delivery_date: this.deliveryForm.deliveryDate,
                             status: 1,
@@ -7296,6 +7314,11 @@
                 
                 // 显示商品选择器
                 showProductSelector() {
+                    //如果没有选择用户，则提示用户选择用户
+                    if (!this.placeOrderForm.userId) {
+                        ElementPlus.ElMessage.warning('请先选择客户');
+                        return;
+                    }
                     this.productSelectorVisible = true;
                 },
                 
@@ -7320,16 +7343,34 @@
                             color: product.color,
                             quantity: parseInt(product.quantity),
                             price: parseFloat(product.price),
-                            packaging: product.packaging,
                             packaging_price: parseFloat(product.packaging_price),
-                            logo_price: parseFloat(product.logo_price)
+                            logo_price: parseFloat(product.logo_price),
+                            packaging: product.packaging,
+                            logo: product.logo
                         });
+                        console.log('placeOrderForm.items',this.placeOrderForm.items)
                     }
                 },
                 
                 // 从代客下单表单中移除商品
                 removePlaceOrderItem(index) {
                     this.placeOrderForm.items.splice(index, 1);
+                },
+
+                // 处理用户选择
+                handleUserSelect(userId) {
+                    const user_type  = this.userSearchResults.find(user => user.id === userId).user_type
+                    this.placeOrderForm.userType = user_type
+                    console.log(user_type);
+                    if (user_type === 2) {
+                        this.selectedUserType = 'A类客户';
+                    } else if (user_type === 3) {
+                        this.selectedUserType = 'B类客户';
+                    } else if (user_type === 4) {
+                        this.selectedUserType = 'C类客户';
+                    } else {
+                        this.selectedUserType = '零售客户';
+                    }
                 },
                 
                 // 提交代客下单
@@ -7348,16 +7389,25 @@
                         const response = await axios.post('/purchase_orders', {
                             user_id: this.placeOrderForm.userId,
                             remark: this.placeOrderForm.remark,
-                            items: this.placeOrderForm.items
+                            items: this.placeOrderForm.items,
+                            status: 1
                         });
-                        
-                        if (response.status === 200) {
+                        console.log(response);
+                        if (response.status === 200 || response.status === 201) {
                             ElementPlus.ElMessage.success('代客下单成功');
-                            this.placeOrderDialogVisible = false;
-                            this.loadPurchaseOrders();
+                            this.placeOrderDialogVisible = false;  // 关闭窗口
+                            this.placeOrderForm = {  // 重置表单
+                                userId: null,
+                                remark: '',
+                                items: []
+                            };
+                            this.loadPurchaseOrders();  // 刷新采购单列表
+                        } else {
+                            throw new Error(response.data.error || '提交失败');
                         }
                     } catch (error) {
-                        this.handleAxiosError(error, '代客下单失败');
+                        console.error('代客下单失败:', error);
+                        ElementPlus.ElMessage.error(error.response?.data?.error || error.message || '代客下单失败，请重试');
                     }
                 },
             }

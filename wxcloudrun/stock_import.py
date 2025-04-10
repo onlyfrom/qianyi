@@ -349,27 +349,86 @@ def import_users_and_push(user_id):
                             # 获取商品的所有颜色规格
                             specs = json.loads(product.specs) if product.specs else []
                             
-                            # 为每个颜色创建推送单商品
-                            for spec in specs:
-                                color = spec.get('color', '默认')
-                                
-                                # 创建推送单商品
-                                push_order_product = PushOrderProduct(
-                                    push_order_id=push_order.id,
-                                    product_id=product.id,
-                                    price=price,
-                                    specs=json.dumps([spec]),  # 只包含当前颜色
-                                    specs_info=json.dumps({'color': color}),
-                                    created_at=datetime.now()
-                                )
-                                db.session.add(push_order_product)
+                            # 创建推送单商品，使用所有颜色规格
+                            push_order_product = PushOrderProduct(
+                                push_order_id=push_order.id,
+                                product_id=product.id,
+                                price=price,
+                                specs=json.dumps(specs),  # 包含所有颜色规格
+                                created_at=datetime.now()
+                            )
+                            db.session.add(push_order_product)
                             
                             created_push_orders += 1
                             print(f'为商品 {product_name} 创建推送单商品，价格: {price}')
                         else:
-                            error_msg = f'商品 {product_name} 不存在，跳过'
-                            print(f'警告: {error_msg}')
-                            errors.append(error_msg)
+                            # 商品不存在，创建新商品
+                            try:
+                                # 生成新的商品ID，格式为 Tp{number}
+                                all_products = Product.query.filter(
+                                    Product.id.like('Tp%')
+                                ).all()
+                                
+                                max_number = 0
+                                for p in all_products:
+                                    try:
+                                        num = int(p.id[2:])  # 跳过 'Tp' 前缀
+                                        if num > max_number:
+                                            max_number = num
+                                    except ValueError:
+                                        continue
+                                
+                                new_number = str(max_number + 1)
+                                new_product_id = f'Tp{new_number}'
+                                print(f'创建新商品ID: {new_product_id}')
+                                
+                                # 创建默认规格
+                                specs = [{
+                                    'color': '默认',
+                                    'image': '',
+                                    'stock': 0
+                                }]
+                                
+                                # 创建新商品
+                                new_product = Product(
+                                    id=new_product_id,
+                                    name=product_name,
+                                    description='',
+                                    price=price,
+                                    price_b=price,
+                                    price_c=price,
+                                    price_d=price,
+                                    specs=json.dumps(specs),
+                                    type=5,  # 默认类型
+                                    created_at=datetime.now(),
+                                    is_public=0,  # 默认不公开
+                                    status=0,  # 默认下架
+                                    size='-',
+                                    weight='0',
+                                    yarn='-',
+                                    composition='-'
+                                )
+                                db.session.add(new_product)
+                                db.session.flush()  # 获取新商品的ID
+                                
+                                # 创建推送单商品
+                                push_order_product = PushOrderProduct(
+                                    push_order_id=push_order.id,
+                                    product_id=new_product.id,
+                                    price=price,
+                                    specs=json.dumps(specs),
+                                    created_at=datetime.now()
+                                )
+                                db.session.add(push_order_product)
+                                
+                                created_push_orders += 1
+                                print(f'创建新商品 {product_name} 并创建推送单商品，价格: {price}')
+                            except Exception as e:
+                                error_msg = f'创建商品 {product_name} 失败: {str(e)}'
+                                print(f'错误: {error_msg}')
+                                errors.append(error_msg)
+                                db.session.rollback()
+                                continue
                     
                     # 提交当前客户的事务
                     db.session.commit()

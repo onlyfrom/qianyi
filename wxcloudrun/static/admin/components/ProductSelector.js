@@ -31,14 +31,14 @@ const ProductSelector = {
                             </el-select>
                         </template>
                     </el-table-column>
-                    <el-table-column label="数量" width="160">
+                    <el-table-column label="数量" width="160" v-if="false">
                         <template #default="scope">
                             <el-input-number v-model="scope.row.quantity" :min="1" :max="999"></el-input-number>
                         </template>
                     </el-table-column>
-                    <el-table-column label="价格" width="120">
+                    <el-table-column label="价格" width="80">
                         <template #default="scope">
-                            <el-input v-model="scope.row.price" type="number" :min="0"></el-input>
+                            {{ getPrice(scope.row) }}
                         </template>
                     </el-table-column>
                     <el-table-column label="操作" width="100">
@@ -84,6 +84,10 @@ const ProductSelector = {
         existingItems: {
             type: Array,
             default: () => []
+        },
+        userType: {
+            type: Number,
+            default: 0
         }
     },
     
@@ -129,8 +133,6 @@ const ProductSelector = {
                         selectedColor: p.color || (this.getProductSpecs(p)[0]?.color || '默认'),
                         quantity: p.quantity || 1,
                         price: p.price || 0,
-                        packaging: this.globalPackaging,
-                        logo: this.globalLogo,
                         packaging_price: this.globalPackaging ? 0.3 : 0,
                         logo_price: this.globalLogo ? 0.3 : 0
                     }));
@@ -214,20 +216,49 @@ const ProductSelector = {
             });
         },
         
+        getPrice(product) {
+            // 根据用户类型返回对应价格
+            switch(this.userType) {
+                case 2:  // A类客户
+                    return product.price_b === 0 ? '讯价' : '¥' + product.price_b;
+                case 3:  // B类客户
+                    return product.price_c === 0 ? '讯价' : '¥' + product.price_c;
+                case 4:  // C类客户
+                    return product.price_d === 0 ? '讯价' : '¥' + product.price_d;
+                default: // 其他客户
+                    return product.price === 0 ? '讯价' : '¥' + product.price;
+            }
+        },
+        
         addProduct(product) {
             if (!product.selectedColor) {
                 ElementPlus.ElMessage.warning('请选择颜色');
                 return;
             }
             
+            // 获取对应价格
+            let price;
+            switch(this.userType) {
+                case 2:
+                    price = product.price_b;
+                    break;
+                case 3:
+                    price = product.price_c;
+                    break;
+                case 4:
+                    price = product.price_d;
+                    break;
+                default:
+                    price = product.price;
+            }
+            
             // 检查是否已存在相同商品（包括名称、颜色和附加服务）
             const existingItemIndex = this.existingItems.findIndex(item => 
-                item.id === product.id && 
+                item.id  === product.id && 
                 item.color === product.selectedColor &&
                 item.packaging === product.packaging &&
                 item.logo === product.logo
             );
-            
             if (existingItemIndex !== -1) {
                 // 如果商品已存在，更新数量
                 this.$emit('update-quantity', {
@@ -241,14 +272,13 @@ const ProductSelector = {
                     id: product.id,
                     name: product.name,
                     color: product.selectedColor,
-                    quantity: product.quantity,
-                    price: product.price,
+                    quantity: 10,
+                    price: price,
                     packaging: product.packaging,
                     logo: product.logo,
                     packaging_price: product.packaging_price,
                     logo_price: product.logo_price
-                };
-                
+                };           
                 this.$emit('add-product', selectedProduct);
                 ElementPlus.ElMessage.success('商品已添加');
             }

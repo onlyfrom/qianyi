@@ -2030,11 +2030,13 @@ def create_purchase_order(user_id):
         if len(data['items']) == 0:
             return jsonify({'error': '请添加至少一个商品'}), 400
         # 创建采购单
+
+        status = data.get('status', 0)
         purchase_order = PurchaseOrder(
             order_number=order_number,
             user_id=data.get('user_id', user_id),            
             total_amount=total_amount,
-            status=0,  # 初始状态：待处理
+            status=status,  # 初始状态：待处理
             remark=data.get('remark', ''),
             created_at=datetime.now()
         )
@@ -2481,7 +2483,8 @@ def get_user_profile(user_id):
             'address': user.address,
             'contact': user.contact,
             'avatar': user.avatar,
-            'user_type': user.user_type
+            'user_type': user.user_type,
+            'role': user.role
         }
         print(f'获取用户信息成功: {user_info}')
         return jsonify({'user': user_info}), 200
@@ -2563,53 +2566,85 @@ def create_delivery_order(user_id):
             return jsonify({'error': '无效的请求数据'}), 400
         
         # 验证必要字段
-        required_fields = ['customer_name', 'customer_phone', 'packages']
+        required_fields = ['customer_name', 'packages']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'error': f'缺少必要字段: {field}'}), 400
         
-        # 生成订单号
+        # 开始数据库事务
+        db.session.begin_nested()
         
-        # 创建发货单
-        delivery_order = DeliveryOrder(
-
-            order_number=data['order_number'],
-            customer_id=data['customer_id'],
-            customer_name=data['customer_name'],
-            customer_phone=data['customer_phone'],
-            delivery_address=data['customer_address'],
-            delivery_date=data.get('delivery_date'),
-            delivery_time_slot=data.get('delivery_time_slot'),
-            status=data.get('status', 1),  # 待配送
-            remark=data.get('remark', ''),
-            created_by=user_id,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        
-        db.session.add(delivery_order)
-        db.session.flush()  # 刷新会话以获取delivery_order.id，但不提交事务
-        
-        # 添加商品
-        for items in data['packages']:
-            for item in items:
-                delivery_item = DeliveryItem(
-                    delivery_id=delivery_order.id,
-                    product_id=item['product_id'],
-                    order_number=data['order_number'],
-                    quantity=item['quantity'],
-                    color=item.get('color', ''),
-                    package_id=item.get('package_id', 0)
-                )
-                db.session.add(delivery_item)
-
         try:
+            # 创建发货单
+            delivery_order = DeliveryOrder(
+                order_number=data['order_number'],
+                customer_id=data['customer_id'],
+                customer_name=data['customer_name'],
+                customer_phone=data['customer_phone'],
+                delivery_address=data['customer_address'],
+                delivery_date=data.get('delivery_date'),
+                delivery_time_slot=data.get('delivery_time_slot'),
+                status=data.get('status', 1),  # 待配送
+                remark=data.get('remark', ''),
+                created_by=user_id,
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            
+            db.session.add(delivery_order)
+            db.session.flush()  # 刷新会话以获取delivery_order.id
+            
+            # 添加商品并更新库存
+            for items in data['packages']:
+                for item in items:
+                    # 查找商品
+                    product = Product.query.get(item['product_id'])
+                    if not product:
+                        raise ValueError(f'商品不存在: {item["product_id"]}')
+                    
+                    # 查找并更新商品规格库存
+                    specs = json.loads(product.specs) if isinstance(product.specs, str) else product.specs
+                    spec_found = False
+                    
+                    for spec in specs:
+                        if spec['color'] == item.get('color', ''):                            
+                            # 更新库存
+                            spec['stock'] -= item['quantity']
+                            spec_found = True
+                            break
+                    
+                    if not spec_found and item.get('color'):
+                        raise ValueError(f'商品 {product.name} 不存在指定颜色: {item["color"]}')
+                    
+                    # 更新商品规格
+                    product.specs = json.dumps(specs)
+                    
+                    # 更新商品总库存
+                    product.stock = sum(spec['stock'] for spec in specs)
+                    
+                    # 创建发货单商品项
+                    delivery_item = DeliveryItem(
+                        delivery_id=delivery_order.id,
+                        product_id=item['product_id'],
+                        order_number=data['order_number'],
+                        quantity=item['quantity'],
+                        color=item.get('color', ''),
+                        package_id=item.get('package_id', 0)
+                    )
+                    db.session.add(delivery_item)
+            
+            # 提交事务
             db.session.commit()
+            
             return jsonify({
                 'message': '配送单创建成功',
                 'order_id': delivery_order.id,
                 'order_number': delivery_order.order_number
             }), 201
+            
+        except ValueError as ve:
+            db.session.rollback()
+            return jsonify({'error': str(ve)}), 400
         except Exception as e:
             db.session.rollback()
             print(f'保存配送单失败: {str(e)}')
@@ -2797,7 +2832,8 @@ def get_delivery_order_detail(user_id, order_id):
                 'username': delivery_user.username,
                 'nickname': delivery_user.nickname
             } if delivery_user else None,
-            'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else []
+            'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else [],
+            'total_quantity': sum(item['quantity'] for item in items),
         }
 
         return jsonify({
@@ -4667,7 +4703,8 @@ def search_users(user_id):
             'username': user.username,
             'nickname': user.nickname,
             'phone': user.phone,
-            'avatar': user.avatar
+            'avatar': user.avatar,
+            'user_type': user.user_type
         } for user in users]
         
         return jsonify({'users': users_list}), 200
