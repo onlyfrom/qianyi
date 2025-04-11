@@ -2,7 +2,15 @@
 const ProductSelector = {
     template: `
         <div class="product-selector">
-            <el-dialog v-model="visible" :title="title" width="70%" @close="handleClose">
+            <el-dialog 
+                v-model="visible" 
+                :title="title" 
+                width="750px" 
+                height="750px"
+                @close="handleClose"
+                :modal-append-to-body="false"
+                :append-to-body="true"
+                custom-class="right-dialog">
                 <div class="product-search">
                     <el-input v-model="searchKeyword" placeholder="搜索商品名称" clearable @keyup.enter="searchProducts">
                         <template #append>
@@ -292,6 +300,25 @@ const ProductSelector = {
         handleClose() {
             this.$emit('close');
         }
+    },
+    
+    mounted() {
+        // 添加自定义样式
+        const style = document.createElement('style');
+        style.textContent = `
+            .right-dialog {
+                position: fixed !important;
+                right: 0 !important;
+                margin-right: 0 !important;
+                margin-top: 0 !important;
+                height: 100vh !important;
+            }
+            .right-dialog .el-dialog__body {
+                height: calc(100vh - 240px);
+                overflow-y: auto;
+            }
+        `;
+        document.head.appendChild(style);
     }
 };
 

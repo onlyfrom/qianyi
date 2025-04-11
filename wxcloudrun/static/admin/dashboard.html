@@ -856,6 +856,10 @@
             gap: 20px;
         }
 
+        .dialogwangyou {
+            transform: translateX(-300px) !important;
+        }
+
         .summary-item {
             display: flex;
             gap: 8px;
@@ -3235,7 +3239,7 @@
     </el-dialog>
     
     <!-- 添加代客下单对话框 -->
-    <el-dialog v-model="placeOrderDialogVisible" title="代客下单" width="60%">
+    <el-dialog v-model="placeOrderDialogVisible" title="代客下单" width="800px" :class="productSelectorVisible ? 'dialogwangyou' : ''">
         <el-form :model="placeOrderForm" label-width="100px">
             <el-form-item label="选择客户">
                 <el-select v-model="placeOrderForm.userId" placeholder="请选择客户（搜索客户）" filterable remote
@@ -3269,6 +3273,8 @@
                                     </div>
                                 </div>
                             </template>
+                        </el-table-column>
+                        <el-table-column prop="color" label="颜色" width="120" >
                         </el-table-column>
                         <el-table-column prop="quantity" label="数量" width="110">
                             <template #default="scope">
@@ -7254,6 +7260,8 @@
                         ElementPlus.ElMessage.warning('请先选择客户');
                         return;
                     }
+                    
+
                     this.productSelectorVisible = true;
                 },
                 
