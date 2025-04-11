@@ -2274,12 +2274,9 @@ def update_purchase_order_items(user_id, order_id):
             return jsonify({'error': '采购单不存在'}), 404
             
         # 非管理员只能编辑自己的采购单
-        if user.user_type != 1 and order.user_id != user_id:
+        if user.role != 'admin' and order.user_id != user_id:
             return jsonify({'error': '无权限编辑此采购单'}), 403
             
-        # 只有待处理状态的采购单可以编辑
-        if order.status != 0:
-            return jsonify({'error': '只有待处理的采购单可以编辑'}), 400
             
         data = request.json
         items = data.get('items', [])
@@ -3215,9 +3212,36 @@ def cancel_purchase_order(user_id, order_id):
 
         purchase_order, user = order
 
-        # 只有待处理的订单可以取消
-        if purchase_order.status != 0:
-            return jsonify({'error': '只能取消待处理的采购单'}), 400
+        # 如果订单状态为1（已发货），需要恢复库存
+        if purchase_order.status == 1:
+            # 获取所有发货单商品
+            delivery_items = DeliveryItem.query.filter_by(
+                order_number=purchase_order.order_number
+            ).all()
+
+            # 恢复每个商品的库存
+            for item in delivery_items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    specs = json.loads(product.specs) if isinstance(product.specs, str) else product.specs
+                    spec_found = False
+                    
+                    for spec in specs:
+                        if spec['color'] == item.color:
+                            # 恢复库存
+                            spec['stock'] += item.quantity
+                            spec_found = True
+                            break
+                    
+                    if not spec_found and item.color:
+                        print(f'商品 {product.name} 不存在指定颜色: {item.color}')
+                        continue
+                    
+                    # 更新商品规格
+                    product.specs = json.dumps(specs)
+                    
+                    # 更新商品总库存
+                    product.stock = sum(spec['stock'] for spec in specs)
 
         # 更新采购单状态为已取消(2)
         purchase_order.status = 2
@@ -3275,7 +3299,7 @@ def get_purchase_order(user_id, order_id):
             print(f'当前用户不存在: user_id={user_id}')
             return jsonify({'error': '用户不存在'}), 404
         
-        if current_user.user_type != 1 and order.user_id != user_id:
+        if current_user.role != 'admin' and order.user_id != user_id and current_user.role != 'STAFF':
             print(f'无权限查看此采购单: user_id={user_id}, order_user_id={order.user_id}')
             return jsonify({'error': '无权限查看此采购单'}), 403
         
@@ -3300,6 +3324,7 @@ def get_purchase_order(user_id, order_id):
                         'product_id': product.id,
                         'product_name': product.name,
                         'image': json.loads(product.images)[0] if product.images else None,
+                        'price': float(item.price),
                         'total_quantity': 0,
                         'total_amount': 0,
                         'total_amount_extra': 0,

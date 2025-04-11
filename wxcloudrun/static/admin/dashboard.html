@@ -13,6 +13,7 @@
     <script src="/admin/lib/axios/axios.min.js"></script>
     <script src="/admin/lib/sortable/Sortable.min.js"></script>
     <script src="components/ProductSelector.js"></script>
+    <script src="components/PurchaseOrderDetail.js"></script>
     <style>
         * {
             margin: 0;
@@ -2240,7 +2241,7 @@
                                 </el-table-column>
                                 <el-table-column prop="user_name" label="客户名称" width="120">
                                     <template #default="scope">
-                                        {{ scope.row.user_name }}
+                                        {{ scope.row.user?.nickname || scope.row.user?.username || '未知' }}
 
                                     </template>
                                 </el-table-column>
@@ -2290,81 +2291,14 @@
                             </div>
 
                             <!-- 采购单详情对话框 -->
-                            <el-dialog v-model="purchaseDetailVisible" title="采购单详情" width="60%">
-                                <div v-if="currentPurchaseOrder && currentPurchaseOrder.order">
-                                    <el-descriptions :column="2" border>
-                                        <el-descriptions-item label="采购单号">{{ currentPurchaseOrder.order.order_number }}</el-descriptions-item>
-                                        <el-descriptions-item label="创建时间">{{ formatDate(currentPurchaseOrder.order.created_at) }}</el-descriptions-item>
-                                        <el-descriptions-item label="状态">
-                                            <el-tag :type="getPurchaseStatusType(currentPurchaseOrder.order.status)">
-                                                {{ getPurchaseStatusText(currentPurchaseOrder.order.status) }}
-                                            </el-tag>
-                                        </el-descriptions-item>
-                                        <el-descriptions-item label="客户信息">
-                                            <div>
-                                                <div>姓名：{{ currentPurchaseOrder.order.user?.nickname || currentPurchaseOrder.order.user?.username || '未知' }}</div>
-                                                <div>电话：{{ currentPurchaseOrder.order.user?.phone || '无' }}</div>
-                                            </div>
-                                        </el-descriptions-item>
-                                        <el-descriptions-item label="备注" :span="2">{{ currentPurchaseOrder.order.remark || '无' }}</el-descriptions-item>
-                                    </el-descriptions>
-
-                                    <el-divider>商品明细</el-divider>
-
-                                    <el-table :data="currentPurchaseOrder.order.items" border>
-                                        <el-table-column prop="product_name" label="商品名称" >
-                                            <template #default="scope">
-                                                {{ scope.row.product_name }}
-                                            </template>
-                                        </el-table-column>
-                                        <el-table-column prop="product_id" label="款号"  width="60">
-                                            <template #default="scope">
-                                                {{ scope.row.product_id }}
-                                            </template>
-                                        </el-table-column>
-                                        <el-table-column label="规格" width="200">
-                                            <template #default="scope">
-                                                <div v-for="spec in scope.row.specs" :key="spec.color">
-                                                    <el-tag size="small" style="margin: 2px">
-                                                        {{ spec.color }}: {{ spec.quantity }}件
-                                                        <span v-if="spec.shipped_quantity > 0">(已发{{ spec.shipped_quantity }}件)</span>
-                                                    </el-tag>
-                                                </div>
-                                            </template>
-                                        </el-table-column>
-                                        <el-table-column label="总数量" width="80">
-                                            <template #default="scope">
-                                                {{ scope.row.total_quantity }}
-                                            </template>
-                                        </el-table-column>
-                                        <el-table-column label="总金额" width="120">
-                                            <template #default="scope">
-                                                ¥{{ scope.row.total_amount.toFixed(2) }}
-                                            </template>
-                                        </el-table-column>
-                                    </el-table>
-
-                                    <div class="total-amount" style="margin-top: 20px;">
-                                        <div>商品总数：{{ currentPurchaseOrder.order.total_quantity }}件</div>
-                                        <div>总金额：¥{{ currentPurchaseOrder.order.total_amount.toFixed(2) }}</div>
-                                    </div>
-                                    <div class="dialog-footer" style="margin-top: 20px; text-align: right;">
-                                        <el-button @click="purchaseDetailVisible = false">关闭</el-button>
-                                        <el-button 
-                                            v-if="currentPurchaseOrder.order.status === 0"
-                                            type="success" 
-                                            @click="handleAcceptPurchase(currentPurchaseOrder.order)">
-                                            接受订单
-                                        </el-button>
-                                        <el-button 
-                                            v-if="currentPurchaseOrder.order.status === 0 || currentPurchaseOrder.order.status === 1"
-                                            type="danger"
-                                            @click="handleCancelPurchase(currentPurchaseOrder.order)">
-                                            取消订单
-                                        </el-button>
-                                    </div>
-                                </div>
-                            </el-dialog>
+                            <purchase-order-detail
+                                v-model:visible="purchaseDetailVisible"
+                                :order-data="currentPurchaseOrder"
+                                :is-admin="userInfo.role === 'admin'"
+                                @accept="handleAcceptPurchase"
+                                @cancel="handleCancelPurchase"
+                                @save="handleSavePurchaseEdit"
+                            ></purchase-order-detail>
                         </div>
 
                         <!-- 配送单管理内容 -->
@@ -4882,7 +4816,7 @@
                     const statusMap = {
                         0: '待处理',
                         1: '已确认',
-                        2: '已完成',
+                        2: '已取消',
                         3: '已取消'
                     };
                     return statusMap[status] || '未知状态';
@@ -7410,6 +7344,43 @@
                         ElementPlus.ElMessage.error(error.response?.data?.error || error.message || '代客下单失败，请重试');
                     }
                 },
+                async handleSavePurchaseEdit(order) {
+                    try {
+                        // 转换数据格式以适配接口
+                        const items = order.items.flatMap(item => 
+                            item.specs.map(spec => ({
+                                product_id: item.product_id,
+                                quantity: spec.quantity,
+                                color: spec.color,
+                                price: item.price || 0,
+                                logo_price: item.logo_price || 0,
+                                accessory_price: item.accessory_price || 0,
+                                packaging_price: item.packaging_price || 0
+                            }))
+                        );
+
+                        const response = await axios.put(`/purchase_orders/${order.id}/items`, {
+                            items: items
+                        });
+
+                        if (response.status === 200) {
+                            ElementPlus.ElMessage.success('采购单更新成功');
+                            // 重新加载采购单列表
+                            await this.loadPurchaseOrders();
+                            return Promise.resolve();
+                        } else {
+                            return Promise.reject(new Error('保存失败'));
+                        }
+                    } catch (error) {
+                        console.error('保存采购单失败:', error);
+                        ElementPlus.ElMessage.error(error.response?.data?.error || '保存失败');
+                        return Promise.reject(error);
+                    }
+                },
+                handlePurchasePageChange(page) {
+                    this.purchasePagination.currentPage = page;
+                    this.loadPurchaseOrders();
+                },
             }
         })
         
@@ -7426,6 +7397,8 @@
 
         // 注册商品选择器组件
         app.component('product-selector', window.ProductSelector);
+        // 注册采购单详情组件
+        app.component('purchase-order-detail', window.PurchaseOrderDetail);
 
         app.mount('#app')
     </script>
