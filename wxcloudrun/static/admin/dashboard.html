@@ -4829,6 +4829,7 @@
                     try {
                         const response = await axios.get(`/purchase_orders/${order.id}`);
                         if (response.status === 200 && this.purchaseDetailstatus === 'view') {
+                            console.log('采购单详情:', response.data);
                             this.currentPurchaseOrder = response.data;
                             this.purchaseDetailVisible = true;
                         }

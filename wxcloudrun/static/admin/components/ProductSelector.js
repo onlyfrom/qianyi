@@ -22,7 +22,7 @@ const ProductSelector = {
                     </el-table-column>
                     <el-table-column label="颜色" width="150">
                         <template #default="scope">
-                            <el-select v-model="scope.row.selectedColor" placeholder="选择颜色" style="width: 100%">
+                            <el-select v-model="scope.row.selectedColor" placeholder="选择颜色" filterable style="width: 100%">
                                 <el-option v-for="spec in getProductSpecs(scope.row)" 
                                     :key="spec.color" 
                                     :label="spec.color" 

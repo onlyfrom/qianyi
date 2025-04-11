@@ -26,16 +26,53 @@ const PurchaseOrderDetail = {
                 <el-divider>商品明细</el-divider>
 
                 <el-table :data="expandedItems" border>
-                    <el-table-column prop="product_name" label="商品名称"></el-table-column>
+                    <el-table-column prop="product_name" label="商品名称">
+                        <template #default="scope">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <text @click="editProduct(scope.row)">{{ scope.row.product_name }}</text>
+                                <div style="display: flex; gap: 4px;">
+                                    <el-tag size="small" type="success" v-if="scope.row.currentSpec.packaging_price > 0">包装</el-tag>
+                                    <el-tag size="small" type="warning" v-if="scope.row.currentSpec.logo_price > 0">打标</el-tag>
+                                </div>
+                            </div>
+                        </template>
+                    </el-table-column>
                     <el-table-column prop="product_id" label="款号" width="60"></el-table-column>
                     <el-table-column label="颜色" width="120">
                         <template #default="scope">
-                            {{ scope.row.currentSpec.color }}
+                            <template v-if="isEditing">
+                                <el-select 
+                                    v-model="scope.row.currentSpec.color" 
+                                    placeholder="选择颜色"
+                                    filterable
+                                    style="width: 100%">
+                                    <el-option
+                                        v-for="color in availableProductColors"
+                                        :key="color"
+                                        :label="color"
+                                        :value="color">
+                                    </el-option>
+                                </el-select>
+                            </template>
+                            <template v-else>
+                                {{ scope.row.currentSpec.color }}
+                            </template>
                         </template>
                     </el-table-column>
-                    <el-table-column label="数量" width="80">
+                    <el-table-column label="数量" :width="isEditing ? '150px' : '80px'">
                         <template #default="scope">
-                            {{ scope.row.currentSpec.quantity }}
+                            <template v-if="isEditing">
+                                <el-input-number
+                                    v-model="scope.row.currentSpec.quantity"
+                                    :min="0"
+                                    :max="999"
+                                    size="small"
+                                    style="width: 100%">
+                                </el-input-number>
+                            </template>
+                            <template v-else>
+                                {{ scope.row.currentSpec.quantity }}
+                            </template>
                         </template>
                     </el-table-column>
                     <el-table-column label="待发货" width="80">
@@ -51,25 +88,27 @@ const PurchaseOrderDetail = {
                     <el-table-column label="总金额" width="120" v-if="isAdmin">
                         <template #default="scope">
                             ¥{{ ((scope.row.total_amount || 0) / scope.row.total_quantity * scope.row.currentSpec.quantity).toFixed(2) }}
+                            <text style="font-size: 12px; color: #999;" v-if = "scope.row.currentSpec.extra > 0">+{{ scope.row.currentSpec.extra }}</text>
                         </template>
                     </el-table-column>
-                    <el-table-column v-if="isEditing" label="操作" width="120">
+                    <el-table-column v-if="isEditing" label="操作" width="80">
                         <template #default="scope">
-                            <el-button type="primary" size="small" @click="editItem(scope.row)">编辑</el-button>
                             <el-button type="danger" size="small" @click="removeItem(scope.$index)">删除</el-button>
                         </template>
                     </el-table-column>
                 </el-table>
-
-                <div class="total-amount" style="margin-top: 20px;">
-                    <div>商品总数：{{ orderData.order.total_quantity }}件</div>
-                    <div v-if="isAdmin">总金额：¥{{ orderData.order.total_amount.toFixed(2) }}</div>
-                    <el-button 
+                <div style="margin-top: 10px; width: 100%; text-align: right;">                
+                <el-button 
                         v-if="isEditing"
                         type="primary"
                         @click="showAddItemDialog">
                         添加商品
-                    </el-button>
+                </el-button>
+                </div>
+                <div class="total-amount" style="margin-top: 20px;">
+                    <div>商品总数：{{ orderData.order.total_quantity }}件</div>
+                    <div v-if="isAdmin">总金额：¥{{ orderData.order.total_amount.toFixed(2) }} + {{ orderData.order.total_amount_extra.toFixed(2) }}</div>
+                    
                 </div>
 
                 <div class="dialog-footer" style="margin-top: 20px; text-align: right;">
@@ -92,7 +131,6 @@ const PurchaseOrderDetail = {
                         @click="toggleEdit">
                         {{ isEditing ? '完成编辑' : '编辑订单' }}
                     </el-button>
-                    
                 </div>
             </div>
 
@@ -112,6 +150,7 @@ const PurchaseOrderDetail = {
                                 <el-select 
                                     v-model="spec.color" 
                                     placeholder="选择颜色"
+                                    filterable
                                     style="width: 120px">
                                     <el-option
                                         v-for="color in availableProductColors"
@@ -226,6 +265,7 @@ const PurchaseOrderDetail = {
                         <el-select 
                             v-model="customSpec.color" 
                             placeholder="选择颜色"
+                            filterable
                             style="width: 100%">
                             <el-option
                                 v-for="color in availableColors"
@@ -374,6 +414,23 @@ const PurchaseOrderDetail = {
         async toggleEdit() {
             if (this.isEditing) {
                 try {
+                    // 验证数据
+                    const hasInvalidQuantity = this.expandedItems.some(item => 
+                        !item.currentSpec.quantity || item.currentSpec.quantity <= 0
+                    );
+                    if (hasInvalidQuantity) {
+                        ElementPlus.ElMessage.error('商品数量必须大于0');
+                        return;
+                    }
+
+                    // 验证颜色是否重复
+                    const colors = this.expandedItems.map(item => item.currentSpec.color);
+                    const uniqueColors = new Set(colors);
+                    if (uniqueColors.size !== colors.length) {
+                        ElementPlus.ElMessage.error('存在重复的颜色，请检查');
+                        return;
+                    }
+
                     // 保存编辑
                     await this.$emit('save', this.orderData.order);
                     ElementPlus.ElMessage.success('保存成功');
@@ -383,89 +440,29 @@ const PurchaseOrderDetail = {
                     return;
                 }
             } else {
+                // 进入编辑模式时，加载所有可用颜色
+                this.loadAllProductColors();
                 this.isEditing = true;
             }
         },
 
-        editItem(item) {
-            this.loadProductDetail(item.product_id).then(productDetail => {
-                if (productDetail) {
-                    // 保存所有可用的颜色
-                    this.availableProductColors = productDetail.specs.map(spec => spec.color);
-                    
-                    // 使用原始的完整规格信息
-                    const originalItem = this.orderData.order.items.find(i => i.product_id === item.product_id);
-                    if (originalItem) {
-                        this.editingItem = {
-                            ...originalItem,
-                            specs: originalItem.specs.map(spec => ({
-                                ...spec
-                            }))
-                        };
-                        this.editingItemIndex = this.orderData.order.items.indexOf(originalItem);
-                        this.itemEditVisible = true;
+        async loadAllProductColors() {
+            try {
+                // 获取所有商品的颜色
+                const productIds = [...new Set(this.orderData.order.items.map(item => item.product_id))];
+                const colors = new Set();
+                
+                for (const productId of productIds) {
+                    const productDetail = await this.loadProductDetail(productId);
+                    if (productDetail && productDetail.specs) {
+                        productDetail.specs.forEach(spec => colors.add(spec.color));
                     }
                 }
-            });
-        },
-
-        async loadProductDetail(productId) {
-            try {
-                const response = await axios.get(`/products/${productId}`);
-                if (response.status === 200) {
-                    return response.data.product;
-                }
-                return null;
+                
+                this.availableProductColors = Array.from(colors);
             } catch (error) {
-                console.error('获取商品详情失败:', error);
-                ElementPlus.ElMessage.error('获取商品详情失败');
-                return null;
-            }
-        },
-
-        saveItemEdit() {
-            if (this.editingItemIndex > -1) {
-                // 验证颜色是否重复
-                const colors = this.editingItem.specs.map(s => s.color);
-                const uniqueColors = new Set(colors);
-                if (uniqueColors.size !== colors.length) {
-                    ElementPlus.ElMessage.error('存在重复的颜色，请检查');
-                    return;
-                }
-
-                // 验证数量
-                const hasInvalidQuantity = this.editingItem.specs.some(spec => !spec.quantity || spec.quantity <= 0);
-                if (hasInvalidQuantity) {
-                    ElementPlus.ElMessage.error('商品数量必须大于0');
-                    return;
-                }
-
-                // 计算总数量
-                const totalQuantity = this.editingItem.specs.reduce((sum, spec) => sum + (parseInt(spec.quantity) || 0), 0);
-                this.editingItem.total_quantity = totalQuantity;
-                
-                // 更新商品
-                this.orderData.order.items[this.editingItemIndex] = {
-                    ...this.editingItem,
-                    specs: this.editingItem.specs.map(spec => ({
-                        color: spec.color,
-                        quantity: parseInt(spec.quantity) || 0,
-                        shipped_quantity: spec.shipped_quantity || 0
-                    }))
-                };
-                
-                // 重新计算订单总数量
-                this.orderData.order.total_quantity = this.orderData.order.items.reduce(
-                    (sum, item) => sum + (parseInt(item.total_quantity) || 0), 
-                    0
-                );
-
-                this.itemEditVisible = false;
-                this.editingItem = null;
-                this.editingItemIndex = -1;
-                
-                // 提示保存成功
-                ElementPlus.ElMessage.success('修改成功');
+                console.error('加载颜色列表失败:', error);
+                ElementPlus.ElMessage.error('加载颜色列表失败');
             }
         },
 
@@ -566,30 +563,6 @@ const PurchaseOrderDetail = {
             product.specs.forEach(spec => spec.selectedQuantity = 0);
         },
 
-        removeSpec(index) {
-            if (this.editingItem && this.editingItem.specs) {
-                this.editingItem.specs.splice(index, 1);
-            }
-        },
-
-        addNewSpec() {
-            if (this.editingItem) {
-                // 找出未使用的颜色
-                const usedColors = new Set(this.editingItem.specs.map(s => s.color));
-                const availableColors = this.availableProductColors.filter(c => !usedColors.has(c));
-                
-                if (availableColors.length > 0) {
-                    this.editingItem.specs.push({
-                        color: availableColors[0],
-                        quantity: 0,
-                        shipped_quantity: 0
-                    });
-                } else {
-                    ElementPlus.ElMessage.warning('已添加所有可用颜色');
-                }
-            }
-        },
-
         addCustomSpec(product) {
             // 获取商品详情以确保使用正确的颜色
             this.loadProductDetail(product.id).then(productDetail => {
@@ -641,6 +614,20 @@ const PurchaseOrderDetail = {
             
             this.customSpecVisible = false;
             this.currentEditingProduct = null;
+        },
+
+        async loadProductDetail(productId) {
+            try {
+                const response = await axios.get(`/products/${productId}`);
+                if (response.status === 200) {
+                    return response.data.product;
+                }
+                return null;
+            } catch (error) {
+                console.error('获取商品详情失败:', error);
+                ElementPlus.ElMessage.error('获取商品详情失败');
+                return null;
+            }
         }
     }
 };
