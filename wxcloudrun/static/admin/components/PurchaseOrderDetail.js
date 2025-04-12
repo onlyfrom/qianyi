@@ -3,8 +3,9 @@ const PurchaseOrderDetail = {
         <el-dialog 
             v-model="visible" 
             title="采购单详情" 
-            width="60%"
-            destroy-on-close>
+            width="800px"
+            destroy-on-close
+            @close="handleClose">
             <div v-if="orderData && orderData.order">
                 <el-descriptions :column="2" border>
                     <el-descriptions-item label="采购单号">{{ orderData.order.order_number }}</el-descriptions-item>
@@ -85,6 +86,23 @@ const PurchaseOrderDetail = {
                             {{ scope.row.currentSpec.shipped_quantity || 0 }}
                         </template>
                     </el-table-column>
+                     <el-table-column label="单价" width="80" v-if="isAdmin">
+                        <template #default="scope">
+                            <template v-if="isEditing">
+                                <el-input-number
+                                    v-model="scope.row.currentSpec.price"
+                                    :min="0"
+                                    :max="999"
+                                    size="small"
+                                    style="width: 100%">
+                                </el-input-number>
+                            </template>
+                            <template v-else>
+                                {{ scope.row.currentSpec.price }}
+                            </template>
+                        </template>
+                    </el-table-column>
+
                     <el-table-column label="总金额" width="120" v-if="isAdmin">
                         <template #default="scope">
                             ¥{{ ((scope.row.total_amount || 0) / scope.row.total_quantity * scope.row.currentSpec.quantity).toFixed(2) }}
@@ -110,6 +128,40 @@ const PurchaseOrderDetail = {
                     <div v-if="isAdmin">总金额：¥{{ orderData.order.total_amount.toFixed(2) }} + {{ orderData.order.total_amount_extra.toFixed(2) }}</div>
                     
                 </div>
+
+                <el-divider>发货记录</el-divider>
+                
+                <el-table :data="deliveryOrders" border v-loading="loadingDeliveries">
+                    <el-table-column prop="order_number" label="发货单号" width="180">
+                        <template #default="scope">
+                            <el-button link type="primary" @click="viewDeliveryDetail(scope.row)">
+                                {{ scope.row.orderNumber }}
+                            </el-button>
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="createdAt" label="发货时间" width="180">
+                        <template #default="scope">
+                            {{ formatDate(scope.row.createdAt) }}
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="creator.nickname" label="发货人" width="120">
+                        <template #default="scope">
+                            {{ scope.row.creator?.nickname || scope.row.creator?.username || '未知' }}
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="total_quantity" label="发货数量" width="100">
+                        <template #default="scope">
+                            {{ scope.row.total_quantity }}
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="status" label="状态" width="100">
+                        <template #default="scope">
+                            <el-tag :type="getDeliveryStatusType(scope.row.status)">
+                                {{ getDeliveryStatusText(scope.row.status) }}
+                            </el-tag>
+                        </template>
+                    </el-table-column>
+                </el-table>
 
                 <div class="dialog-footer" style="margin-top: 20px; text-align: right;">
                     <el-button @click="handleClose">关闭</el-button>
@@ -309,7 +361,7 @@ const PurchaseOrderDetail = {
         }
     },
 
-    emits: ['update:visible', 'accept', 'cancel', 'save'],
+    emits: ['update:visible', 'accept', 'cancel', 'save', 'view-delivery'],
 
     data() {
         return {
@@ -328,7 +380,9 @@ const PurchaseOrderDetail = {
             },
             currentEditingProduct: null,
             availableColors: [],
-            availableProductColors: []
+            availableProductColors: [],
+            deliveryOrders: [],
+            loadingDeliveries: false
         }
     },
 
@@ -351,6 +405,14 @@ const PurchaseOrderDetail = {
             const usedColors = new Set(this.editingItem.specs.map(s => s.color));
             const availableColors = this.availableProductColors.filter(c => !usedColors.has(c));
             return availableColors.length > 0;
+        }
+    },
+
+    watch: {
+        visible(newVal) {
+            if (newVal) {
+                this.loadDeliveryOrders();
+            }
         }
     },
 
@@ -628,6 +690,53 @@ const PurchaseOrderDetail = {
                 ElementPlus.ElMessage.error('获取商品详情失败');
                 return null;
             }
+        },
+
+        getDeliveryStatusType(status) {
+            const types = {
+                0: 'info',    // 已开单
+                1: 'warning', // 已发货
+                2: 'success', // 已完成
+                3: 'danger'   // 已取消
+            };
+            return types[status] || 'info';
+        },
+
+        getDeliveryStatusText(status) {
+            const texts = {
+                0: '已开单',
+                1: '已发货',
+                2: '已完成',
+                3: '已取消'
+            };
+            return texts[status] || '未知状态';
+        },
+
+        async loadDeliveryOrders() {
+            if (!this.orderData?.order?.order_number) return;
+            
+            this.loadingDeliveries = true;
+            try {
+                const response = await axios.get('/delivery_orders', {
+                    params: {
+                        order_number: this.orderData.order.order_number
+                    }
+                });
+                
+                if (response.status === 200) {
+                    this.deliveryOrders = response.data.orders;
+                }
+            } catch (error) {
+                console.error('获取发货单列表失败:', error);
+                ElementPlus.ElMessage.error('获取发货单列表失败');
+            } finally {
+                this.loadingDeliveries = false;
+            }
+        },
+
+        viewDeliveryDetail(delivery) {
+            // 触发全局事件，让父组件处理查看发货单详情
+            this.$emit('view-delivery', delivery);
         }
     }
 };

@@ -5,7 +5,7 @@ const ProductSelector = {
             <el-dialog 
                 v-model="visible" 
                 :title="title" 
-                width="750px" 
+                width="600px" 
                 height="750px"
                 @close="handleClose"
                 :modal-append-to-body="false"
@@ -44,7 +44,7 @@ const ProductSelector = {
                             <el-input-number v-model="scope.row.quantity" :min="1" :max="999"></el-input-number>
                         </template>
                     </el-table-column>
-                    <el-table-column label="价格" width="80">
+                    <el-table-column label="价格" width="80" v-if="false">
                         <template #default="scope">
                             {{ getPrice(scope.row) }}
                         </template>

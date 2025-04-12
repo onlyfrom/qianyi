@@ -1999,6 +1999,13 @@
                                 <el-table-column prop="phone" label="电话" width="120"></el-table-column>
                                 <el-table-column prop="address" label="地址"></el-table-column>
                                 <el-table-column prop="contact" label="联系人" width="100"></el-table-column>
+                                <el-table-column label="用户类型" width="100">
+                                    <template #default="scope">
+                                        <el-tag :type="scope.row.user_type === 0 ? 'info' : scope.row.user_type === 2 ? 'success' : scope.row.user_type === 3 ? 'warning' : scope.row.user_type === 4 ? 'danger' : scope.row.user_type === 5 ? 'warning' : scope.row.user_type === 6 ? 'info' : 'danger'">
+                                            {{ scope.row.user_type === 0 ? '零售客户' : scope.row.user_type === 2 ? 'A类客户' : scope.row.user_type === 3 ? 'B类客户' : scope.row.user_type === 4 ? 'C类客户' : scope.row.user_type === 5 ? 'STAFF' : scope.row.user_type === 6 ? '普通管理员' : '未知' }}
+                                        </el-tag>
+                                    </template>
+                                </el-table-column>
                                 <el-table-column prop="status" label="状态" width="80">
                                     <template #default="scope">
                                         <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'">
@@ -2011,17 +2018,17 @@
                                         {{ formatDate(scope.row.created_at) }}
                                     </template>
                                 </el-table-column>
-                                <el-table-column label="操作" width="180" fixed="right">
-                                    <template #default="scope">
+                                <el-table-column label="操作" width="180" fixed="right" >
+                                    <template #default="scope" >
                                         <el-button-group>
-                                            <el-button size="small" type="primary"
+                                            <el-button size="small" type="primary"  v-if="userInfo.role === 'admin'"
                                                 @click="handleEditUser(scope.row)">编辑</el-button>
-                                            <el-button size="small"
+                                            <el-button size="small" v-if="userInfo.role === 'admin'"
                                                 :type="scope.row.status === 1 ? 'danger' : 'success'"
                                                 @click="handleToggleUserStatus(scope.row)">
                                                 {{ scope.row.status === 1 ? '禁用' : '启用' }}
                                             </el-button>
-                                            <el-button size="small" type="primary"
+                                            <el-button size="small" type="primary" v-if="userInfo.role === 'admin'"
                                                 @click="handleDeleteUser(scope.row)">删除</el-button>
                                         </el-button-group>
                                     </template>
@@ -2041,6 +2048,15 @@
                                 <el-form :model="userForm" :rules="userFormRules" ref="userFormRef" label-width="100px">
                                     <el-form-item label="用户名" prop="username">
                                         <el-input v-model="userForm.username" :disabled="userDialogStatus === 'edit'"></el-input>
+                                    </el-form-item>
+                                    <el-form-item label="用户类型" prop="user_type">
+                                        <el-select v-model="userForm.user_type" placeholder="请选择用户类型">
+                                            <el-option label="零售客户" :value="0"></el-option>
+                                            <el-option label="A类客户" :value="2"></el-option>
+                                            <el-option label="B类客户" :value="3"></el-option>
+                                            <el-option label="C类客户" :value="4"></el-option>
+                                            <el-option label="普通管理员" :value="6"></el-option>
+                                        </el-select>
                                     </el-form-item>
                                     <el-form-item label="密码" prop="password" v-if="userDialogStatus === 'add'"> 
                                         <el-input v-model="userForm.password" type="password"></el-input>
@@ -2294,15 +2310,7 @@
                                     @current-change="handlePurchasePageChange" layout="total, prev, pager, next" />
                             </div>
 
-                            <!-- 采购单详情对话框 -->
-                            <purchase-order-detail
-                                v-model:visible="purchaseDetailVisible"
-                                :order-data="currentPurchaseOrder"
-                                :is-admin="userInfo.role === 'admin'"
-                                @accept="handleAcceptPurchase"
-                                @cancel="handleCancelPurchase"
-                                @save="handleSavePurchaseEdit"
-                            ></purchase-order-detail>
+                            
                         </div>
 
                         <!-- 配送单管理内容 -->
@@ -2442,7 +2450,7 @@
                                                             size="small"
                                                             type="primary"
                                                             plain
-                                                            @click="viewDeliveryDetail(scope.row)">
+                                                            @click="viewPurchaseDetail(scope.row)">
                                                             查看详情
                                                         </el-button>
 
@@ -2700,7 +2708,7 @@
                     <el-input v-model="scope.row.name" placeholder="请输入款式名称"></el-input>
                 </template>
             </el-table-column>
-            <el-table-column label="操作" width="100">
+            <el-table-column label="操作" width="160">
                 <template #default="scope">
                     <el-button-group>
                         <el-button 
@@ -3168,7 +3176,7 @@
                                 type="primary" 
                                 size="small" 
                                 @click="showAddProductPopup(pkgIndex)"
-                            >添加商品add</el-button>
+                            >添加商品</el-button>
         </div>
                     </div>
                 </el-tab-pane>
@@ -3295,6 +3303,7 @@
                                     size="small"
                                     controls-position="right"
                                     style="width: 95px;"
+                                    @change="(value) => handlePriceChange(value, scope.$index)"
                                 />
                             </template>
                         </el-table-column>
@@ -3320,6 +3329,17 @@
                             </template>
     </el-dialog>
 
+    <!-- 采购单详情对话框 -->
+    <purchase-order-detail
+    v-model:visible="purchaseDetailVisible"
+    :order-data="currentPurchaseOrder"
+    :is-admin="userInfo.role === 'admin'"
+    @accept="handleAcceptPurchase"
+    @cancel="handleCancelPurchase"
+    @save="handleSavePurchaseEdit"
+    @view-delivery="viewDeliveryDetail"
+></purchase-order-detail>
+
     <!-- 使用商品选择组件 -->
     <product-selector 
         v-model="productSelectorVisible" 
@@ -3329,7 +3349,7 @@
         :user-type="placeOrderForm.userType"
     >
     </product-selector>
-                                </div>
+    </div>
 
 
 
@@ -4549,6 +4569,7 @@
                         });
 
                         if (response.status === 200) {
+                            console.log('用户列表:', response.data);
                             this.users = response.data.users;
                             this.userPagination.total = response.data.total;
                         }
@@ -4566,7 +4587,9 @@
                         nickname: '',
                         phone: '',
                         contact: '',
-                        address: ''
+                        address: '',
+                        user_type: 2,
+                        role: 'customer'
                     };
                     this.userDialogVisible = true;
                 },
@@ -4630,6 +4653,16 @@
 
                 async submitUserForm() {
                     try {
+                        console.log('提交用户表单:', this.userForm);
+
+                        if (this.userForm.user_type === 6) {
+                            this.userForm.role = 'normalAdmin';
+                        }else if (this.userForm.user_type === 5) {
+                            this.userForm.role = 'STAFF';
+                        }else {
+                            this.userForm.role = 'customer';
+                        }
+
                         const response = await axios.put(`/users/${this.userForm.id}`, {
                             ...this.userForm,  // 包含所有字段
                             status: parseInt(this.userForm.status)  // 确保状态是数字
@@ -4821,8 +4854,8 @@
                 getPurchaseStatusText(status) {
                     const statusMap = {
                         0: '待处理',
-                        1: '已确认',
-                        2: '已取消',
+                        1: '待发货',
+                        2: '已完成',
                         3: '已取消'
                     };
                     return statusMap[status] || '未知状态';
@@ -4838,6 +4871,7 @@
                             console.log('采购单详情:', response.data);
                             this.currentPurchaseOrder = response.data;
                             this.purchaseDetailVisible = true;
+                            console.log('采购单窗口显示状态:', this.purchaseDetailVisible);
                         }
                     } catch (error) {
                         this.handleAxiosError(error, '获取采购单详情失败');
@@ -4922,7 +4956,18 @@
                             console.log('从采购单接口获取待发货数据');
                             response = await axios.get('/purchase_orders', {
                                 params: {
-                                    status: [0, 1], // 状态0表示待处理，1表示待发货
+                                    status: 1, // 状态1表示待发货
+                                    page: this.deliveryPagination.currentPage,
+                                    pageSize: this.deliveryPagination.pageSize,
+                                    keyword: this.deliverySearch.keyword
+                                }
+                            });
+                            console.log('采购单数据结果:', response.data);
+                        } else if (currentTab.status === 2) {
+                            console.log('从采购单接口获取已完成数据');
+                            response = await axios.get('/purchase_orders', {
+                                params: {
+                                    status: 2, // 状态2表示已完成
                                     page: this.deliveryPagination.currentPage,
                                     pageSize: this.deliveryPagination.pageSize,
                                     keyword: this.deliverySearch.keyword
@@ -4971,7 +5016,7 @@
                     try {
                         const response = await axios.get('/purchase_orders', {
                             params: {
-                                status: [0, 1], // 状态0表示待处理，1表示待发货
+                                status: 1, // 状态0表示待处理，1表示待发货
                                 pageSize: 1,
                                 page: 1
                             }
@@ -5064,7 +5109,7 @@
                 // 查看配送单详情
                 async viewDeliveryDetail(order) {
                     try {
-                        const response = await axios.get(`/delivery_orders/${order.id}`);
+                        const response = await axios.get(`/purchase_orders/${order.id}`);
                         console.log('获取发货单详情',response);
                         if (response.status === 200) {
                             this.currentDeliveryOrder = response.data;
@@ -6792,6 +6837,40 @@
                     // TODO: 实现批量打印功能
                     ElementPlus.ElMessage.info('批量打印功能正在开发中...');
                 },
+
+                // 处理商品单价变更
+                async handlePriceChange(newPrice, currentIndex) {
+                    const currentItem = this.placeOrderForm.items[currentIndex];
+                    const sameNameItems = this.placeOrderForm.items.filter((item, index) => 
+                        index !== currentIndex && item.name === currentItem.name
+                    );
+                    
+                    if (sameNameItems.length > 0) {
+                        try {
+                            await ElementPlus.ElMessageBox.confirm(
+                                `发现${sameNameItems.length}个相同商品"${currentItem.name}"，是否要一并修改它们的单价？`,
+                                '修改单价',
+                                {
+                                    confirmButtonText: '是',
+                                    cancelButtonText: '否',
+                                    type: 'warning'
+                                }
+                            );
+                            
+                            // 用户点击"是"，更新所有相同商品的单价
+                            this.placeOrderForm.items.forEach((item, index) => {
+                                if (item.name === currentItem.name) {
+                                    item.price = newPrice;
+                                }
+                            });
+                            
+                            ElementPlus.ElMessage.success('已更新所有相同商品的单价');
+                        } catch (e) {
+                                    // 用户点击"否"或关闭对话框，不做任何操作
+                                    console.log('用户取消批量修改单价');
+                                }
+                            }
+                        },
 
                 // 打印发货单
                 printDeliveryOrder(order) {

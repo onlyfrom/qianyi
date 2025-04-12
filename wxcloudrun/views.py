@@ -2398,6 +2398,7 @@ def get_users(user_id):
             'address': user.address,
             'contact': user.contact,
             'user_type': user.user_type,
+            'role': user.role,
             'status': user.status,
             'created_at': user.created_at.isoformat() if user.created_at else None,
             'avatar': user.avatar,
@@ -2554,6 +2555,7 @@ def update_user_profile(user_id):
 
 
 # 创建发货单
+# 创建发货单
 @app.route('/delivery_orders', methods=['POST'])
 @login_required
 def create_delivery_order(user_id):
@@ -2633,6 +2635,40 @@ def create_delivery_order(user_id):
             # 提交事务
             db.session.commit()
             
+            # 检查采购单是否所有商品都已发货完毕
+            try:
+                # 查找对应的采购单
+                purchase_order = PurchaseOrder.query.filter_by(order_number=data['order_number']).first()
+                if purchase_order:
+                    # 获取采购单所有商品项
+                    purchase_items = PurchaseOrderItem.query.filter_by(order_id=purchase_order.id).all()
+                    
+                    # 检查每个商品项是否都已发货完毕
+                    all_shipped = True
+                    for purchase_item in purchase_items:
+                        # 查询该商品规格的已发货数量
+                        shipped_result = db.session.query(func.sum(DeliveryItem.quantity)).filter(
+                            DeliveryItem.product_id == purchase_item.product_id,
+                            DeliveryItem.color == purchase_item.color,
+                            DeliveryItem.order_number == purchase_order.order_number
+                        ).scalar()
+                        
+                        shipped_quantity = int(shipped_result) if shipped_result is not None else 0
+                        
+                        # 如果已发货数量小于订单数量，则未全部发货
+                        if shipped_quantity < purchase_item.quantity:
+                            all_shipped = False
+                            break
+                    
+                    # 如果所有商品都已发货完毕，将采购单状态更新为已完成
+                    if all_shipped and purchase_order.status != 2:  # 状态2表示已完成
+                        purchase_order.status = 2  # 更新为已完成
+                        db.session.commit()
+                        print(f"采购单 {purchase_order.order_number} 所有商品已发货完毕，状态已更新为已完成")
+            except Exception as e:
+                print(f"检查采购单发货状态时出错: {str(e)}")
+                # 不影响发货单创建的结果
+            
             return jsonify({
                 'message': '配送单创建成功',
                 'order_id': delivery_order.id,
@@ -2661,6 +2697,7 @@ def get_delivery_orders(user_id):
         page_size = min(int(request.args.get('pageSize', 10)), 50)
         status = request.args.get('status')
         searchKey = request.args.get('searchKey', '').strip()
+        order_number = request.args.get('order_number')  # 添加采购单号参数
         
         # 检查用户类型
         user = User.query.get(user_id)
@@ -2680,6 +2717,10 @@ def get_delivery_orders(user_id):
         # 状态筛选
         if status is not None and status.strip():
             query = query.filter(DeliveryOrder.status == int(status))
+            
+        # 采购单号筛选
+        if order_number:
+            query = query.filter(DeliveryOrder.order_number == order_number)
             
         # 关键字搜索
         if searchKey:
@@ -2712,6 +2753,9 @@ def get_delivery_orders(user_id):
                         'image': json.loads(product.images)[0] if product.images else None
                     })
                     
+            # 获取创建者信息
+            creator = User.query.get(order.created_by)
+                    
             # 状态文本映射
             status_text_map = {
                 0: '已开单',
@@ -2734,19 +2778,22 @@ def get_delivery_orders(user_id):
                 'remark': order.remark,
                 'createdAt': order.created_at.isoformat(),
                 'updatedAt': order.updated_at.isoformat(),
-                'created_by': order.created_by,
+                'creator': {
+                    'id': creator.id,
+                    'username': creator.username,
+                    'nickname': creator.nickname
+                } if creator else None,
                 'delivery_by': order.delivery_by,
                 'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else [],
                 'items': items,
                 'total_quantity': sum(item['quantity'] for item in items),
-                'total_items': len(items)  # 添加商品总数字段
-                
+                'total_items': len(items)
             })
             
         return jsonify({
-                'orders': orders,
+            'orders': orders,
             'total': paginated_orders.total,
-                'page': page,
+            'page': page,
             'page_size': page_size,
             'total_pages': paginated_orders.pages
         }), 200
@@ -5567,12 +5614,13 @@ def edit_user(user_id, target_user_id):
             'user_type': int,
             'status': int,
             'password': str,
-            'avatar': str
+            'avatar': str,
+            'role': str
         }
         
         # 验证用户类型
         if 'user_type' in data:
-            if data['user_type'] not in [0, 1, 2, 3, 4]:  # 0:零售 1:管理员 2:A类 3:B类 4:C类
+            if data['user_type'] not in [0, 1, 2, 3, 4, 5, 6]:  # 0:零售 1:管理员 2:A类 3:B类 4:C类 5:STAFF 6:普通管理员
                 return jsonify({'error': '无效的用户类型'}), 400
                 
         # 验证状态
@@ -5630,6 +5678,7 @@ def edit_user(user_id, target_user_id):
                     'address': target_user.address,
                     'contact': target_user.contact,
                     'user_type': target_user.user_type,
+                    'role': target_user.role,
                     'status': target_user.status,
                     'avatar': target_user.avatar,
                     'created_at': target_user.created_at.isoformat() if target_user.created_at else None,
