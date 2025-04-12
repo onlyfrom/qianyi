@@ -2141,7 +2141,7 @@ def get_purchase_orders(user_id):
                                 'id': product.id,
                                 'product_id': product.id,
                                 'product_name': product.name,
-                                'image': (lambda x: json.loads(x)[0] if x and x.strip() and json.loads(x) else None)(product.images),
+                                'image': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None,
                                 'total_quantity': 0,
                                 'total_amount': 0,
                                 'total_amount_extra': 0,
@@ -2698,6 +2698,8 @@ def get_delivery_orders(user_id):
         status = request.args.get('status')
         searchKey = request.args.get('searchKey', '').strip()
         order_number = request.args.get('order_number')  # 添加采购单号参数
+
+        print(f'获取配送单列表, status: {status}, searchKey: {searchKey}, order_number: {order_number}')
         
         # 检查用户类型
         user = User.query.get(user_id)
@@ -2711,7 +2713,7 @@ def get_delivery_orders(user_id):
             .outerjoin(Product, DeliveryItem.product_id == Product.id)
             
         # 非管理员只能查看自己创建的订单
-        if user.user_type != 1:
+        if user.role != 'admin' and user.role != 'STAFF' and user.role != 'normalAdmin':
             query = query.filter(DeliveryOrder.created_by == user_id)
             
         # 状态筛选
@@ -2721,6 +2723,7 @@ def get_delivery_orders(user_id):
         # 采购单号筛选
         if order_number:
             query = query.filter(DeliveryOrder.order_number == order_number)
+
             
         # 关键字搜索
         if searchKey:
@@ -2750,7 +2753,7 @@ def get_delivery_orders(user_id):
                         'product_name': product.name,
                         'quantity': item.quantity,
                         'color': item.color,
-                        'image': json.loads(product.images)[0] if product.images else None
+                        'image': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None
                     })
                     
             # 获取创建者信息
@@ -2829,7 +2832,7 @@ def get_delivery_order_detail(user_id, order_id):
         for item in DeliveryItem.query.filter_by(delivery_id=order.id).all():
             product = Product.query.get(item.product_id)
             if product:
-                product_image = json.loads(product.images)[0] if product.images else None
+                product_image = json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None
                 items.append({
                     'id': item.id,
                     'product_id': item.product_id,
@@ -3370,7 +3373,7 @@ def get_purchase_order(user_id, order_id):
                         'id': product.id,
                         'product_id': product.id,
                         'product_name': product.name,
-                        'image': json.loads(product.images)[0] if product.images else None,
+                        'image': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None,
                         'price': float(item.price),
                         'total_quantity': 0,
                         'total_amount': 0,
@@ -4509,7 +4512,7 @@ def get_push_order(user_id, order_id):
                     'price': float(item.price),
                     'specs': json.loads(item.specs) if item.specs else [],
                     'specs_info': json.loads(item.specs_info) if item.specs_info else {},
-                    'image': json.loads(product.images)[0] if product.images else None,
+                    'image': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None,
                     'type': product.type
                 })
                 
@@ -5147,7 +5150,7 @@ def bind_push_order(user_id, share_code):
                         'id': product.id,
                         'name': product.name,
                         'price': float(item.price) if item.price else 0,
-                        'images': json.loads(product.images)[0] if product.images else '',
+                        'images': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None,
                         'specs_info': json.loads(item.specs_info) if item.specs_info else {},
                         'specs': json.loads(item.specs) if item.specs else []
                     }
@@ -5263,7 +5266,7 @@ def get_push_order_detail(user_id, order_id):
                     'price': float(item.price),
                     'specs': json.loads(item.specs) if item.specs else [],
                     'specs_info': json.loads(item.specs_info) if item.specs_info else {},
-                    'image': json.loads(product.images)[0] if product.images else None
+                    'image': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None
                 })
                 
         # 格式化返回数据
@@ -6713,7 +6716,7 @@ def bind_push_order_guest():
                         'id': product.id,
                         'name': product.name,
                         'price': float(item.price) if item.price else 0,
-                        'images': json.loads(product.images)[0] if product.images else '',
+                        'images': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None,
                         'specs_info': json.loads(item.specs_info) if item.specs_info else {},
                         'specs': json.loads(item.specs) if item.specs else []
                     }

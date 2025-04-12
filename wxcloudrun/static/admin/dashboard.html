@@ -4979,13 +4979,9 @@
                             const params = {
                                 page: this.deliveryPagination.currentPage,
                                 pageSize: this.deliveryPagination.pageSize,
-                                keyword: this.deliverySearch.keyword
+                                keyword: this.deliverySearch.keyword,
+                                status: 1
                             };
-                            
-                            // 如果不是"全部"标签，则添加状态过滤
-                            if (currentTab.status !== 'all') {
-                                params.status = parseInt(currentTab.status);
-                            }
                             
                             console.log('请求发货单数据，参数:', params);
                             response = await axios.get('/delivery_orders', { params });
@@ -5013,6 +5009,7 @@
                 
                 // 加载待发货订单数量
                 async loadPendingOrdersCount() {
+                    console.log('加载待发货订单数量');
                     try {
                         const response = await axios.get('/purchase_orders', {
                             params: {
@@ -7247,7 +7244,6 @@
                 
                 getDeliveryStatusTextWithPartial(order) {
                     const status = this.currentDeliveryTab;
-                    console.log(status);
                     if (status === 0 || status === null) {
                         // 如果是待发货状态，检查是否部分发货
                         if (order.total_shipped_quantity > 0 && order.total_shipped_quantity < order.total_quantity) {
