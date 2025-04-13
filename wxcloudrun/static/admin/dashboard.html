@@ -2296,8 +2296,8 @@
                                                 @click="handleAcceptPurchase(scope.row)">接受</el-button>
                                             <el-button v-if="scope.row.status === 0 || scope.row.status === 1" size="small" type="danger"
                                                 @click="handleCancelPurchase(scope.row)">取消</el-button>
-                                            <el-button size="small" type="primary" v-if="false"
-                                                @click="createFromPurchase(scope.row.id)">生成配送单</el-button>
+                                            <el-button size="small" type="primary"
+                                                @click="createFromPurchase(scope.row.id)">一键发货</el-button>
                                         </el-button-group>
                                     </template>
                                 </el-table-column>
@@ -4902,6 +4902,8 @@
                 async createFromPurchase(purchaseId) {
                     try {
                         const response = await axios.post(`/delivery_orders/from_purchase/${purchaseId}`);
+                        console.log('生成配送单结果:', response);
+
                         if (response.status === 200) {
                             // 使用采购单数据填充配送单表单 
                             ElementPlus.ElMessage.success('配送单生成成功');

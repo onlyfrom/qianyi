@@ -485,12 +485,20 @@ const PurchaseOrderDetail = {
                         return;
                     }
 
-                    // 验证颜色是否重复
-                    const colors = this.expandedItems.map(item => item.currentSpec.color);
-                    const uniqueColors = new Set(colors);
-                    if (uniqueColors.size !== colors.length) {
-                        ElementPlus.ElMessage.error('存在重复的颜色，请检查');
-                        return;
+                    // 验证每个商品内的颜色是否重复
+                    const productColorMap = new Map();
+                    for (const item of this.expandedItems) {
+                        if (!productColorMap.has(item.product_id)) {
+                            productColorMap.set(item.product_id, new Set());
+                        }
+                        
+                        const colorSet = productColorMap.get(item.product_id);
+                        if (colorSet.has(item.currentSpec.color)) {
+                            ElementPlus.ElMessage.error(`商品"${item.product_name}"中存在重复的颜色"${item.currentSpec.color}"，请检查`);
+                            return;
+                        }
+                        
+                        colorSet.add(item.currentSpec.color);
                     }
 
                     // 保存编辑

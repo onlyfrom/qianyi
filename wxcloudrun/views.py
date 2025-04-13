@@ -2552,9 +2552,6 @@ def update_user_profile(user_id):
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '更新用户信息失败'}), 500
 
-
-
-# 创建发货单
 # 创建发货单
 @app.route('/delivery_orders', methods=['POST'])
 @login_required
@@ -3682,7 +3679,7 @@ def batch_delete_products(user_id):
 
 @app.route('/delivery_orders/from_purchase/<int:purchase_id>', methods=['POST'])
 @login_required
-def create_delivery_from_purchase(current_user_id, purchase_id):
+def create_delivery_from_purchase(user_id, purchase_id):
     try:
         # 获取采购单信息
         purchase_order = PurchaseOrder.query\
@@ -3693,8 +3690,8 @@ def create_delivery_from_purchase(current_user_id, purchase_id):
             return jsonify({'error': '采购单不存在'}), 404
 
         # 检查权限
-        current_user = User.query.get(current_user_id)
-        if not current_user or current_user.user_type != 1:
+        current_user = User.query.get(user_id)
+        if not current_user or current_user.role != 'admin' and current_user.role != 'STAFF' and current_user.role != 'normalAdmin':
             return jsonify({'error': '没有权限执行此操作'}), 403
 
         # 生成配送单号
@@ -3710,7 +3707,7 @@ def create_delivery_from_purchase(current_user_id, purchase_id):
             delivery_time_slot='',
             status=0,  # 待配送
             remark=f'从采购单 {purchase_order.order_number} 生成',
-            created_by=current_user_id,
+            created_by=user_id,
             created_at=datetime.now(),
             updated_at=datetime.now()
         )
@@ -4619,32 +4616,93 @@ def get_user_statistics(user_id):
         user_type = user.user_type
         
         # 构建基础查询条件
-        base_query = PurchaseOrder.query
+        purchase_query = PurchaseOrder.query
+        delivery_query = DeliveryOrder.query
         
         # 非管理员只能看到自己的数据
-        if user_type != 1:
-            base_query = base_query.filter_by(user_id=user_id)
-            
+        if user.role != 'admin' and user.role != 'STAFF' and user.role != 'normalAdmin':
+            purchase_query = purchase_query.filter_by(user_id=user_id)
+            delivery_query = delivery_query.filter_by(user_id=user_id)
+        
         # 获取今日待办事项数量（未完成的采购单）
-        today_tasks = base_query.filter(
+        today_tasks = purchase_query.filter(
             PurchaseOrder.status == 0,
             func.date(PurchaseOrder.created_at) == func.curdate()
         ).count()
         
         # 获取未确认采购单数量（所有未确认的采购单）
-        unconfirmed_orders = base_query.filter(
+        unconfirmed_orders = purchase_query.filter(
             PurchaseOrder.status == 0
         ).count()
         
         # 获取今日总采购单数量
-        today_orders = base_query.filter(
+        today_orders = purchase_query.filter(
             func.date(PurchaseOrder.created_at) == func.curdate()
         ).count()
+        
+        # 获取今日下单的客户数（去重）
+        today_customers = db.session.query(
+            func.count(func.distinct(PurchaseOrder.user_id))
+        ).filter(
+            func.date(PurchaseOrder.created_at) == func.curdate()
+        ).scalar() or 0
+        
+        # 获取今日应发货商品数（今日创建的采购单中的商品总数量）
+        today_to_deliver = db.session.query(
+            func.sum(PurchaseOrderItem.quantity)
+        ).join(
+            PurchaseOrder,
+            PurchaseOrder.id == PurchaseOrderItem.order_id
+        ).filter(
+            func.date(PurchaseOrder.created_at) == func.curdate()
+        ).scalar() or 0
+        
+        # 获取今日实发货商品数（今日创建的发货单中的商品总数量）
+        today_delivered = db.session.query(
+            func.sum(DeliveryItem.quantity)
+        ).join(
+            DeliveryOrder,
+            DeliveryOrder.id == DeliveryItem.delivery_id
+        ).filter(
+            func.date(DeliveryOrder.created_at) == func.curdate()
+        ).scalar() or 0
+        
+        # 获取累计发货商品总数（所有发货单中商品的总数量）
+        total_delivered_quantity = db.session.query(
+            func.sum(DeliveryItem.quantity)
+        ).join(
+            DeliveryOrder,
+            DeliveryOrder.id == DeliveryItem.delivery_id
+        ).scalar() or 0
+        
+        # 获取累计商品金额（使用 DeliveryItem 的数量和 PurchaseOrderItem 的价格）
+        # 获取累计商品金额（使用 DeliveryItem 的数量和 PurchaseOrderItem 的价格）
+        total_delivered_amount = db.session.query(
+            func.sum(DeliveryItem.quantity * PurchaseOrderItem.price)
+        ).join(
+            DeliveryOrder,
+            DeliveryOrder.id == DeliveryItem.delivery_id
+        ).join(
+            PurchaseOrder,
+            PurchaseOrder.order_number == DeliveryOrder.order_number
+        ).join(
+            PurchaseOrderItem,
+            db.and_(
+                PurchaseOrderItem.order_id == PurchaseOrder.id,
+                PurchaseOrderItem.product_id == DeliveryItem.product_id,
+                PurchaseOrderItem.color == DeliveryItem.color
+            )
+        ).scalar() or 0
         
         return jsonify({
             'today_tasks': today_tasks,
             'unconfirmed_orders': unconfirmed_orders,
             'today_orders': today_orders,
+            'today_customers': today_customers,
+            'today_to_deliver': int(today_to_deliver),
+            'today_delivered': int(today_delivered),
+            'total_delivered_quantity': int(total_delivered_quantity),
+            'total_delivered_amount': float(total_delivered_amount),
             'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }), 200
             
@@ -5585,7 +5643,7 @@ def get_combined_products(user_id):
             'pages': (total + page_size - 1) // page_size,
             'current_page': page
         }), 200
-        
+            
     except Exception as e:
         print(f'获取组合商品列表失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
@@ -6031,6 +6089,7 @@ def get_latest_push_products(user_id):
             except Exception as e:
                 print(f'处理商品数据出错 - 商品ID: {product.id}, 错误: {str(e)}')
                 continue
+                
                 
         return jsonify({
             'products': products,
