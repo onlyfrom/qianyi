@@ -4979,7 +4979,18 @@
                                 }
                             });
                             console.log('采购单数据结果:', response.data);
-                        } else {
+                        } else if (currentTab.status === 3) {
+                            console.log('从采购单接口获取已取消数据');
+                            response = await axios.get('/purchase_orders', {
+                                params: {
+                                    status: 3, // 状态2表示已完成
+                                    page: this.deliveryPagination.currentPage,
+                                    pageSize: this.deliveryPagination.pageSize,
+                                    keyword: this.deliverySearch.keyword
+                                }
+                            });
+                            console.log('采购单数据结果:', response.data);
+                        }else {
                             // 加载常规发货单数据
                             const params = {
                                 page: this.deliveryPagination.currentPage,
