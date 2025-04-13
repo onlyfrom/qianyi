@@ -4644,32 +4644,50 @@ def get_user_statistics(user_id):
             func.date(PurchaseOrder.created_at) == func.curdate()
         ).count()
         
-        # 获取今日下单的客户数（去重）
+        # 获取今日下单的客户数（去重）及其信息
         today_customers = db.session.query(
-            func.count(func.distinct(PurchaseOrder.user_id))
-        ).filter(
+            PurchaseOrder.user_id,
+            User.nickname,
+            User.phone
+        ).join(User, User.id == PurchaseOrder.user_id).filter(
             func.date(PurchaseOrder.created_at) == func.curdate()
-        ).scalar() or 0
+        ).distinct().all()
         
         # 获取今日应发货商品数（今日创建的采购单中的商品总数量）
-        today_to_deliver = db.session.query(
+        today_to_deliver_items = db.session.query(
+            PurchaseOrderItem.product_id,
+            Product.name.label('product_name'),  # 从 Product 模型中获取名称
+            PurchaseOrderItem.color,
             func.sum(PurchaseOrderItem.quantity)
         ).join(
             PurchaseOrder,
             PurchaseOrder.id == PurchaseOrderItem.order_id
+        ).join(
+            Product,
+            Product.id == PurchaseOrderItem.product_id  # 连接 Product 模型
         ).filter(
             func.date(PurchaseOrder.created_at) == func.curdate()
-        ).scalar() or 0
+        ).group_by(PurchaseOrderItem.product_id, PurchaseOrderItem.color).all()
+        
+        today_to_deliver = sum(item[3] for item in today_to_deliver_items)  # 计算总数量
         
         # 获取今日实发货商品数（今日创建的发货单中的商品总数量）
-        today_delivered = db.session.query(
+        today_delivered_items = db.session.query(
+            DeliveryItem.product_id,
+            Product.name.label('product_name'),  # 从 Product 模型中获取名称
+            DeliveryItem.color,
             func.sum(DeliveryItem.quantity)
         ).join(
             DeliveryOrder,
             DeliveryOrder.id == DeliveryItem.delivery_id
+        ).join(
+            Product,
+            Product.id == DeliveryItem.product_id  # 连接 Product 模型
         ).filter(
             func.date(DeliveryOrder.created_at) == func.curdate()
-        ).scalar() or 0
+        ).group_by(DeliveryItem.product_id, DeliveryItem.color).all()
+        
+        today_delivered = sum(item[3] for item in today_delivered_items)  # 计算总数量
         
         # 获取累计发货商品总数（所有发货单中商品的总数量）
         total_delivered_quantity = db.session.query(
@@ -4679,7 +4697,6 @@ def get_user_statistics(user_id):
             DeliveryOrder.id == DeliveryItem.delivery_id
         ).scalar() or 0
         
-        # 获取累计商品金额（使用 DeliveryItem 的数量和 PurchaseOrderItem 的价格）
         # 获取累计商品金额（使用 DeliveryItem 的数量和 PurchaseOrderItem 的价格）
         total_delivered_amount = db.session.query(
             func.sum(DeliveryItem.quantity * PurchaseOrderItem.price)
@@ -4702,9 +4719,11 @@ def get_user_statistics(user_id):
             'today_tasks': today_tasks,
             'unconfirmed_orders': unconfirmed_orders,
             'today_orders': today_orders,
-            'today_customers': today_customers,
-            'today_to_deliver': int(today_to_deliver),
-            'today_delivered': int(today_delivered),
+            'today_customers': [{'user_id': customer.user_id, 'nickname': customer.nickname, 'phone': customer.phone} for customer in today_customers],
+            'today_to_deliver': [{'product_id': item.product_id, 'product_name': item.product_name, 'color': item.color, 'quantity': item[3]} for item in today_to_deliver_items],
+            'today_delivered': [{'product_id': item.product_id, 'product_name': item.product_name, 'color': item.color, 'quantity': item[3]} for item in today_delivered_items],
+            'today_to_deliver_count': today_to_deliver,  # 今日应发货商品总数
+            'today_delivered_count': today_delivered,      # 今日实发货商品总数
             'total_delivered_quantity': int(total_delivered_quantity),
             'total_delivered_amount': float(total_delivered_amount),
             'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
