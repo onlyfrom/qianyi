@@ -4864,7 +4864,10 @@
                 // 查看采购单详情
                 async viewPurchaseDetail(order) {
                     this.purchaseDetailstatus = 'view';
-
+                    if (order.orderNumber) {
+                        order.id = order.orderNumber;
+                    }
+                    
                     try {
                         const response = await axios.get(`/purchase_orders/${order.id}`);
                         if (response.status === 200 && this.purchaseDetailstatus === 'view') {
@@ -4987,6 +4990,7 @@
                             
                             console.log('请求发货单数据，参数:', params);
                             response = await axios.get('/delivery_orders', { params });
+                            response.data
                             console.log('发货单数据结果:', response.data);
                         }
                         

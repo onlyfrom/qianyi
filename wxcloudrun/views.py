@@ -2692,7 +2692,7 @@ def get_delivery_orders(user_id):
         # 获取查询参数
         page = int(request.args.get('page', 1))
         page_size = min(int(request.args.get('pageSize', 10)), 50)
-        status = request.args.get('status')
+        status = request.args.get('status') 
         searchKey = request.args.get('searchKey', '').strip()
         order_number = request.args.get('order_number')  # 添加采购单号参数
 
@@ -2704,13 +2704,11 @@ def get_delivery_orders(user_id):
             return jsonify({'error': '用户不存在'}), 404
             
         # 构建基础查询
-        query = DeliveryOrder.query\
-            .outerjoin(User, DeliveryOrder.created_by == User.id)\
-            .outerjoin(DeliveryItem)\
-            .outerjoin(Product, DeliveryItem.product_id == Product.id)
+        query = DeliveryOrder.query
             
         # 非管理员只能查看自己创建的订单
         if user.role != 'admin' and user.role != 'STAFF' and user.role != 'normalAdmin':
+            print(f'非管理员用户, user_id: {user_id}')
             query = query.filter(DeliveryOrder.created_by == user_id)
             
         # 状态筛选
@@ -3328,7 +3326,13 @@ def get_purchase_order(user_id, order_id):
         print(f'开始获取采购单详情: order_id={order_id}, user_id={user_id}')
         
         # 获取采购单
-        order = PurchaseOrder.query.filter_by(id=order_id).first()
+        order = PurchaseOrder.query.filter(
+            db.or_(
+                PurchaseOrder.id == order_id,
+                PurchaseOrder.order_number == order_id
+            )
+        ).first()
+# ... existing code ...
         
         if not order:
             print(f'采购单不存在: order_id={order_id}')
