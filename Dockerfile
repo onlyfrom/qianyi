@@ -5,8 +5,10 @@
 FROM python:3.8-slim
 
 # 设置时区
-ENV TZ=Asia/Shanghai
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+ENV TZ=Asia/Shanghai \
+    DEBIAN_FRONTEND=noninteractive
+
+RUN ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime && echo ${TZ} > /etc/timezone && dpkg-reconfigure --frontend noninteractive tzdata && rm -rf /var/lib/apt/lists/*
 
 RUN pip config set global.index-url http://mirrors.cloud.tencent.com/pypi/simple && pip config set global.trusted-host mirrors.cloud.tencent.com
 # 安装系统依赖
