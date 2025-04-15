@@ -2274,7 +2274,7 @@ def update_purchase_order_items(user_id, order_id):
             return jsonify({'error': '采购单不存在'}), 404
             
         # 非管理员只能编辑自己的采购单
-        if user.role != 'admin' and order.user_id != user_id:
+        if user.role != 'admin' and order.user_id != user_id and user.role != 'STAFF' and user.role != 'normalAdmin':
             return jsonify({'error': '无权限编辑此采购单'}), 403
             
             
@@ -3289,7 +3289,7 @@ def cancel_purchase_order(user_id, order_id):
                     product.stock = sum(spec['stock'] for spec in specs)
 
         # 更新采购单状态为已取消(2)
-        purchase_order.status = 2
+        purchase_order.status = 3
         db.session.commit()
 
         return jsonify({

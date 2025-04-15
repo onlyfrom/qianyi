@@ -1671,27 +1671,22 @@
                                             @click="handleDelete(scope.row)">删除</el-button>
                                         <el-button size="small" :type="scope.row.status === 1 ? 'info' : 'success'"
                                             @click="handleStatusChange(scope.row,'status')">{{ scope.row.status === 1 ? '下架' : '上架' }}</el-button>
-                                        </el-button-group>
+                                        </el-button-group> q
 
 
                                     </template>
                                 </el-table-column>
                             </el-table>
                             <!-- 分页 -->
-                            <div class="pagination-container" style="margin-top: 20px; text-align: right;">
-                                <el-pagination
-                                    v-model:current-page="pagination.currentPage"
-                                    v-model:page-size="pagination.pageSize"
-                                    :page-sizes="[20, 30, 50, 100]"
-                                    :total="pagination.total"
-                                    layout="total, sizes, prev, pager, next, jumper"
-                                    @size-change="handleSizeChange"
-                                    @current-change="handleCurrentChange"
-                                    :prev-text="'上一页'"
-                                    :next-text="'下一页'"
-                                    :total-text="'总计'"
-                                    popper-class="pagination-dropdown"
-                                />
+                            <div class="pagination-container">
+                                <el-pagination 
+                                    v-model:current-page="purchasePagination.currentPage"
+                                    v-model:page-size="purchasePagination.pageSize" 
+                                    :total="purchasePagination.total"
+                                    :page-sizes="[10, 20, 50, 100]"
+                                    @size-change="handlePurchaseSizeChange"
+                                    @current-change="handlePurchasePageChange" 
+                                    layout="total, sizes, prev, pager, next" />
                             </div>
 
                             <!-- 添加商品编辑商品对话框 -->
@@ -2297,7 +2292,7 @@
                                             <el-button v-if="scope.row.status === 0 || scope.row.status === 1" size="small" type="danger"
                                                 @click="handleCancelPurchase(scope.row)">取消</el-button>
                                             <el-button size="small" type="primary"
-                                                @click="createFromPurchase(scope.row.id)">一键发货</el-button>
+                                                @click="createFromPurchase(scope.row.id)" v-if = "scope.row.status === 1 ">一键发货</el-button>
                                         </el-button-group>
                                     </template>
                                 </el-table-column>
@@ -4819,12 +4814,15 @@
                         this.purchaseLoading = true;
                         const response = await axios.get('/purchase_orders', {
                             params: {
+                                page: this.purchasePagination.currentPage,
+                                page_size: this.purchasePagination.pageSize,
                                 keyword: this.purchaseSearch.keyword
                             }
                         });
 
                         if (response.status === 200) {
                             this.purchaseOrders = response.data.orders;
+                            this.purchasePagination.total = response.data.total;
                         }
                     } catch (error) {
                         this.handleAxiosError(error, '加载采购单列表失败');
