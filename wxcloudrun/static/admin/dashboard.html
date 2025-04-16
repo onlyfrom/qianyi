@@ -14,6 +14,7 @@
     <script src="/admin/lib/sortable/Sortable.min.js"></script>
     <script src="components/ProductSelector.js"></script>
     <script src="components/PurchaseOrderDetail.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/locale/zh-cn.js"></script>
     <style>
         * {
             margin: 0;
@@ -2245,8 +2246,27 @@
                                 <div class="action-buttons">
                                     <el-button type="primary" @click="showPlaceOrderDialog">代客下单</el-button>
                                 </div>
+                                
                             </div>
-
+                            <div class="date-filter">
+                                <el-date-picker
+                                    v-model="purchaseSearch.dateRange"
+                                    type="daterange"
+                                    range-separator="至"
+                                    start-placeholder="开始日期"
+                                    end-placeholder="结束日期"
+                                    :shortcuts="dateShortcuts"
+                                    @change="handlePurchaseDateRangeChange"
+                                    value-format="YYYY-MM-DD"
+                                    format="YYYY年MM月DD日"
+                                    :default-time="[
+                                        new Date(2000, 1, 1, 0, 0, 0),
+                                        new Date(2000, 1, 1, 23, 59, 59)
+                                    ]"
+                                    timezone="Asia/Shanghai"
+                                />
+                               
+                            </div>
                             <!-- 采购单列表 -->
                             <el-table :data="purchaseOrders" v-loading="purchaseLoading" border stripe>
                                 <el-table-column prop="order_number" label="采购单号" width="180">
@@ -2334,27 +2354,24 @@
                                         </template>
                                     </el-input>
                                     
-                                    <div class="filter-options">
-                                        <el-select v-model="deliverySearch.timeRange" placeholder="时间范围" @change="handleDeliverySearch">
-                                            <el-option label="全部时间" value="" />
-                                            <el-option label="今天" value="today" />
-                                            <el-option label="昨天" value="yesterday" />
-                                            <el-option label="最近7天" value="week" />
-                                            <el-option label="最近30天" value="month" />
-                                            <el-option label="自定义" value="custom" />
-                                        </el-select>
-                                        
-                                        <template v-if="deliverySearch.timeRange === 'custom'">
-                                            <el-date-picker
-                                                v-model="deliverySearch.dateRange"
-                                                type="daterange"
-                                                range-separator="至"
-                                                start-placeholder="开始日期"
-                                                end-placeholder="结束日期"
-                                                value-format="YYYY-MM-DD"
-                                                @change="handleDeliverySearch"
-                                            />
-                                        </template>
+                                    <div class="date-filter">
+                                        <el-date-picker
+                                            v-model="deliverySearch.dateRange"
+                                            type="daterange"
+                                            range-separator="至"
+                                            start-placeholder="开始日期"
+                                            end-placeholder="结束日期"
+                                            :shortcuts="dateShortcuts"
+                                            @change="handleDateRangeChange"
+                                            value-format="YYYY-MM-DD"
+                                            format="YYYY年MM月DD日"
+                                            :default-time="[
+                                                new Date(2000, 1, 1, 0, 0, 0),
+                                                new Date(2000, 1, 1, 23, 59, 59)
+                                            ]"
+                                            timezone="Asia/Shanghai"
+                                        />
+                                       
                                     </div>
                                 </div>
                             </div>
@@ -2466,14 +2483,14 @@
                                                         </template>
 
                                                         <!-- 已发货状态显示完成按钮 -->
-                                                        <template v-if="scope.row.status === 1">
+                                                        <!--template v-if="scope.row.status === 1" >
                                                             <el-button 
                                                                 size="small"
                                                                 type="success"
                                                                 @click="completeDelivery(scope.row)">
                                                                 完成
                                                             </el-button>
-                                                        </template>
+                                                        </template-->
 
                                                         <!-- 打印按钮对所有状态都显示 -->
                                                         <el-button 
@@ -3629,7 +3646,9 @@
                     },
                     // 采购单相关数据
                     purchaseSearch: {
-                        keyword: ''
+                        keyword: '',
+                        start_date: '',
+                        end_date: ''
                     },
                     purchaseLoading: false,
                     purchaseOrders: [],
@@ -3858,6 +3877,32 @@
                     userSearchLoading: false,
                     productSelectorVisible: false,
                     selectedUserType: '', // 添加选中用户类型
+                    dateShortcuts: [
+                        {
+                            text: '当天',
+                            value: () => {
+                                const today = new Date();
+                                const end = new Date(today.getFullYear(), today.getMonth(),today.getDate() + 1);
+                                return [today, end];
+                            }
+                        },
+                        {
+                            text: '本月',
+                            value: () => {
+                                const today = new Date();
+                                const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                                return [firstDay, today];
+                            }
+                        },
+                        {
+                            text: '本年',
+                            value: () => {
+                                const today = new Date();
+                                const firstDay = new Date(today.getFullYear(), 0, 1);
+                                return [firstDay, today];
+                            }
+                        }
+                    ]
                 }
             },
             created() {
@@ -3986,6 +4031,33 @@
                     } finally {
                         this.productLoading = false;
                         }
+                },
+                handleDateRangeChange(value) {
+                    this.deliverySearch.start_date = value[0]
+                    this.deliverySearch.end_date = value[1]
+                    console.log('this.deliverySearch:', this.deliverySearch.start_date, this.deliverySearch.end_date);
+                    this.loadDeliveryOrders();
+                    
+                },
+                handlePurchaseDateRangeChange(value) {
+                    this.purchaseSearch.start_date = value[0]
+                    this.purchaseSearch.end_date = value[1]
+                    console.log('this.purchaseSearch:', this.purchaseSearch.start_date, this.purchaseSearch.end_date);
+                    this.loadPurchaseOrders();
+                },
+                handleDateShortcut(shortcut) {
+                    if (shortcut === '当天') {
+                        this.deliverySearch.dateRange = [new Date(), new Date()];
+                    } else if (shortcut === '本月') {
+                        const today = new Date();
+                        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                        this.deliverySearch.dateRange = [firstDay, today];
+                    } else if (shortcut === '本年') {
+                        const today = new Date();
+                        const firstDay = new Date(today.getFullYear(), 0, 1);
+                        this.deliverySearch.dateRange = [firstDay, today];
+                    }
+                    this.loadDeliveryOrders();
                 },
                 showAddProductDialog() {
                     this.dialogType = 'add'
@@ -4420,6 +4492,11 @@
                     const customTags = this.productForm.tags.filter(tag => !this.presetTags.includes(tag));
                     this.productForm.tags = [...value, ...customTags];
                 },
+                handlePurchaseSizeChange(size) {
+                    this.purchasePagination.pageSize = size;
+                    this.purchasePagination.currentPage = 1; // 切换每页大小时重置为第一页
+                    this.loadPurchaseOrders();
+                },
 
                 handleCustomTagChange(value) {
                     // value 现在包含所有标签（预设和自定义）
@@ -4816,7 +4893,9 @@
                             params: {
                                 page: this.purchasePagination.currentPage,
                                 page_size: this.purchasePagination.pageSize,
-                                keyword: this.purchaseSearch.keyword
+                                keyword: this.purchaseSearch.keyword,
+                                start_date: this.purchaseSearch.start_date,
+                                end_date: this.purchaseSearch.end_date
                             }
                         });
 
@@ -4962,7 +5041,10 @@
                                     status: 1, // 状态1表示待发货
                                     page: this.deliveryPagination.currentPage,
                                     pageSize: this.deliveryPagination.pageSize,
-                                    keyword: this.deliverySearch.keyword
+                                    keyword: this.deliverySearch.keyword,
+                                    start_date: this.deliverySearch.start_date,
+                                    end_date: this.deliverySearch.end_date
+                                    
                                 }
                             });
                             console.log('采购单数据结果:', response.data);
@@ -4973,7 +5055,9 @@
                                     status: 2, // 状态2表示已完成
                                     page: this.deliveryPagination.currentPage,
                                     pageSize: this.deliveryPagination.pageSize,
-                                    keyword: this.deliverySearch.keyword
+                                    keyword: this.deliverySearch.keyword,
+                                    start_date: this.deliverySearch.start_date,
+                                    end_date: this.deliverySearch.end_date
                                 }
                             });
                             console.log('采购单数据结果:', response.data);
@@ -4984,7 +5068,9 @@
                                     status: 3, // 状态2表示已完成
                                     page: this.deliveryPagination.currentPage,
                                     pageSize: this.deliveryPagination.pageSize,
-                                    keyword: this.deliverySearch.keyword
+                                    keyword: this.deliverySearch.keyword,
+                                    start_date: this.deliverySearch.start_date,
+                                    end_date: this.deliverySearch.end_date
                                 }
                             });
                             console.log('采购单数据结果:', response.data);
@@ -4994,7 +5080,9 @@
                                 page: this.deliveryPagination.currentPage,
                                 pageSize: this.deliveryPagination.pageSize,
                                 keyword: this.deliverySearch.keyword,
-                                status: 1
+                                status: 1,
+                                start_date: this.deliverySearch.start_date,
+                                end_date: this.deliverySearch.end_date
                             };
                             
                             console.log('请求发货单数据，参数:', params);
@@ -7491,7 +7579,8 @@
         // 使用 Element Plus
         app.use(ElementPlus, {
             size: 'default',
-            zIndex: 3000
+            zIndex: 3000,
+            locale: ElementPlusLocaleZhCn
         })
 
         // 注册商品选择器组件

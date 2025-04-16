@@ -2031,7 +2031,7 @@ def create_purchase_order(user_id):
             return jsonify({'error': '请添加至少一个商品'}), 400
         # 创建采购单
 
-        status = data.get('status', 0)
+        status = data.get('status', 1)
         purchase_order = PurchaseOrder(
             order_number=order_number,
             user_id=data.get('user_id', user_id),            
@@ -2088,6 +2088,9 @@ def get_purchase_orders(user_id):
         page_size = min(int(request.args.get('page_size', 10)), 50)
         status = request.args.get('status')
         date_range = request.args.get('date_range')
+        keyword = request.args.get('keyword')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
         
         # 获取当前用户信息
         current_user = User.query.get(user_id)
@@ -2102,13 +2105,29 @@ def get_purchase_orders(user_id):
         # 如果不是管理员，限制只能查看自己的订单
         if current_user.role != 'admin' and current_user.role != 'STAFF':  # 假设 1 表示管理员
             query = query.filter(PurchaseOrder.user_id == user_id)
-            
+        
+        if keyword:
+            query = query.filter(PurchaseOrder.order_number.like(f'%{keyword}%'))
         # 添加筛选条件
         if status:
             query = query.filter(PurchaseOrder.status == status)
             
         if date_range:
             query = query.filter(PurchaseOrder.created_at.between(date_range[0], date_range[1]))
+
+        # 日期范围筛选
+        if start_date and end_date:
+            print('开始时间和结束时间', start_date, end_date)
+            query = query.filter(
+                db.and_(
+                    func.date(PurchaseOrder.created_at) >= func.date(start_date),
+                    func.date(PurchaseOrder.created_at) <= func.date(end_date)
+                )
+            )
+        elif start_date:
+            query = query.filter(func.date(PurchaseOrder.created_at) >= func.date(start_date))
+        elif end_date:
+            query = query.filter(func.date(PurchaseOrder.created_at) <= func.date(end_date))
 
         # 按创建时间倒序排序
         query = query.order_by(PurchaseOrder.created_at.desc())
@@ -2695,8 +2714,10 @@ def get_delivery_orders(user_id):
         status = request.args.get('status') 
         searchKey = request.args.get('searchKey', '').strip()
         order_number = request.args.get('order_number')  # 添加采购单号参数
+        start_date = request.args.get('start_date')  # 添加开始日期参数
+        end_date = request.args.get('end_date')  # 添加结束日期参数
 
-        print(f'获取配送单列表, status: {status}, searchKey: {searchKey}, order_number: {order_number}')
+        print(f'获取配送单列表, status: {status}, searchKey: {searchKey}, order_number: {order_number}, start_date: {start_date}, end_date: {end_date}')
         
         # 检查用户类型
         user = User.query.get(user_id)
@@ -2718,8 +2739,8 @@ def get_delivery_orders(user_id):
         # 采购单号筛选
         if order_number:
             query = query.filter(DeliveryOrder.order_number == order_number)
-
             
+        
         # 关键字搜索
         if searchKey:
             search = f'%{searchKey}%'
@@ -2730,6 +2751,23 @@ def get_delivery_orders(user_id):
                 DeliveryOrder.delivery_address.like(search),
                 Product.name.like(search)
             ))
+        
+        # 日期范围筛选
+        # 日期范围筛选
+        if start_date and end_date:
+            print(f'start_date: {start_date}, end_date: {end_date}')
+            query = query.filter(
+                db.and_(
+                    func.date(DeliveryOrder.created_at) >= func.date(start_date),
+                    func.date(DeliveryOrder.created_at) <= func.date(end_date)
+                )
+            )
+        elif start_date:
+            start_date = datetime.fromisoformat(start_date.replace('T', '+08:00'))
+            query = query.filter(func.date(DeliveryOrder.created_at) >= func.date(start_date))
+        elif end_date:
+            end_date = datetime.fromisoformat(end_date.replace('T', '+08:00'))
+            query = query.filter(func.date(DeliveryOrder.created_at) <= func.date(end_date))
             
         # 获取分页数据
         paginated_orders = query.order_by(DeliveryOrder.created_at.desc())\
@@ -3242,7 +3280,7 @@ def accept_purchase_order(user_id, order_id):
 
 # 取消采购单
 @app.route('/purchase_orders/<int:order_id>/cancel', methods=['PUT'])
-@admin_required
+@check_staff_permission('purchase_order.cancel')
 def cancel_purchase_order(user_id, order_id):
     try:
         # 检查采购单是否存在和状态
@@ -3257,8 +3295,8 @@ def cancel_purchase_order(user_id, order_id):
 
         purchase_order, user = order
 
-        # 如果订单状态为1（已发货），需要恢复库存
-        if purchase_order.status == 1:
+        # 如果订单状态为2（已发货），需要恢复库存
+        if purchase_order.status == 2:
             # 获取所有发货单商品
             delivery_items = DeliveryItem.query.filter_by(
                 order_number=purchase_order.order_number
