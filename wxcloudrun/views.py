@@ -2107,7 +2107,12 @@ def get_purchase_orders(user_id):
             query = query.filter(PurchaseOrder.user_id == user_id)
         
         if keyword:
-            query = query.filter(PurchaseOrder.order_number.like(f'%{keyword}%'))
+            query = query.filter(db.or_(
+                PurchaseOrder.order_number.like(f'%{keyword}%'),
+                User.username.like(f'%{keyword}%'),
+                User.nickname.like(f'%{keyword}%'),
+                User.phone.like(f'%{keyword}%')
+            ))
         # 添加筛选条件
         if status:
             query = query.filter(PurchaseOrder.status == status)
@@ -2712,7 +2717,7 @@ def get_delivery_orders(user_id):
         page = int(request.args.get('page', 1))
         page_size = min(int(request.args.get('pageSize', 10)), 50)
         status = request.args.get('status') 
-        searchKey = request.args.get('searchKey', '').strip()
+        searchKey = request.args.get('keyword', '').strip()
         order_number = request.args.get('order_number')  # 添加采购单号参数
         start_date = request.args.get('start_date')  # 添加开始日期参数
         end_date = request.args.get('end_date')  # 添加结束日期参数
