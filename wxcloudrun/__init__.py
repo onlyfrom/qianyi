@@ -114,5 +114,8 @@ def after_request(response):
 # 导入视图函数
 from . import views
 from . import stock_import
+from . import billing
 
+# 注册蓝图
+app.register_blueprint(billing.billing_bp)
 

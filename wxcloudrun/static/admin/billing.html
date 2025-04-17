@@ -248,7 +248,7 @@
                                 <el-option
                                     v-for="item in customerOptions"
                                     :key="item.id"
-                                    :label="item.name"
+                                    :label="item.nickname || item.username"
                                     :value="item.id"
                                 />
                             </el-select>
@@ -268,7 +268,7 @@
                         v-loading="tableLoading"
                         border
                     >
-                        <el-table-column prop="id" label="账单号" width="180" />
+                        <el-table-column prop="order_number" label="账单号" width="180" ></el-table-column>   
                         <el-table-column prop="created_at" label="创建时间" width="180">
                             <template #default="scope">
                                 {{ formatDate(scope.row.created_at) }}
@@ -281,7 +281,7 @@
                                 </el-tag>
                             </template>
                         </el-table-column>
-                        <el-table-column prop="customer_name" label="客户" />
+                        <el-table-column prop="customer_name" label="客户" width="120"></el-table-column>
                         <el-table-column prop="amount" label="金额" width="150">
                             <template #default="scope">
                                 <span :class="scope.row.amount >= 0 ? 'income' : 'expense'">
@@ -339,9 +339,15 @@
             >
                 <div v-if="currentBilling" class="billing-detail">
                     <el-descriptions :column="2" border>
-                        <el-descriptions-item label="账单号">{{ currentBilling.id }}</el-descriptions-item>
-                        <el-descriptions-item label="创建时间">{{ formatDate(currentBilling.created_at) }}</el-descriptions-item>
-                        <el-descriptions-item label="客户名称">{{ currentBilling.customer_name }}</el-descriptions-item>
+                        <el-descriptions-item label="账单号">
+                            {{ currentBilling.id }}
+                        </el-descriptions-item>
+                        <el-descriptions-item label="创建时间">
+                            {{ formatDate(currentBilling.created_at) }}
+                        </el-descriptions-item>
+                        <el-descriptions-item label="客户名称">
+                            {{ currentBilling.customer_name }}
+                        </el-descriptions-item>
                         <el-descriptions-item label="账单类型">
                             <el-tag :type="getBillingTypeTag(currentBilling.type)">
                                 {{ getBillingTypeText(currentBilling.type) }}
@@ -364,9 +370,10 @@
 
                     <div style="margin-top: 20px;">
                         <h4>关联订单信息</h4>
-                        <el-table :data="currentBilling.items" border style="margin-top: 10px;">
-                            <el-table-column prop="product_name" label="商品名称" />
-                            <el-table-column prop="quantity" label="数量" width="120" />
+                        <el-table :data="currentBilling.items" border style="margin-top: 10px;" show-summary :summary-method="getSummaries">
+                            <el-table-column prop="product_name" label="商品名称" ></el-table-column>
+                            <el-table-column prop="color" label="颜色" width="120"></el-table-column>
+                            <el-table-column prop="quantity" label="数量" width="120"></el-table-column>
                             <el-table-column prop="price" label="单价" width="120">
                                 <template #default="scope">
                                     ¥{{ formatMoney(scope.row.price) }}
@@ -396,6 +403,7 @@
         // 请求拦截器
         axios.interceptors.request.use(config => {
             const token = localStorage.getItem('token');
+            console.log(token);
             if (token) {
                 config.headers['Authorization'] = `Bearer ${token}`;
             }
@@ -412,7 +420,8 @@
                 ElementPlus.ElMessage.error('登录已过期，请重新登录');
                 localStorage.removeItem('token');
                 localStorage.removeItem('userInfo');
-                window.location.href = '/admin/index.html';
+                //window.location.href = '/admin/index.html';
+                
                 return;
             }
             ElementPlus.ElMessage.error(error.response?.data?.message || '请求失败');
@@ -497,6 +506,7 @@
                         });
                         
                         if (response.status === 200) {
+                            console.log(response.data);
                             billingList.value = response.data.items;
                             pagination.total = response.data.total;
                         }
@@ -667,8 +677,9 @@
                 };
 
                 const getBillingStatusText = (status) => {
+                    console.log(status);
                     const types = {
-                        'pending': '待确认',
+                        'pending': '待发货',
                         'completed': '已完成',
                         'cancelled': '已取消'
                     };
@@ -694,6 +705,49 @@
 
                 const goBack = () => {
                     window.location.href = '/admin/dashboard.html';
+                };
+
+                const getSummaries = ({ columns, data }) => {
+                    const sums = [];
+                    columns.forEach((column, index) => {
+                        if (index === 0) {
+                            sums[index] = '总计';
+                            return;
+                        }
+                        if (index === 1) {
+                            sums[index] = '';
+                            return;
+                        }
+                        if (index === 2) {
+                            // 数量合计
+                            const values = data.map(item => Number(item.quantity));
+                            sums[index] = values.reduce((prev, curr) => {
+                                const value = Number(curr);
+                                if (!isNaN(value)) {
+                                    return prev + curr;
+                                } else {
+                                    return prev;
+                                }
+                            }, 0);
+                        } else if (index === 3) {
+                            // 单价列不计算合计
+                            sums[index] = '';
+                        } else if (index === 4) {
+                            // 小计合计
+                            const values = data.map(item => Number(item.price) * Number(item.quantity));
+                            sums[index] = '¥' + formatMoney(values.reduce((prev, curr) => {
+                                const value = Number(curr);
+                                if (!isNaN(value)) {
+                                    return prev + curr;
+                                } else {
+                                    return prev;
+                                }
+                            }, 0));
+                        } else {
+                            sums[index] = '';
+                        }
+                    });
+                    return sums;
                 };
 
                 // 生命周期钩子
@@ -738,7 +792,8 @@
                     getBillingStatusText,
                     getUserInfo,
                     handleCommand,
-                    goBack
+                    goBack,
+                    getSummaries
                 };
             }
         });

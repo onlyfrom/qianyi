@@ -1285,6 +1285,10 @@
                             <el-icon><share /></el-icon>
                             <span>推送单管理</span>
                         </el-menu-item>
+                        <el-menu-item index="8">
+                            <el-icon><Money /></el-icon>
+                            <span>账单管理</span>
+                        </el-menu-item>
                         <el-menu-item index="5">
                             <el-icon>
                                 <Setting />
@@ -2521,6 +2525,16 @@
                                     layout="total, sizes, prev, pager, next, jumper"
                                 />
                             </div>
+                        </div>
+
+                        <div v-if="currentPage === '8'" class="content-container">
+                            <div class="module-header">
+                                <h2 class="module-title">账单管理</h2>
+                            </div>
+                            <div>
+                                非管理员用户无法查看账单管理
+                            </div>
+
                         </div>
 
                         <!-- 推送单管理内容 -->
@@ -3937,8 +3951,16 @@
                         this.loadStatistics();
                     } else if (index === '7') {
                         this.loadPushOrders();
+                    } else if (index === '8') {
+                        console.log('this.user_info:', this.user_info);
+                        if (this.userInfo.role === 'admin') {
+                            window.location.href = '/admin/billing.html';
+                        } else {
+                            ElementPlus.ElMessage.error('您没有权限访问此页面');
+                        }
                     }
                 },
+                
                 calculateTotalPendingQuantity(order) {
                     if (!order || !order.items || !Array.isArray(order.items)) {
                         return 0;
@@ -5834,7 +5856,7 @@
                     }
                 },
                 onImageLoad(e) {
-                    console.log('图片加载完成', e);
+                    //console.log('图片加载完成', e);
                 },
                 // 更新筛选选项
                 updateFilters() {

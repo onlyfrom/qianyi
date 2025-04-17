@@ -189,7 +189,7 @@ class PurchaseOrder(db.Model):
     order_number = db.Column(db.String(50), unique=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False) # 下单人
     total_amount = db.Column(db.Float, default=0)
-    status = db.Column(db.Integer, default=0)  # 0:待处理 1:已处理 2:已取消
+    status = db.Column(db.Integer, default=0)  # 0:待处理 1:已接受
     remark = db.Column(db.Text)
     handler_id = db.Column(db.Integer, db.ForeignKey('users.id')) # 处理人
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
@@ -207,6 +207,24 @@ class PurchaseOrderItem(db.Model):
     accessory_price = db.Column(db.Float, default=0.0)  # 辅料价格
     packaging_price = db.Column(db.Float, default=0.0)  # 包装价格
     color = db.Column(db.String(50))
+    
+    # 添加与 Product 模型的关联关系
+    product = db.relationship('Product', backref=db.backref('purchase_order_items', lazy=True))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'order_id': self.order_id,
+            'product_id': self.product_id,
+            'product_name': self.product.name if self.product else '未知商品',
+            'quantity': self.quantity,
+            'price': float(self.price),
+            'logo_price': float(self.logo_price),
+            'accessory_price': float(self.accessory_price),
+            'packaging_price': float(self.packaging_price),
+            'color': self.color,
+            'total': float(self.price * self.quantity)
+        }
 
 # 发货订单模型
 class DeliveryOrder(db.Model):
