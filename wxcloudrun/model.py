@@ -189,6 +189,7 @@ class PurchaseOrder(db.Model):
     order_number = db.Column(db.String(50), unique=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False) # 下单人
     total_amount = db.Column(db.Float, default=0)
+    paid_amount = db.Column(db.Float, default=0)  # 已付货款（已结清金额）
     status = db.Column(db.Integer, default=0)  # 0:待处理 1:已接受
     remark = db.Column(db.Text)
     handler_id = db.Column(db.Integer, db.ForeignKey('users.id')) # 处理人

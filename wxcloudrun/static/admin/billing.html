@@ -181,6 +181,11 @@
                 <div class="page-title">
                     <h2>账单管理</h2>
                     <div class="actions">
+                        <el-upload class="excel-uploader" action="/products/import-stock" :headers="uploadHeaders"
+                                    :on-success="handleImportSuccess" :on-error="handleImportError"
+                                    :before-upload="beforeImportUpload" accept=".xlsx,.xls" :show-file-list="false">
+                                    <el-button type="success">导入历史账单</el-button>
+                        </el-upload>
                         <el-button type="primary" @click="exportBilling">
                             <el-icon><Download /></el-icon>导出账单
                         </el-button>
@@ -267,49 +272,39 @@
                         style="width: 100%"
                         v-loading="tableLoading"
                         border
+                        @row-click="handleRowClick"
+                        show-summary
+                        :summary-method="getSummaries"
                     >
-                        <el-table-column prop="order_number" label="账单号" width="180" ></el-table-column>   
-                        <el-table-column prop="created_at" label="创建时间" width="180">
+                        <el-table-column prop="customer_name" label="客户名称" width="150"></el-table-column>
+                        <el-table-column prop="total_quantity" label="商品总数" width="120">
                             <template #default="scope">
-                                {{ formatDate(scope.row.created_at) }}
+                                {{ scope.row.total_quantity || 0 }}
                             </template>
                         </el-table-column>
-                        <el-table-column prop="type" label="类型" width="120">
+                        <el-table-column prop="unpaid_amount" label="未结清金额" width="150">
                             <template #default="scope">
-                                <el-tag :type="getBillingTypeTag(scope.row.type)">
-                                    {{ getBillingTypeText(scope.row.type) }}
-                                </el-tag>
+                                <span class="expense">¥{{ formatMoney(scope.row.unpaid_amount || 0) }}</span>
                             </template>
                         </el-table-column>
-                        <el-table-column prop="customer_name" label="客户" width="120"></el-table-column>
-                        <el-table-column prop="amount" label="金额" width="150">
+                        <el-table-column prop="paid_amount" label="已结清金额" width="150">
                             <template #default="scope">
-                                <span :class="scope.row.amount >= 0 ? 'income' : 'expense'">
-                                    {{ formatMoney(scope.row.amount) }}
-                                </span>
+                                <span class="income">¥{{ formatMoney(scope.row.paid_amount || 0) }}</span>
                             </template>
                         </el-table-column>
-                        <el-table-column prop="status" label="状态" width="120">
+                        <el-table-column prop="total_amount" label="货款总额" width="150">
                             <template #default="scope">
-                                <el-tag :type="getBillingStatusTag(scope.row.status)">
-                                    {{ getBillingStatusText(scope.row.status) }}
-                                </el-tag>
+                                <span>¥{{ formatMoney(scope.row.total_amount || 0) }}</span>
                             </template>
                         </el-table-column>
-                        <el-table-column label="操作" width="150" fixed="right">
+                        <el-table-column label="操作" width="200" fixed="right">
                             <template #default="scope">
                                 <el-button-group>
                                     <el-button 
                                         size="small" 
                                         type="primary" 
-                                        @click="viewBillingDetail(scope.row)"
+                                        @click.stop="handleRowClick(scope.row)"
                                     >查看</el-button>
-                                    <el-button 
-                                        size="small" 
-                                        type="success"
-                                        v-if="scope.row.status === 'pending'"
-                                        @click="confirmBilling(scope.row)"
-                                    >确认</el-button>
                                 </el-button-group>
                             </template>
                         </el-table-column>
@@ -333,58 +328,281 @@
             <!-- 账单详情对话框 -->
             <el-dialog
                 v-model="detailDialogVisible"
-                title="账单详情"
-                width="60%"
+                title="客户订单列表"
+                width="80%"
                 destroy-on-close
             >
                 <div v-if="currentBilling" class="billing-detail">
                     <el-descriptions :column="2" border>
-                        <el-descriptions-item label="账单号">
-                            {{ currentBilling.id }}
-                        </el-descriptions-item>
-                        <el-descriptions-item label="创建时间">
-                            {{ formatDate(currentBilling.created_at) }}
-                        </el-descriptions-item>
                         <el-descriptions-item label="客户名称">
                             {{ currentBilling.customer_name }}
                         </el-descriptions-item>
-                        <el-descriptions-item label="账单类型">
-                            <el-tag :type="getBillingTypeTag(currentBilling.type)">
-                                {{ getBillingTypeText(currentBilling.type) }}
-                            </el-tag>
+                        <el-descriptions-item label="未结清金额">
+                            <span class="expense">¥{{ formatMoney(currentBilling.unpaid_amount || 0) }}</span>
                         </el-descriptions-item>
-                        <el-descriptions-item label="金额">
-                            <span :class="currentBilling.amount >= 0 ? 'income' : 'expense'">
-                                {{ formatMoney(currentBilling.amount) }}
-                            </span>
+                        <el-descriptions-item label="已结清金额">
+                            <span class="income">¥{{ formatMoney(currentBilling.paid_amount || 0) }}</span>
                         </el-descriptions-item>
-                        <el-descriptions-item label="状态">
-                            <el-tag :type="getBillingStatusTag(currentBilling.status)">
-                                {{ getBillingStatusText(currentBilling.status) }}
-                            </el-tag>
+                        <el-descriptions-item label="货款总额">
+                            <span>¥{{ formatMoney(currentBilling.total_amount || 0) }}</span>
                         </el-descriptions-item>
-                        <el-descriptions-item label="备注" :span="2">
-                            {{ currentBilling.remark || '无' }}
+                        <el-descriptions-item label="商品总数">
+                            <span>{{ currentBilling.total_quantity || 0 }}</span>
                         </el-descriptions-item>
                     </el-descriptions>
 
                     <div style="margin-top: 20px;">
-                        <h4>关联订单信息</h4>
-                        <el-table :data="currentBilling.items" border style="margin-top: 10px;" show-summary :summary-method="getSummaries">
-                            <el-table-column prop="product_name" label="商品名称" ></el-table-column>
-                            <el-table-column prop="color" label="颜色" width="120"></el-table-column>
-                            <el-table-column prop="quantity" label="数量" width="120"></el-table-column>
-                            <el-table-column prop="price" label="单价" width="120">
+                        <h4>订单列表</h4>
+                        <el-table :data="currentBilling.orders" border style="margin-top: 10px;">
+                            <el-table-column prop="order_number" label="订单号" width="150"></el-table-column>
+                            <el-table-column prop="created_at" label="创建时间" width="180">
                                 <template #default="scope">
-                                    ¥{{ formatMoney(scope.row.price) }}
+                                    {{ formatDate(scope.row.created_at) }}
                                 </template>
                             </el-table-column>
-                            <el-table-column prop="total" label="小计" width="120">
+                            <el-table-column prop="total_amount" label="订单总额" width="150">
                                 <template #default="scope">
-                                    ¥{{ formatMoney(scope.row.price * scope.row.quantity) }}
+                                    ¥{{ formatMoney(scope.row.total_amount) }}
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="paid_amount" label="已付金额" width="150">
+                                <template #default="scope">
+                                    <span class="income">¥{{ formatMoney(scope.row.paid_amount) }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="unpaid_amount" label="未付金额" width="150">
+                                <template #default="scope">
+                                    <span class="expense">¥{{ formatMoney(scope.row.unpaid_amount) }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="status" label="状态" width="120">
+                                <template #default="scope">
+                                    <el-tag :type="getBillingStatusTag(scope.row.status)">
+                                        {{ getBillingStatusText(scope.row.status) }}
+                                    </el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="150" fixed="right">
+                                <template #default="scope">
+                                    <el-button 
+                                        size="small" 
+                                        type="success"
+                                        @click="confirmOrderPayment(scope.row)"
+                                        :disabled="scope.row.unpaid_amount <= 0"
+                                    >收款</el-button>
+                                    <el-button 
+                                        size="small" 
+                                        type="primary"
+                                        @click="viewOrderDetail(scope.row)"
+                                    >查看</el-button>
                                 </template>
                             </el-table-column>
                         </el-table>
+                    </div>
+                </div>
+            </el-dialog>
+
+            <!-- 确认收款对话框 -->
+            <el-dialog
+                v-model="paymentDialogVisible"
+                title="确认收款"
+                width="40%"
+                destroy-on-close
+            >
+                <div v-if="currentPayment" class="payment-detail">
+                    <el-descriptions :column="1" border>
+                        <el-descriptions-item label="客户名称">
+                            {{ currentPayment.customer_name }}
+                        </el-descriptions-item>
+                        <el-descriptions-item label="未结清金额">
+                            <span class="expense">¥{{ formatMoney(currentPayment.unpaid_amount || 0) }}</span>
+                        </el-descriptions-item>
+                        <el-descriptions-item label="已结清金额">
+                            <span class="income">¥{{ formatMoney(currentPayment.paid_amount || 0) }}</span>
+                        </el-descriptions-item>
+                        <el-descriptions-item label="货款总额">
+                            <span>¥{{ formatMoney(currentPayment.total_amount || 0) }}</span>
+                        </el-descriptions-item>
+                    </el-descriptions>
+
+                    <el-form :model="paymentForm" :rules="paymentRules" ref="paymentFormRef" label-width="100px" style="margin-top: 20px;">
+                        <el-form-item label="收款金额" prop="amount">
+                            <el-input-number 
+                                v-model="paymentForm.amount" 
+                                :min="0" 
+                                :max="currentPayment.unpaid_amount" 
+                                :precision="2" 
+                                :step="100"
+                                style="width: 100%;"
+                            ></el-input-number>
+                        </el-form-item>
+                        <el-form-item label="备注" prop="remark">
+                            <el-input 
+                                v-model="paymentForm.remark" 
+                                type="textarea" 
+                                :rows="3" 
+                                placeholder="请输入备注信息"
+                            ></el-input>
+                        </el-form-item>
+                    </el-form>
+                </div>
+                <template #footer>
+                    <span class="dialog-footer">
+                        <el-button @click="paymentDialogVisible = false">取消</el-button>
+                        <el-button type="primary" @click="submitPayment">确认</el-button>
+                    </span>
+                </template>
+            </el-dialog>
+
+            <!-- 订单详情对话框 -->
+            <el-dialog
+                v-model="orderDetailDialogVisible"
+                title="订单详情"
+                width="80%"
+                destroy-on-close
+            >
+                <div v-if="currentOrderDetail" class="order-detail">
+                    <el-descriptions :column="2" border>
+                        <el-descriptions-item label="订单号">
+                            {{ currentOrderDetail.order_number }}
+                        </el-descriptions-item>
+                        <el-descriptions-item label="创建时间">
+                            {{ formatDate(currentOrderDetail.created_at) }}
+                        </el-descriptions-item>
+                        <el-descriptions-item label="客户信息">
+                            <div>
+                                <div>姓名：{{ currentOrderDetail.user?.nickname || currentOrderDetail.user?.username || '未知' }}</div>
+                                <div>电话：{{ currentOrderDetail.user?.phone || '无' }}</div>
+                            </div>
+                        </el-descriptions-item>
+                        <el-descriptions-item label="备注" :span="2">{{ currentOrderDetail.remark || '无' }}</el-descriptions-item>
+                    </el-descriptions>
+
+                    <el-divider>商品明细</el-divider>
+
+                    <el-table :data="expandedItems" border>
+                        <el-table-column prop="product_name" label="商品名称">
+                            <template #default="scope">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <text>{{ scope.row.product_name }}</text>
+                                    <div style="display: flex; gap: 4px;">
+                                        <el-tag size="small" type="success" v-if="scope.row.currentSpec.packaging_price > 0">包装</el-tag>
+                                        <el-tag size="small" type="warning" v-if="scope.row.currentSpec.logo_price > 0">打标</el-tag>
+                                    </div>
+                                </div>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="product_id" label="款号" width="80"></el-table-column>
+                        <el-table-column prop="currentSpec.color" label="颜色" width="120"></el-table-column>
+                        <el-table-column prop="currentSpec.quantity" label="数量" width="100"></el-table-column>
+                        <el-table-column prop="price" label="单价" width="100">
+                            <template #default="scope">
+                                ¥{{ formatMoney(scope.row.price) }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="加标费用" width="100">
+                            <template #default="scope">
+                                ¥{{ formatMoney(scope.row.currentSpec.logo_price) }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="辅料费用" width="100">
+                            <template #default="scope">
+                                ¥{{ formatMoney(scope.row.currentSpec.accessory_price) }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="包装费用" width="100">
+                            <template #default="scope">
+                                ¥{{ formatMoney(scope.row.currentSpec.packaging_price) }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="小计" width="120">
+                            <template #default="scope">
+                                ¥{{ formatMoney(scope.row.currentSpec.total) }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="附加费用" width="120">
+                            <template #default="scope">
+                                ¥{{ formatMoney(scope.row.currentSpec.extra) }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="已发货" width="100">
+                            <template #default="scope">
+                                {{ scope.row.currentSpec.shipped_quantity || 0 }}
+                            </template>
+                        </el-table-column>
+                    </el-table>
+
+                    <div class="total-amount" style="margin-top: 20px; text-align: right;">
+                        <div>商品总数：{{ currentOrderDetail.total_quantity || 0 }}件</div>
+                        <div>货款总额：¥{{ formatMoney(currentOrderDetail.total_amount || 0) }}</div>
+                        <div>附加费用：¥{{ formatMoney(currentOrderDetail.total_amount_extra || 0) }}</div>
+                        <div>已付金额：¥{{ formatMoney(currentOrderDetail.paid_amount || 0) }}</div>
+                        <div>未付金额：¥{{ formatMoney(currentOrderDetail.unpaid_amount || 0) }}</div>
+                    </div>
+
+                    <el-divider>付款记录</el-divider>
+                    
+                    <el-table :data="paymentRecords" border v-loading="loadingPayments">
+                        <el-table-column prop="created_at" label="付款时间" width="180">
+                            <template #default="scope">
+                                {{ formatDate(scope.row.created_at) }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="amount" label="付款金额" width="150">
+                            <template #default="scope">
+                                ¥{{ formatMoney(scope.row.amount) }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="operator" label="操作人" width="120">
+                            <template #default="scope">
+                                {{ scope.row.operator?.nickname || scope.row.operator?.username || '未知' }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="remark" label="备注"></el-table-column>
+                    </el-table>
+
+                    <el-divider>发货记录</el-divider>
+                    
+                    <el-table :data="deliveryOrders" border v-loading="loadingDeliveries">
+                        <el-table-column prop="order_number" label="发货单号" width="180">
+                            <template #default="scope">
+                                <el-button link type="primary" @click="viewDeliveryDetail(scope.row)">
+                                    {{ scope.row.order_number }}
+                                </el-button>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="created_at" label="发货时间" width="180">
+                            <template #default="scope">
+                                {{ formatDate(scope.row.created_at) }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="creator" label="发货人" width="120">
+                            <template #default="scope">
+                                {{ scope.row.creator?.nickname || scope.row.creator?.username || '未知' }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="total_quantity" label="发货数量" width="100">
+                            <template #default="scope">
+                                {{ scope.row.total_quantity }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="status" label="状态" width="100">
+                            <template #default="scope">
+                                <el-tag :type="getDeliveryStatusType(scope.row.status)">
+                                    {{ getDeliveryStatusText(scope.row.status) }}
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+
+                    <div class="dialog-footer" style="margin-top: 20px; text-align: right;">
+                        <el-button @click="orderDetailDialogVisible = false">关闭</el-button>
+                        <el-button 
+                            v-if="currentOrderDetail.status === 0"
+                            type="success" 
+                            @click="confirmOrderPayment(currentOrderDetail)">
+                            确认收款
+                        </el-button>
                     </div>
                 </div>
             </el-dialog>
@@ -392,7 +610,7 @@
     </div>
 
     <script>
-        const { createApp, ref, reactive, onMounted } = Vue
+        const { createApp, ref, reactive, onMounted, computed } = Vue
 
         // 设置 axios 默认配置
         const isDevelopment = window.location.hostname === 'localhost' || 
@@ -458,34 +676,63 @@
                 const customerSearchLoading = ref(false);
                 const detailDialogVisible = ref(false);
                 const currentBilling = ref(null);
+                
+                // 确认收款相关
+                const paymentDialogVisible = ref(false);
+                const currentPayment = ref(null);
+                const paymentForm = reactive({
+                    amount: 0,
+                    remark: ''
+                });
+                const paymentRules = {
+                    amount: [
+                        { required: true, message: '请输入收款金额', trigger: 'blur' },
+                        { type: 'number', min: 0, message: '金额必须大于0', trigger: 'blur' }
+                    ]
+                };
+                const paymentFormRef = ref(null);
+
+                // 订单详情相关
+                const orderDetailDialogVisible = ref(false);
+                const currentOrderDetail = ref(null);
+                const paymentRecords = ref([]);
+                const loadingPayments = ref(false);
+                const deliveryOrders = ref([]);
+                const loadingDeliveries = ref(false);
 
                 // 日期快捷选项
                 const dateShortcuts = [
                     {
-                        text: '最近一周',
+                        text: '今日',
                         value: () => {
-                            const end = new Date();
-                            const start = new Date();
-                            start.setTime(start.getTime() - 3600 * 1000 * 24 * 7);
-                            return [start, end];
+                            const today = new Date();
+                            return [today, today];
                         },
                     },
                     {
-                        text: '最近一个月',
+                        text: '昨天',
                         value: () => {
-                            const end = new Date();
-                            const start = new Date();
-                            start.setTime(start.getTime() - 3600 * 1000 * 24 * 30);
-                            return [start, end];
+                            const yesterday = new Date();
+                            yesterday.setDate(yesterday.getDate() - 1);
+                            return [yesterday, yesterday];
                         },
                     },
                     {
-                        text: '最近三个月',
+                        text: '本周',
                         value: () => {
-                            const end = new Date();
-                            const start = new Date();
-                            start.setTime(start.getTime() - 3600 * 1000 * 24 * 90);
-                            return [start, end];
+                            const today = new Date();
+                            const day = today.getDay() || 7;
+                            const monday = new Date(today);
+                            monday.setDate(today.getDate() - day + 1);
+                            return [monday, today];
+                        },
+                    },
+                    {
+                        text: '本月',
+                        value: () => {
+                            const today = new Date();
+                            const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                            return [firstDay, today];
                         },
                     },
                 ];
@@ -500,7 +747,6 @@
                                 page_size: pagination.pageSize,
                                 start_date: filterForm.dateRange[0],
                                 end_date: filterForm.dateRange[1],
-                                type: filterForm.type,
                                 customer_id: filterForm.customerId
                             }
                         });
@@ -568,40 +814,69 @@
                     }
                 };
 
-                const viewBillingDetail = async (billing) => {
+                const handleRowClick = async (row) => {
+                    currentBilling.value = row;
+                    detailDialogVisible.value = true;
+                    await loadCustomerOrders(row.id);
+                };
+
+                const loadCustomerOrders = async (customerId) => {
                     try {
-                        const response = await axios.get(`/billing/${billing.id}`);
-                        if (response.status === 200) {
-                            currentBilling.value = response.data;
-                            detailDialogVisible.value = true;
+                        const response = await axios.get(`/billing/${customerId}/orders`, {
+                            params: {
+                                start_date: filterForm.dateRange[0],
+                                end_date: filterForm.dateRange[1]
+                            }
+                        });
+                        if (response.data.code === 0) {
+                            currentBilling.value.orders = response.data.data.map(order => ({
+                                ...order,
+                                total_amount: Number(order.total_amount) || 0,
+                                paid_amount: Number(order.paid_amount) || 0,
+                                unpaid_amount: Number(order.unpaid_amount) || 0
+                            }));
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.message || '获取客户订单列表失败');
                         }
                     } catch (error) {
-                        console.error('获取账单详情失败:', error);
-                        ElementPlus.ElMessage.error('获取账单详情失败');
+                        console.error('获取客户订单列表失败:', error);
+                        ElementPlus.ElMessage.error('获取客户订单列表失败');
                     }
                 };
 
-                const confirmBilling = async (billing) => {
-                    try {
-                        await ElementPlus.ElMessageBox.confirm(
-                            '确认此账单吗？确认后状态将更新为已完成。',
-                            '确认提示',
-                            {
-                                confirmButtonText: '确认',
-                                cancelButtonText: '取消',
-                                type: 'warning'
-                            }
-                        );
+                const confirmOrderPayment = (order) => {
+                    currentPayment.value = order;
+                    paymentForm.amount = order.unpaid_amount || 0;
+                    paymentForm.remark = '';
+                    paymentDialogVisible.value = true;
+                };
 
-                        const response = await axios.put(`/billing/${billing.id}/confirm`);
+                const submitPayment = async () => {
+                    if (!paymentFormRef.value) return;
+                    
+                    try {
+                        await paymentFormRef.value.validate();
+                        
+                        const response = await axios.post(`/billing/${currentPayment.value.id}/payment`, {
+                            amount: paymentForm.amount,
+                            remark: paymentForm.remark
+                        });
+                        
                         if (response.status === 200) {
-                            ElementPlus.ElMessage.success('账单确认成功');
+                            ElementPlus.ElMessage.success('收款确认成功');
+                            paymentDialogVisible.value = false;
                             loadBillingList();
+                            
+                            // 如果是从详情对话框打开的，刷新详情
+                            if (detailDialogVisible.value) {
+                                console.log(currentBilling.value);
+                                await loadCustomerOrders(currentBilling.value.id);
+                            }
                         }
                     } catch (error) {
                         if (error !== 'cancel') {
-                            console.error('确认账单失败:', error);
-                            ElementPlus.ElMessage.error('确认账单失败');
+                            console.error('确认收款失败:', error);
+                            ElementPlus.ElMessage.error('确认收款失败');
                         }
                     }
                 };
@@ -635,17 +910,15 @@
                 // 工具方法
                 const formatDate = (date) => {
                     if (!date) return '';
-                    return new Date(date).toLocaleString('zh-CN', {
+                    return new Date(date).toLocaleDateString('zh-CN', {
                         year: 'numeric',
                         month: '2-digit',
-                        day: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: false
+                        day: '2-digit'
                     });
                 };
 
                 const formatMoney = (amount) => {
+                    if (amount === null || amount === undefined) return '0.00';
                     return Number(amount).toFixed(2);
                 };
 
@@ -669,19 +942,18 @@
 
                 const getBillingStatusTag = (status) => {
                     const types = {
-                        'pending': 'warning',
-                        'completed': 'success',
-                        'cancelled': 'info'
+                        0: 'warning',  // 未付款
+                        1: 'info',     // 部分付款
+                        2: 'success'   // 已结清
                     };
                     return types[status] || 'info';
                 };
 
                 const getBillingStatusText = (status) => {
-                    console.log(status);
                     const types = {
-                        'pending': '待发货',
-                        'completed': '已完成',
-                        'cancelled': '已取消'
+                        0: '未付款',
+                        1: '部分付款',
+                        2: '已结清'
                     };
                     return types[status] || '未知状态';
                 };
@@ -715,33 +987,28 @@
                             return;
                         }
                         if (index === 1) {
-                            sums[index] = '';
-                            return;
-                        }
-                        if (index === 2) {
-                            // 数量合计
-                            const values = data.map(item => Number(item.quantity));
+                            // 商品总数合计
+                            const values = data.map(item => Number(item.total_quantity) || 0);
                             sums[index] = values.reduce((prev, curr) => {
-                                const value = Number(curr);
-                                if (!isNaN(value)) {
-                                    return prev + curr;
-                                } else {
-                                    return prev;
-                                }
+                                return prev + curr;
                             }, 0);
-                        } else if (index === 3) {
-                            // 单价列不计算合计
-                            sums[index] = '';
-                        } else if (index === 4) {
-                            // 小计合计
-                            const values = data.map(item => Number(item.price) * Number(item.quantity));
+                        } else if (index === 2) {
+                            // 未结清金额合计
+                            const values = data.map(item => Number(item.unpaid_amount) || 0);
                             sums[index] = '¥' + formatMoney(values.reduce((prev, curr) => {
-                                const value = Number(curr);
-                                if (!isNaN(value)) {
-                                    return prev + curr;
-                                } else {
-                                    return prev;
-                                }
+                                return prev + curr;
+                            }, 0));
+                        } else if (index === 3) {
+                            // 已结清金额合计
+                            const values = data.map(item => Number(item.paid_amount) || 0);
+                            sums[index] = '¥' + formatMoney(values.reduce((prev, curr) => {
+                                return prev + curr;
+                            }, 0));
+                        } else if (index === 4) {
+                            // 货款总额合计
+                            const values = data.map(item => Number(item.total_amount) || 0);
+                            sums[index] = '¥' + formatMoney(values.reduce((prev, curr) => {
+                                return prev + curr;
                             }, 0));
                         } else {
                             sums[index] = '';
@@ -749,6 +1016,87 @@
                     });
                     return sums;
                 };
+
+                // 查看订单详情
+                const viewOrderDetail = async (order) => {
+                    try {
+                        const response = await axios.get(`/purchase_orders/${order.id}`);
+                        if (response.status === 200) {
+                            console.log("订单详情",response.data);
+                            currentOrderDetail.value = response.data.order;
+                            orderDetailDialogVisible.value = true;
+                            // 加载发货记录
+                            loadDeliveryOrders();
+                        }
+                    } catch (error) {
+                        console.error('获取订单详情失败:', error);
+                        ElementPlus.ElMessage.error('获取订单详情失败');
+                    }
+                };
+
+                // 加载发货记录
+                const loadDeliveryOrders = async () => {
+                    loadingDeliveries.value = true;
+                    try {
+                        const response = await axios.get('/delivery_orders', {
+                            params: {
+                                order_number: currentOrderDetail.value.order_number
+                            }
+                        });
+                        
+                        if (response.status === 200) {
+                            deliveryOrders.value = response.data.orders || [];
+                        }
+                    } catch (error) {
+                        console.error('获取发货单列表失败:', error);
+                        ElementPlus.ElMessage.error('获取发货单列表失败');
+                    } finally {
+                        loadingDeliveries.value = false;
+                    }
+                };
+
+                // 查看发货详情
+                const viewDeliveryDetail = (delivery) => {
+                    // 这里可以实现查看发货详情的逻辑
+                    ElementPlus.ElMessage.info('查看发货详情: ' + delivery.order_number);
+                };
+
+                // 获取发货状态类型
+                const getDeliveryStatusType = (status) => {
+                    const types = {
+                        0: 'info',    // 已开单
+                        1: 'warning', // 已发货
+                        2: 'success', // 已完成
+                        3: 'danger'   // 已取消
+                    };
+                    return types[status] || 'info';
+                };
+
+                // 获取发货状态文本
+                const getDeliveryStatusText = (status) => {
+                    const texts = {
+                        0: '已开单',
+                        1: '已发货',
+                        2: '已完成',
+                        3: '已取消'
+                    };
+                    return texts[status] || '未知状态';
+                };
+
+                // 计算展开的商品项
+                const expandedItems = computed(() => {
+                    if (!currentOrderDetail.value?.items) return [];
+                    
+                    return currentOrderDetail.value.items.reduce((acc, item) => {
+                        if (!item.specs || !Array.isArray(item.specs)) return acc;
+                        
+                        return acc.concat(item.specs.map(spec => ({
+                            ...item,
+                            currentSpec: spec,
+                            originalSpecs: item.specs
+                        })));
+                    }, []);
+                });
 
                 // 生命周期钩子
                 onMounted(() => {
@@ -775,15 +1123,34 @@
                     detailDialogVisible,
                     currentBilling,
                     dateShortcuts,
+                    paymentDialogVisible,
+                    currentPayment,
+                    paymentForm,
+                    paymentRules,
+                    paymentFormRef,
+                    orderDetailDialogVisible,
+                    currentOrderDetail,
+                    paymentRecords,
+                    loadingPayments,
+                    deliveryOrders,
+                    loadingDeliveries,
+                    expandedItems,
                     loadBillingList,
                     handleSearch,
                     resetFilter,
                     handleSizeChange,
                     handleCurrentChange,
                     searchCustomers,
-                    viewBillingDetail,
-                    confirmBilling,
+                    handleRowClick,
+                    loadCustomerOrders,
+                    confirmOrderPayment,
+                    submitPayment,
                     exportBilling,
+                    viewOrderDetail,
+                    loadDeliveryOrders,
+                    viewDeliveryDetail,
+                    getDeliveryStatusType,
+                    getDeliveryStatusText,
                     formatDate,
                     formatMoney,
                     getBillingTypeTag,
