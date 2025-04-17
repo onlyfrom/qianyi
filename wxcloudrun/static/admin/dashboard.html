@@ -1672,21 +1672,19 @@
                                             @click="handleDelete(scope.row)">删除</el-button>
                                         <el-button size="small" :type="scope.row.status === 1 ? 'info' : 'success'"
                                             @click="handleStatusChange(scope.row,'status')">{{ scope.row.status === 1 ? '下架' : '上架' }}</el-button>
-                                        </el-button-group> q
-
-
+                                        </el-button-group>
                                     </template>
                                 </el-table-column>
                             </el-table>
                             <!-- 分页 -->
                             <div class="pagination-container">
                                 <el-pagination 
-                                    v-model:current-page="purchasePagination.currentPage"
-                                    v-model:page-size="purchasePagination.pageSize" 
-                                    :total="purchasePagination.total"
+                                    v-model:current-page="pagination.currentPage"
+                                    v-model:page-size="pagination.pageSize" 
+                                    :total="pagination.total"
                                     :page-sizes="[10, 20, 50, 100]"
-                                    @size-change="handlePurchaseSizeChange"
-                                    @current-change="handlePurchasePageChange" 
+                                    @size-change="handleProductSizeChange"
+                                    @current-change="handleProductPageChange" 
                                     layout="total, sizes, prev, pager, next" />
                             </div>
 
@@ -1977,7 +1975,9 @@
                                  @click="handleAddUser">新增用户</el-button>
                                  <el-upload class="excel-uploader" action="/users/import-and-push" :headers="uploadHeaders"
                                     :on-success="handleImportSuccess" :on-error="handleImportError"
-                                    :before-upload="beforeImportUpload" accept=".xlsx,.xls" :show-file-list="false">
+                                    :before-upload="beforeImportUpload" accept=".xlsx,.xls" :show-file-list="false"
+                                    v-if = "false" 
+                                    >
                                     <el-button type="success">客户导入</el-button>
                                 </el-upload>
                             <el-table :data="users" style="width: 100%">
@@ -2481,16 +2481,6 @@
                                                                 取消
                                                             </el-button>
                                                         </template>
-
-                                                        <!-- 已发货状态显示完成按钮 -->
-                                                        <!--template v-if="scope.row.status === 1" >
-                                                            <el-button 
-                                                                size="small"
-                                                                type="success"
-                                                                @click="completeDelivery(scope.row)">
-                                                                完成
-                                                            </el-button>
-                                                        </template-->
 
                                                         <!-- 打印按钮对所有状态都显示 -->
                                                         <el-button 
@@ -3656,6 +3646,11 @@
                         pageSize: 15,
                         total: 0
                     },
+                    productPagination: {
+                        currentPage: 1,
+                        pageSize: 15,
+                        total: 0
+                    },
                     purchaseDetailVisible: false,
                     currentPurchaseOrder: null,
                     // 配送单相关数据
@@ -4495,6 +4490,15 @@
                     this.purchasePagination.pageSize = size;
                     this.purchasePagination.currentPage = 1; // 切换每页大小时重置为第一页
                     this.loadPurchaseOrders();
+                },
+                handleProductSizeChange(size) {
+                    this.productPagination.pageSize = size;
+                    this.productPagination.currentPage = 1; // 切换每页大小时重置为第一页
+                    this.loadProducts();
+                },
+                handleProductPageChange(page) {
+                    this.productPagination.currentPage = page;
+                    this.loadProducts();
                 },
 
                 handleCustomTagChange(value) {

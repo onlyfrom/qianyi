@@ -160,7 +160,9 @@ const ProductSelector = {
                     params: {
                         keyword: this.searchKeyword,
                         page: this.pagination.currentPage,
-                        page_size: this.pagination.pageSize
+                        page_size: this.pagination.pageSize,
+                        status: 1 // 只查询上架商品
+
                     }
                 });
                 
