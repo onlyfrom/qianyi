@@ -5361,6 +5361,9 @@
                                     quantity: parseInt(item.quantity),
                                     color: item.color || '',
                                     package_id: pkg.packageId,
+                                    logo_price: item.logo_price,    // logo价格
+                                    packaging_price: item.packaging_price,  // 包装价格
+                                    accessory_price: item.accessory_price  // 配件价格
                                 }));
                         }).filter(items => items.length > 0);
                         

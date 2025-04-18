@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, send_file
 from decimal import Decimal
-from .model import PurchaseOrder, PurchaseOrderItem, User, db
+from .model import PurchaseOrder, PurchaseOrderItem, User, db, DeliveryOrder, DeliveryItem
 from .views import login_required, app
 import pandas as pd
 from io import BytesIO
@@ -20,8 +20,10 @@ def get_billing_list(user_id):
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         customer_id = request.args.get('customer_id')
+        sort_by = request.args.get('sort_by', 'total_amount')  # 默认按货款总额排序
+        sort_order = request.args.get('sort_order', 'desc')    # 默认降序
 
-        print(f"[DEBUG] 获取账单列表: 页码={page}, 每页数量={page_size}, 开始日期={start_date}, 结束日期={end_date}, 客户ID={customer_id}")
+        print(f"[DEBUG] 获取账单列表: 页码={page}, 每页数量={page_size}, 开始日期={start_date}, 结束日期={end_date}, 客户ID={customer_id}, 排序字段={sort_by}, 排序方式={sort_order}")
 
         # 构建基础查询 - 按客户分组汇总
         base_query = db.session.query(
@@ -64,8 +66,30 @@ def get_billing_list(user_id):
         # 获取总数
         total = base_query.count()
         
+        # 排序
+        sort_column = None
+        if sort_by == 'customer_name':
+            sort_column = User.nickname
+        elif sort_by == 'total_quantity':
+            sort_column = db.func.sum(PurchaseOrderItem.quantity)
+        elif sort_by == 'total_amount':
+            sort_column = db.func.sum(PurchaseOrderItem.price * PurchaseOrderItem.quantity)
+        elif sort_by == 'paid_amount':
+            sort_column = db.func.sum(PurchaseOrder.paid_amount)
+        elif sort_by == 'unpaid_amount':
+            sort_column = db.func.sum(PurchaseOrderItem.price * PurchaseOrderItem.quantity) - db.func.sum(PurchaseOrder.paid_amount)
+        
+        # 应用排序
+        if sort_column is not None:
+            if sort_order == 'desc':
+                base_query = base_query.order_by(db.desc(sort_column))
+            else:
+                base_query = base_query.order_by(sort_column)
+        else:
+            # 默认排序
+            base_query = base_query.order_by(db.desc(db.func.sum(PurchaseOrderItem.price * PurchaseOrderItem.quantity)))
+        
         # 分页
-        base_query = base_query.order_by(User.nickname)
         base_query = base_query.offset((page - 1) * page_size).limit(page_size)
 
         # 执行查询
@@ -98,55 +122,48 @@ def get_billing_list(user_id):
 def get_billing_statistics(user_id):
     """获取账单统计数据"""
     try:
-        print("[DEBUG] 开始获取账单统计数据")
-        now = datetime.now()
-        first_day = datetime(now.year, now.month, 1)
-        last_month_first = first_day - timedelta(days=first_day.day)
+        # 获取查询参数
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
         
-        # 本月数据
-        current_month = db.session.query(
-            db.func.sum(PurchaseOrderItem.price * PurchaseOrderItem.quantity).label('income'),
-            db.func.count(PurchaseOrder.id.distinct()).label('count')
+        # 构建基础查询
+        base_query = db.session.query(
+            db.func.sum(PurchaseOrderItem.quantity).label('total_count'),
+            db.func.sum(PurchaseOrderItem.price * PurchaseOrderItem.quantity).label('total_amount'),
+            db.func.sum(PurchaseOrder.paid_amount).label('paid_amount')
         ).join(
-            PurchaseOrderItem, PurchaseOrder.id == PurchaseOrderItem.order_id
-        ).filter(
-            PurchaseOrder.created_at >= first_day
-        ).first()
-
-        # 上月数据
-        last_month = db.session.query(
-            db.func.sum(PurchaseOrderItem.price * PurchaseOrderItem.quantity).label('income'),
-            db.func.count(PurchaseOrder.id.distinct()).label('count')
-        ).join(
-            PurchaseOrderItem, PurchaseOrder.id == PurchaseOrderItem.order_id
-        ).filter(
-            PurchaseOrder.created_at >= last_month_first,
-            PurchaseOrder.created_at < first_day
-        ).first()
-
-        # 计算环比
-        monthly_income = float(current_month.income or 0)
-        last_monthly_income = float(last_month.income or 0)
-        monthly_orders = current_month.count or 0
-        last_monthly_orders = last_month.count or 0
-
-        income_trend = ((monthly_income - last_monthly_income) / last_monthly_income * 100) if last_monthly_income else 0
-        orders_trend = ((monthly_orders - last_monthly_orders) / last_monthly_orders * 100) if last_monthly_orders else 0
+            PurchaseOrder, PurchaseOrderItem.order_id == PurchaseOrder.id
+        )
         
-        # 计算平均客单价
-        avg_order_value = monthly_income / monthly_orders if monthly_orders > 0 else 0
-        last_avg_order_value = last_monthly_income / last_monthly_orders if last_monthly_orders > 0 else 0
-        avg_order_trend = ((avg_order_value - last_avg_order_value) / last_avg_order_value * 100) if last_avg_order_value else 0
-
-        print(f"[DEBUG] 账单统计数据: 本月收入={monthly_income}, 本月订单数={monthly_orders}, 平均客单价={avg_order_value}")
+        # 应用日期筛选
+        if start_date:
+            try:
+                start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
+                base_query = base_query.filter(PurchaseOrder.created_at >= start_datetime)
+            except ValueError:
+                return jsonify({'error': '开始日期格式错误，请使用YYYY-MM-DD格式'}), 400
+                
+        if end_date:
+            try:
+                end_datetime = datetime.strptime(end_date, '%Y-%m-%d')
+                end_datetime = end_datetime + timedelta(days=1) - timedelta(seconds=1)
+                base_query = base_query.filter(PurchaseOrder.created_at <= end_datetime)
+            except ValueError:
+                return jsonify({'error': '结束日期格式错误，请使用YYYY-MM-DD格式'}), 400
+        
+        # 执行查询
+        result = base_query.first()
+        
+        # 计算统计数据
+        total_amount = float(result.total_amount or 0)
+        paid_amount = float(result.paid_amount or 0)
+        unpaid_amount = total_amount - paid_amount
         
         return jsonify({
-            'monthlyIncome': monthly_income,
-            'monthlyOrders': monthly_orders,
-            'averageOrderValue': avg_order_value,
-            'monthlyTrend': income_trend,
-            'ordersTrend': orders_trend,
-            'avgOrderTrend': avg_order_trend
+            'totalAmount': total_amount,
+            'paidAmount': paid_amount,
+            'unpaidAmount': unpaid_amount,
+            'totalCount': result.total_count or 0
         })
     except Exception as e:
         print(f"[ERROR] 获取账单统计数据失败: {str(e)}")
@@ -155,58 +172,72 @@ def get_billing_statistics(user_id):
 @billing_bp.route('/billing/<int:customer_id>/orders', methods=['GET'])
 @login_required
 def get_customer_orders(user_id, customer_id):
-    """获取客户的订单列表"""
+    """获取客户的发货单列表"""
     try:
-        print(f"[DEBUG] 获取客户订单列表: 客户ID={customer_id}")
+        print(f"[DEBUG] 获取客户发货单列表: 客户ID={customer_id}")
         
         # 获取查询参数
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
-        # 获取客户信息
-        customer = User.query.get_or_404(customer_id)
-        
-        # 构建查询
+        # 构建基础查询
         query = db.session.query(
-            PurchaseOrder,
-            db.func.sum(PurchaseOrderItem.quantity).label('total_quantity'),
-            db.func.sum(PurchaseOrderItem.price * PurchaseOrderItem.quantity).label('total_amount')
+            DeliveryOrder,
+            db.func.sum(DeliveryItem.quantity).label('total_quantity'),
+            db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_amount')
         ).join(
-            PurchaseOrderItem,
-            PurchaseOrder.id == PurchaseOrderItem.order_id
+            DeliveryItem, DeliveryOrder.id == DeliveryItem.delivery_id
+        ).join(
+            PurchaseOrder, DeliveryItem.order_number == PurchaseOrder.order_number
+        ).join(
+            PurchaseOrderItem, 
+            db.and_(
+                PurchaseOrder.id == PurchaseOrderItem.order_id,
+                PurchaseOrderItem.product_id == DeliveryItem.product_id,
+                PurchaseOrderItem.color == DeliveryItem.color
+            )
         ).filter(
-            PurchaseOrder.user_id == customer_id
+            DeliveryOrder.customer_id == customer_id
         )
         
         # 添加日期过滤
         if start_date:
-            query = query.filter(db.func.date(PurchaseOrder.created_at) >= start_date)
+            query = query.filter(db.func.date(DeliveryOrder.created_at) >= start_date)
         if end_date:
-            query = query.filter(db.func.date(PurchaseOrder.created_at) <= end_date)
+            query = query.filter(db.func.date(DeliveryOrder.created_at) <= end_date)
             
         # 分组并执行查询
-        orders = query.group_by(PurchaseOrder.id).all()
+        orders = query.group_by(DeliveryOrder.id).all()
         
         # 构建返回数据
         result = []
         for order, total_quantity, total_amount in orders:
-            # 计算订单状态
-            status = 0  # 默认未付款
-            if order.paid_amount >= total_amount:
-                status = 2  # 已结清
-            elif order.paid_amount > 0:
-                status = 1  # 部分付款
-                
+            # 获取创建者信息
+            creator = User.query.get(order.created_by)
+            
+            # 状态文本映射
+            status_text_map = {
+                0: '已开单',
+                1: '已发货',
+                2: '已完成',
+                3: '已取消',
+                4: '异常'
+            }
+            
             result.append({
                 'id': order.id,
                 'order_number': order.order_number,
                 'created_at': order.created_at.strftime('%Y-%m-%d'),
-                'total_quantity': total_quantity,
-                'total_amount': float(total_amount),
-                'paid_amount': order.paid_amount,
-                'unpaid_amount': float(total_amount) - order.paid_amount,
-                'status': status,  # 使用计算的状态
-                'remark': order.remark
+                'total_quantity': total_quantity or 0,
+                'total_amount': float(total_amount or 0),
+                'status': order.status,
+                'status_text': status_text_map.get(order.status, '未知状态'),
+                'remark': order.remark,
+                'creator': {
+                    'id': creator.id if creator else None,
+                    'username': creator.username if creator else None,
+                    'nickname': creator.nickname if creator else None
+                } if creator else None
             })
             
         return jsonify({
@@ -215,10 +246,10 @@ def get_customer_orders(user_id, customer_id):
         })
         
     except Exception as e:
-        print(f"[ERROR] 获取客户订单列表失败: 客户ID={customer_id}, 错误={str(e)}")
+        print(f"[ERROR] 获取客户发货单列表失败: 客户ID={customer_id}, 错误={str(e)}")
         return jsonify({
             'code': -1,
-            'message': f'获取客户订单列表失败: {str(e)}'
+            'message': f'获取客户发货单列表失败: {str(e)}'
         })
 
 @billing_bp.route('/billing/<int:order_id>/payment', methods=['POST'])
@@ -343,4 +374,93 @@ def export_billing(user_id):
         )
     except Exception as e:
         print(f"[ERROR] 导出账单数据失败: {str(e)}")
-        return jsonify({'error': '导出账单数据失败'}), 500 
+        return jsonify({'error': '导出账单数据失败'}), 500
+
+@billing_bp.route('/billing/<int:customer_id>/delivery_orders', methods=['GET'])
+@login_required
+def get_customer_delivery_orders(user_id, customer_id):
+    """获取客户的发货单列表"""
+    try:
+        # 获取查询参数
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # 构建基础查询
+        base_query = db.session.query(
+            DeliveryOrder.id,
+            DeliveryOrder.order_number,
+            DeliveryOrder.created_at,
+            DeliveryOrder.status,
+            DeliveryOrder.remark,
+            db.func.sum(DeliveryItem.quantity).label('total_quantity')
+        ).join(
+            DeliveryItem, DeliveryOrder.id == DeliveryItem.delivery_id
+        ).filter(
+            DeliveryOrder.customer_id == customer_id
+        ).group_by(
+            DeliveryOrder.id,
+            DeliveryOrder.order_number,
+            DeliveryOrder.created_at,
+            DeliveryOrder.status,
+            DeliveryOrder.remark
+        )
+        
+        # 应用日期筛选
+        if start_date:
+            try:
+                start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
+                base_query = base_query.filter(DeliveryOrder.created_at >= start_datetime)
+            except ValueError:
+                return jsonify({'error': '开始日期格式错误，请使用YYYY-MM-DD格式'}), 400
+                
+        if end_date:
+            try:
+                end_datetime = datetime.strptime(end_date, '%Y-%m-%d')
+                end_datetime = end_datetime + timedelta(days=1) - timedelta(seconds=1)
+                base_query = base_query.filter(DeliveryOrder.created_at <= end_datetime)
+            except ValueError:
+                return jsonify({'error': '结束日期格式错误，请使用YYYY-MM-DD格式'}), 400
+        
+        # 执行查询
+        results = base_query.all()
+        
+        # 构建返回数据
+        delivery_orders = []
+        for result in results:
+            order_id, order_number, created_at, status, remark, total_quantity = result
+            
+            # 获取创建者信息
+            creator = User.query.get(DeliveryOrder.query.get(order_id).created_by)
+            
+            # 状态文本映射
+            status_text_map = {
+                0: '已开单',
+                1: '已发货',
+                2: '已完成',
+                3: '已取消',
+                4: '异常'
+            }
+            
+            delivery_orders.append({
+                'id': order_id,
+                'order_number': order_number,
+                'created_at': created_at.isoformat(),
+                'status': status,
+                'status_text': status_text_map.get(status, '未知状态'),
+                'remark': remark,
+                'total_quantity': total_quantity or 0,
+                'creator': {
+                    'id': creator.id,
+                    'username': creator.username,
+                    'nickname': creator.nickname
+                } if creator else None
+            })
+        
+        return jsonify({
+            'code': 0,
+            'data': delivery_orders
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 获取客户发货单列表失败: {str(e)}")
+        return jsonify({'error': '获取客户发货单列表失败'}), 500 

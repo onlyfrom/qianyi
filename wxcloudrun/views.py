@@ -2867,17 +2867,46 @@ def get_delivery_order_detail(user_id, order_id):
 
         # 获取配送商品列表
         items = []
+        total_amount = 0
         for item in DeliveryItem.query.filter_by(delivery_id=order.id).all():
             product = Product.query.get(item.product_id)
             if product:
+                # 获取采购单中的价格信息
+                purchase_item = db.session.query(PurchaseOrderItem)\
+                    .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id)\
+                    .filter(
+                        PurchaseOrder.order_number == item.order_number,
+                        PurchaseOrderItem.product_id == item.product_id,
+                        PurchaseOrderItem.color == item.color
+                    ).first()
+
                 product_image = json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None
+                
+                # 计算价格信息
+                price = purchase_item.price if purchase_item else 0
+                logo_price = purchase_item.logo_price if purchase_item else 0
+                packaging_price = purchase_item.packaging_price if purchase_item else 0
+                accessory_price = purchase_item.accessory_price if purchase_item else 0
+                
+                # 计算总价
+                item_total = (price + logo_price + packaging_price + accessory_price) * item.quantity
+                total_amount += item_total
+
                 items.append({
                     'id': item.id,
                     'product_id': item.product_id,
                     'product_name': product.name,
                     'quantity': item.quantity,
                     'color': item.color,
-                    'product_image': product_image
+                    'product_image': product_image,
+                    'price': price,
+                    'logo_price': logo_price,
+                    'packaging_price': packaging_price,
+                    'accessory_price': accessory_price,
+                    'total': item_total,
+                    'has_logo': logo_price > 0,
+                    'has_packaging': packaging_price > 0,
+                    'has_accessory': accessory_price > 0
                 })
 
         # 获取创建者和配送员信息
@@ -2919,6 +2948,7 @@ def get_delivery_order_detail(user_id, order_id):
             } if delivery_user else None,
             'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else [],
             'total_quantity': sum(item['quantity'] for item in items),
+            'total_amount': total_amount
         }
 
         return jsonify({

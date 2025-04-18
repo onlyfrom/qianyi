@@ -195,24 +195,31 @@
                 <!-- 统计卡片 -->
                 <div class="statistics-cards">
                     <div class="stat-card">
-                        <div class="title">本月总收入</div>
-                        <div class="value">¥{{ formatMoney(statistics.monthlyIncome) }}</div>
-                        <div class="trend" :class="statistics.monthlyTrend >= 0 ? 'up' : 'down'">
-                            较上月{{ statistics.monthlyTrend >= 0 ? '增长' : '下降' }} {{ Math.abs(statistics.monthlyTrend) }}%
+                        <div class="title">未结清金额</div>
+                        <div class="value">¥{{ formatMoney(statistics.unpaidAmount) }}</div>
+                        <div class="trend">
+                            待处理账单金额
                         </div>
                     </div>
                     <div class="stat-card">
-                        <div class="title">本月订单数</div>
-                        <div class="value">{{ statistics.monthlyOrders }}</div>
-                        <div class="trend" :class="statistics.ordersTrend >= 0 ? 'up' : 'down'">
-                            较上月{{ statistics.ordersTrend >= 0 ? '增长' : '下降' }} {{ Math.abs(statistics.ordersTrend) }}%
+                        <div class="title">已结清金额</div>
+                        <div class="value">¥{{ formatMoney(statistics.paidAmount) }}</div>
+                        <div class="trend">
+                            已完成账单金额
                         </div>
                     </div>
                     <div class="stat-card">
-                        <div class="title">平均客单价</div>
-                        <div class="value">¥{{ formatMoney(statistics.averageOrderValue) }}</div>
-                        <div class="trend" :class="statistics.avgOrderTrend >= 0 ? 'up' : 'down'">
-                            较上月{{ statistics.avgOrderTrend >= 0 ? '增长' : '下降' }} {{ Math.abs(statistics.avgOrderTrend) }}%
+                        <div class="title">合计金额</div>
+                        <div class="value">¥{{ formatMoney(statistics.totalAmount) }}</div>
+                        <div class="trend">
+                            所有账单总金额
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="title">合计数量</div>
+                        <div class="value">{{ statistics.totalCount }}</div>
+                        <div class="trend">
+                            所有账单总数量
                         </div>
                     </div>
                 </div>
@@ -275,24 +282,25 @@
                         @row-click="handleRowClick"
                         show-summary
                         :summary-method="getSummaries"
+                        @sort-change="handleSortChange"
                     >
-                        <el-table-column prop="customer_name" label="客户名称" width="150"></el-table-column>
-                        <el-table-column prop="total_quantity" label="商品总数" width="120">
+                        <el-table-column prop="customer_name" label="客户名称" width="150" sortable="custom"></el-table-column>
+                        <el-table-column prop="total_quantity" label="商品总数" width="120" sortable="custom">
                             <template #default="scope">
                                 {{ scope.row.total_quantity || 0 }}
                             </template>
                         </el-table-column>
-                        <el-table-column prop="unpaid_amount" label="未结清金额" width="150">
+                        <el-table-column prop="unpaid_amount" label="未结清金额" width="150" sortable="custom">
                             <template #default="scope">
                                 <span class="expense">¥{{ formatMoney(scope.row.unpaid_amount || 0) }}</span>
                             </template>
                         </el-table-column>
-                        <el-table-column prop="paid_amount" label="已结清金额" width="150">
+                        <el-table-column prop="paid_amount" label="已结清金额" width="150" sortable="custom">
                             <template #default="scope">
                                 <span class="income">¥{{ formatMoney(scope.row.paid_amount || 0) }}</span>
                             </template>
                         </el-table-column>
-                        <el-table-column prop="total_amount" label="货款总额" width="150">
+                        <el-table-column prop="total_amount" label="货款总额" width="150" sortable="custom">
                             <template #default="scope">
                                 <span>¥{{ formatMoney(scope.row.total_amount || 0) }}</span>
                             </template>
@@ -352,48 +360,42 @@
                     </el-descriptions>
 
                     <div style="margin-top: 20px;">
-                        <h4>订单列表</h4>
+                        <h4>发货单列表</h4>
                         <el-table :data="currentBilling.orders" border style="margin-top: 10px;">
-                            <el-table-column prop="order_number" label="订单号" width="150"></el-table-column>
+                            <el-table-column prop="order_number" label="发货单号" width="180"></el-table-column>
                             <el-table-column prop="created_at" label="创建时间" width="180">
                                 <template #default="scope">
                                     {{ formatDate(scope.row.created_at) }}
                                 </template>
                             </el-table-column>
-                            <el-table-column prop="total_amount" label="订单总额" width="150">
+                            <el-table-column prop="total_quantity" label="发货数量" width="120">
+                                <template #default="scope">
+                                    {{ scope.row.total_quantity }}
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="total_amount" label="货款金额" width="150">
                                 <template #default="scope">
                                     ¥{{ formatMoney(scope.row.total_amount) }}
                                 </template>
                             </el-table-column>
-                            <el-table-column prop="paid_amount" label="已付金额" width="150">
-                                <template #default="scope">
-                                    <span class="income">¥{{ formatMoney(scope.row.paid_amount) }}</span>
-                                </template>
-                            </el-table-column>
-                            <el-table-column prop="unpaid_amount" label="未付金额" width="150">
-                                <template #default="scope">
-                                    <span class="expense">¥{{ formatMoney(scope.row.unpaid_amount) }}</span>
-                                </template>
-                            </el-table-column>
                             <el-table-column prop="status" label="状态" width="120">
                                 <template #default="scope">
-                                    <el-tag :type="getBillingStatusTag(scope.row.status)">
-                                        {{ getBillingStatusText(scope.row.status) }}
+                                    <el-tag :type="getDeliveryStatusType(scope.row.status)">
+                                        {{ scope.row.status_text }}
                                     </el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="creator" label="创建人" width="150">
+                                <template #default="scope">
+                                    {{ scope.row.creator?.nickname || scope.row.creator?.username || '未知' }}
                                 </template>
                             </el-table-column>
                             <el-table-column label="操作" width="150" fixed="right">
                                 <template #default="scope">
                                     <el-button 
                                         size="small" 
-                                        type="success"
-                                        @click="confirmOrderPayment(scope.row)"
-                                        :disabled="scope.row.unpaid_amount <= 0"
-                                    >收款</el-button>
-                                    <el-button 
-                                        size="small" 
                                         type="primary"
-                                        @click="viewOrderDetail(scope.row)"
+                                        @click="viewDeliveryDetail(scope.row)"
                                     >查看</el-button>
                                 </template>
                             </el-table-column>
@@ -484,10 +486,26 @@
                         <el-table-column prop="product_name" label="商品名称">
                             <template #default="scope">
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <text>{{ scope.row.product_name }}</text>
+                                    <span>{{ scope.row.product_name }}</span>
                                     <div style="display: flex; gap: 4px;">
-                                        <el-tag size="small" type="success" v-if="scope.row.currentSpec.packaging_price > 0">包装</el-tag>
-                                        <el-tag size="small" type="warning" v-if="scope.row.currentSpec.logo_price > 0">打标</el-tag>
+                                        <el-tag 
+                                            size="small" 
+                                            type="success" 
+                                            v-if="scope.row.packaging_price > 0"
+                                            effect="plain"
+                                        >包装</el-tag>
+                                        <el-tag 
+                                            size="small" 
+                                            type="warning" 
+                                            v-if="scope.row.logo_price > 0"
+                                            effect="plain"
+                                        >打标</el-tag>
+                                        <el-tag 
+                                            size="small" 
+                                            type="info" 
+                                            v-if="scope.row.accessory_price > 0"
+                                            effect="plain"
+                                        >辅料</el-tag>
                                     </div>
                                 </div>
                             </template>
@@ -606,6 +624,108 @@
                     </div>
                 </div>
             </el-dialog>
+
+            <!-- 发货单详情对话框 -->
+            <el-dialog
+                v-model="deliveryDetailDialogVisible"
+                title="发货单详情"
+                width="80%"
+                destroy-on-close
+            >
+                <div v-if="currentDeliveryDetail" class="delivery-detail">
+                    <el-descriptions :column="2" border>
+                        <el-descriptions-item label="发货单号">
+                            {{ currentDeliveryDetail.orderNumber }}
+                        </el-descriptions-item>
+                        <el-descriptions-item label="创建时间">
+                            {{ formatDate(currentDeliveryDetail.createdAt) }}
+                        </el-descriptions-item>
+                        <el-descriptions-item label="状态">
+                            <el-tag :type="getDeliveryStatusType(currentDeliveryDetail.status)">
+                                {{ currentDeliveryDetail.statusText }}
+                            </el-tag>
+                        </el-descriptions-item>
+                        <el-descriptions-item label="创建人">
+                            {{ currentDeliveryDetail.creator?.nickname || currentDeliveryDetail.creator?.username || '未知' }}
+                        </el-descriptions-item>
+                        <el-descriptions-item label="客户名称" :span="2">{{ currentDeliveryDetail.customerName || '无' }}
+                        </el-descriptions-item>
+                    </el-descriptions>
+
+                    <el-divider>发货商品明细</el-divider>
+
+                    <el-table :data="deliveryItems" border>
+                        <el-table-column type="index" label="序号" width="60"></el-table-column>
+                        <el-table-column prop="product_id" label="款号" width="100"></el-table-column>
+                        <el-table-column prop="product_name" label="商品名称">
+                            <template #default="scope">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span>{{ scope.row.product_name }}</span>
+                                    <div style="display: flex; gap: 4px;">
+                                        <el-tag 
+                                            size="small" 
+                                            type="success" 
+                                            v-if="scope.row.packaging_price > 0"
+                                            effect="plain"
+                                        >包装</el-tag>
+                                        <el-tag 
+                                            size="small" 
+                                            type="warning" 
+                                            v-if="scope.row.logo_price > 0"
+                                            effect="plain"
+                                        >打标</el-tag>
+                                        <el-tag 
+                                            size="small" 
+                                            type="info" 
+                                            v-if="scope.row.accessory_price > 0"
+                                            effect="plain"
+                                        >辅料</el-tag>
+                                    </div>
+                                </div>
+                            </template>
+                        </el-table-column>
+                        
+                        <el-table-column prop="color" label="颜色" width="80"></el-table-column>
+                        <el-table-column prop="quantity" label="数量" width="80"></el-table-column>
+                        <el-table-column label="单价" width="120">
+                            <template #default="scope">
+                                ¥{{ formatMoney(scope.row.price + scope.row.logo_price + scope.row.packaging_price + scope.row.accessory_price) }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="小计" width="120">
+                            <template #default="scope">
+                                ¥{{ formatMoney(scope.row.total) }}
+                            </template>
+                        </el-table-column>
+                    </el-table>
+
+                    <div class="total-amount" style="margin-top: 20px; text-align: right;">
+                        <div>商品总数：{{ currentDeliveryDetail.total_quantity || 0 }}件</div>
+                        <div>货款总额：¥{{ formatMoney(currentDeliveryDetail.total_amount || 0) }}</div>
+                    </div>
+
+                    <div v-if="currentDeliveryDetail.remark" style="margin-top: 20px;">
+                        <el-divider>备注</el-divider>
+                        <el-card shadow="never" style="background-color: #f5f7fa;">
+                            {{ currentDeliveryDetail.remark }}
+                        </el-card>
+                    </div>
+
+                    <div v-if="currentDeliveryDetail.deliveryImage && currentDeliveryDetail.deliveryImage.length > 0" style="margin-top: 20px;">
+                        <el-divider>送货凭证</el-divider>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <el-image
+                                v-for="(image, index) in currentDeliveryDetail.deliveryImage"
+                                :key="index"
+                                style="width: 100px; height: 100px"
+                                :src="image"
+                                :preview-src-list="currentDeliveryDetail.deliveryImage"
+                                fit="cover"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </el-dialog>
         </div>
     </div>
 
@@ -650,12 +770,10 @@
             setup() {
                 // 状态定义
                 const statistics = reactive({
-                    monthlyIncome: 0,
-                    monthlyOrders: 0,
-                    averageOrderValue: 0,
-                    monthlyTrend: 0,
-                    ordersTrend: 0,
-                    avgOrderTrend: 0
+                    unpaidAmount: 0,
+                    paidAmount: 0,
+                    totalAmount: 0,
+                    totalCount: 0
                 });
 
                 const filterForm = reactive({
@@ -700,6 +818,11 @@
                 const deliveryOrders = ref([]);
                 const loadingDeliveries = ref(false);
 
+                // 发货单详情相关
+                const deliveryDetailDialogVisible = ref(false);
+                const currentDeliveryDetail = ref(null);
+                const deliveryItems = ref([]);
+
                 // 日期快捷选项
                 const dateShortcuts = [
                     {
@@ -737,6 +860,12 @@
                     },
                 ];
 
+                // 在 data() 函数中添加排序相关的数据
+                const sortConfig = reactive({
+                    sort_by: 'total_amount',
+                    sort_order: 'desc'
+                });
+
                 // 方法定义
                 const loadBillingList = async () => {
                     try {
@@ -747,7 +876,9 @@
                                 page_size: pagination.pageSize,
                                 start_date: filterForm.dateRange[0],
                                 end_date: filterForm.dateRange[1],
-                                customer_id: filterForm.customerId
+                                customer_id: filterForm.customerId,
+                                sort_by: sortConfig.sort_by,
+                                sort_order: sortConfig.sort_order
                             }
                         });
                         
@@ -798,7 +929,7 @@
                 };
 
                 const searchCustomers = async (query) => {
-                    if (query.length < 2) return;
+                    if (query.length < 1) return;
                     try {
                         customerSearchLoading.value = true;
                         const response = await axios.get('/users/search', {
@@ -1055,10 +1186,20 @@
                     }
                 };
 
-                // 查看发货详情
-                const viewDeliveryDetail = (delivery) => {
-                    // 这里可以实现查看发货详情的逻辑
-                    ElementPlus.ElMessage.info('查看发货详情: ' + delivery.order_number);
+                // 查看发货单详情
+                const viewDeliveryDetail = async (delivery) => {
+                    try {
+                        const response = await axios.get(`/delivery_orders/${delivery.id}`);
+                        if (response.status === 200) {
+                            console.log("发货单详情", response.data);
+                            currentDeliveryDetail.value = response.data.order;
+                            deliveryItems.value = response.data.items;
+                            deliveryDetailDialogVisible.value = true;
+                        }
+                    } catch (error) {
+                        console.error('获取发货单详情失败:', error);
+                        ElementPlus.ElMessage.error('获取发货单详情失败');
+                    }
                 };
 
                 // 获取发货状态类型
@@ -1067,7 +1208,8 @@
                         0: 'info',    // 已开单
                         1: 'warning', // 已发货
                         2: 'success', // 已完成
-                        3: 'danger'   // 已取消
+                        3: 'danger',  // 已取消
+                        4: 'danger'   // 异常
                     };
                     return types[status] || 'info';
                 };
@@ -1097,6 +1239,13 @@
                         })));
                     }, []);
                 });
+
+                // 在 methods 中添加排序处理方法
+                const handleSortChange = ({ prop, order }) => {
+                    sortConfig.sort_by = prop;
+                    sortConfig.sort_order = order === 'ascending' ? 'asc' : 'desc';
+                    loadBillingList();
+                };
 
                 // 生命周期钩子
                 onMounted(() => {
@@ -1134,7 +1283,9 @@
                     loadingPayments,
                     deliveryOrders,
                     loadingDeliveries,
-                    expandedItems,
+                    deliveryDetailDialogVisible,
+                    currentDeliveryDetail,
+                    deliveryItems,
                     loadBillingList,
                     handleSearch,
                     resetFilter,
@@ -1160,7 +1311,9 @@
                     getUserInfo,
                     handleCommand,
                     goBack,
-                    getSummaries
+                    getSummaries,
+                    sortConfig,
+                    handleSortChange
                 };
             }
         });
