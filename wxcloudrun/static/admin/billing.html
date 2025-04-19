@@ -722,7 +722,7 @@
             >
                 <div v-if="currentDeliveryDetail" class="delivery-detail">
                     <el-descriptions :column="2" border>
-                        <el-descriptions-item label="发货单号">
+                        <el-descriptions-item label="物流单号">
                             {{ currentDeliveryDetail.orderNumber }}
                         </el-descriptions-item>
                         <el-descriptions-item label="创建时间">
@@ -736,7 +736,9 @@
                                 ¥{{formatMoney(currentDeliveryDetail.customer_unpaid_amount || 0) }}
                             </span>
                         </el-descriptions-item>
-                        <el-descriptions-item label="包数" :span="2">{{ packageCount }}包
+                        <el-descriptions-item label="发包数" >{{ packageCount }}包
+                        </el-descriptions-item>
+                        <el-descriptions-item label="发货物流：" >{{ currentDeliveryDetail.delivery_logistics || '无' }}
                         </el-descriptions-item>
                     </el-descriptions>
 

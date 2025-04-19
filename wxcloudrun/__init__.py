@@ -89,8 +89,8 @@ def unhandled_exception(error):
 # 请求日志记录
 @app.before_request
 def log_request_info():
-    app.logger.info('Headers: %s', request.headers)
-    app.logger.info('Body: %s', request.get_data())
+    # 取消打印请求头和请求体
+    pass
 
 # CORS预检请求处理
 @app.route('/', defaults={'path': ''}, methods=['OPTIONS'])
