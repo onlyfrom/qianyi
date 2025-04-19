@@ -2641,7 +2641,7 @@ def create_delivery_order(user_id):
                     
                     # 更新商品总库存
                     product.stock = sum(spec['stock'] for spec in specs)
-                    
+                    print(f"package_id: {item.get('package_id', 0)}")
                     # 创建发货单商品项
                     delivery_item = DeliveryItem(
                         delivery_id=delivery_order.id,
@@ -2906,7 +2906,8 @@ def get_delivery_order_detail(user_id, order_id):
                     'total': item_total,
                     'has_logo': logo_price > 0,
                     'has_packaging': packaging_price > 0,
-                    'has_accessory': accessory_price > 0
+                    'has_accessory': accessory_price > 0,
+                    'package_id': item.package_id
                 })
 
         # 获取创建者和配送员信息

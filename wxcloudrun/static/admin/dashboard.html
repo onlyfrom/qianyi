@@ -5353,17 +5353,18 @@
                         }
                         
                         // 按包裹ID分组商品
-                        const packageArrays = this.deliveryForm.packages.map(pkg => {
+                        const packageArrays = this.deliveryForm.packages.map((pkg, index) => {
                             return pkg.items
                                 .filter(item => parseInt(item.quantity) > 0)
                                 .map(item => ({
                                     product_id: item.product_id,
                                     quantity: parseInt(item.quantity),
                                     color: item.color || '',
-                                    package_id: pkg.packageId,
-                                    logo_price: item.logo_price,    // logo价格
-                                    packaging_price: item.packaging_price,  // 包装价格
-                                    accessory_price: item.accessory_price  // 配件价格
+                                    package_id: index + 1,  // 直接使用索引+1作为包裹ID
+                                    spec_id: item.spec_id,
+                                    logo_price: item.logo_price,
+                                    packaging_price: item.packaging_price,
+                                    accessory_price: item.accessory_price
                                 }));
                         }).filter(items => items.length > 0);
                         
@@ -5378,7 +5379,7 @@
                             remark: this.deliveryForm.remark || '',
                             packages: packageArrays
                         };
-                        
+                        console.log("deliveryData:",deliveryData);
                         const response = await axios.post('/delivery_orders', deliveryData);
                         if (response.status === 201 || response.status === 200) {
                             ElementPlus.ElMessage.success('发货单已提交成功');

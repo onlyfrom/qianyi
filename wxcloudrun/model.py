@@ -339,3 +339,34 @@ class CartItem(db.Model):
                 'images': json.loads(self.product.images) if self.product and self.product.images else []
             } if self.product else None
         } 
+
+class Payment(db.Model):
+    """收款记录表"""
+    __tablename__ = 'payments'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    customer_name = db.Column(db.String(80))
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    payment_date = db.Column(db.DateTime, nullable=False)
+    remark = db.Column(db.Text)
+    delivery_orders = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+    
+    # 关联字段
+    customer = db.relationship('User', foreign_keys=[customer_id], backref='payments_received')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'customer_id': self.customer_id,
+            'customer_name': self.customer_name,
+            'amount': float(self.amount),
+            'payment_date': self.payment_date.strftime('%Y-%m-%d %H:%M:%S'),
+            'remark': self.remark,
+            'delivery_orders': self.delivery_orders,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'customer': self.customer.to_dict() if self.customer else None
+        } 
