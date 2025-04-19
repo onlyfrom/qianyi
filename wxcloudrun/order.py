@@ -75,55 +75,106 @@ def delete_delivery_order(user_id, order_id):
     参数:
         order_id: 发货单ID
     返回:
-        成功: {"code": 200, "message": "删除成功"}
+        成功: {"code": 200, "message": "删除成功", "details": {...}}
         失败: {"error": "错误信息"}
     """
     try:
+        print('='*50)
+        print(f'开始删除发货单 ID: {order_id}')
+        print('='*50)
+        
         # 检查权限
         current_user = User.query.get(user_id)
         if not current_user or current_user.role != 'admin' and current_user.role != 'STAFF':
+            print(f'权限检查失败: 用户 {user_id} 没有权限')
             return jsonify({'error': '没有权限执行此操作'}), 403
         
         # 获取发货单
         delivery_order = DeliveryOrder.query.get(order_id)
         if not delivery_order:
+            print(f'发货单不存在: ID {order_id}')
             return jsonify({'error': '发货单不存在'}), 404
             
+        print(f'找到发货单: {delivery_order.order_number}')
         
-        # 开始事务
-        db.session.begin_nested()
+        # 记录操作步骤
+        operation_details = {
+            'order_id': order_id,
+            'order_number': delivery_order.order_number,
+            'steps': []
+        }
         
         try:
             # 1. 删除发货单明细
-            DeliveryItem.query.filter_by(delivery_id=order_id).delete()
+            print('开始删除发货单明细')
+            deleted_items = DeliveryItem.query.filter_by(delivery_id=order_id).delete()
+            print(f'已删除 {deleted_items} 条发货单明细')
+            operation_details['steps'].append({
+                'step': '删除发货单明细',
+                'status': 'success',
+                'deleted_count': deleted_items
+            })
             
             # 2. 删除发货单
+            print('开始删除发货单')
             db.session.delete(delivery_order)
+            operation_details['steps'].append({
+                'step': '删除发货单',
+                'status': 'success'
+            })
             
             # 3. 恢复采购单状态为已处理（status=1）
             purchase_order = PurchaseOrder.query.filter_by(order_number=delivery_order.order_number).first()
             if purchase_order:
+                print(f'更新采购单状态: {purchase_order.order_number}')
                 purchase_order.status = 1  # 更新为已处理状态
+                operation_details['steps'].append({
+                    'step': '更新采购单状态',
+                    'status': 'success',
+                    'purchase_order_number': purchase_order.order_number,
+                    'new_status': 1
+                })
+            else:
+                operation_details['steps'].append({
+                    'step': '更新采购单状态',
+                    'status': 'skipped',
+                    'reason': '未找到对应的采购单'
+                })
             
             # 提交事务
+            print('提交事务')
             db.session.commit()
+            print('事务提交成功')
+            operation_details['steps'].append({
+                'step': '提交事务',
+                'status': 'success'
+            })
             
+            print('发货单删除完成')
             return jsonify({
                 'code': 200,
-                'message': '发货单删除成功，采购单状态已恢复'
+                'message': '发货单删除成功，采购单状态已恢复',
+                'details': operation_details
             })
             
         except Exception as e:
             db.session.rollback()
             print(f'删除发货单失败: {str(e)}')
-            return jsonify({'error': '删除发货单失败'}), 500
+            print(f'错误追踪:\n{traceback.format_exc()}')
+            operation_details['steps'].append({
+                'step': '执行操作',
+                'status': 'failed',
+                'error': str(e)
+            })
+            return jsonify({
+                'error': '删除发货单失败',
+                'details': operation_details
+            }), 500
             
     except Exception as e:
         print(f'处理删除发货单请求失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
-        return jsonify({'error': '删除发货单失败'}), 500 
-    
-
+        return jsonify({'error': '删除发货单失败'}), 500
 
 @order_bp.route('/delivery_orders_old/<int:order_id>', methods=['DELETE'])
 @login_required

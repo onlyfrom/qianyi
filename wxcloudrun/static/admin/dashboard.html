@@ -5283,6 +5283,7 @@
 
                         const response = await axios.delete(`/delivery_orders/${order.id}`);
                         if (response.status === 200) {
+                            console.log('删除发货单成功',response);
                             ElementPlus.ElMessage.success('发货单删除成功');
                             this.loadDeliveryOrders();
                         }

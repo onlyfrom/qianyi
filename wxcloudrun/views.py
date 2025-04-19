@@ -2599,11 +2599,7 @@ def create_delivery_order(user_id):
                 print(f'缺少必要字段: {field}')
                 return jsonify({'error': f'缺少必要字段: {field}'}), 400
         
-        # 开始数据库事务
-        db.session.begin_nested()
-        
         try:
-            print('创建发货单记录')
             # 创建发货单
             delivery_order = DeliveryOrder(
                 order_number=data['order_number'],
@@ -2620,6 +2616,7 @@ def create_delivery_order(user_id):
                 updated_at=datetime.now()
             )
             
+            print('添加发货单到会话')
             db.session.add(delivery_order)
             db.session.flush()
             print(f'发货单创建成功，ID: {delivery_order.id}')
@@ -2663,6 +2660,7 @@ def create_delivery_order(user_id):
                         color=item.get('color', ''),
                         package_id=item.get('package_id', 0)
                     )
+                    print('添加发货单商品项到会话')
                     db.session.add(delivery_item)
                     print(f'添加发货单商品项: {delivery_item.id}')
             
@@ -2704,6 +2702,7 @@ def create_delivery_order(user_id):
                         print(f"采购单 {purchase_order.order_number} 所有商品已发货完毕，状态已更新为已完成")
             except Exception as e:
                 print(f"检查采购单发货状态时出错: {str(e)}")
+                print(f"错误追踪:\n{traceback.format_exc()}")
                 # 不影响发货单创建的结果
             
             print('发货单创建完成')
