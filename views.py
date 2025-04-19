@@ -24,13 +24,13 @@ import random
 from sqlalchemy import inspect, text, func, desc, distinct, case, Text
 from sqlalchemy.sql import literal, literal_column
 from wxcloudrun.response import *
-#from .decorators import admin_required, permission_required
 from wxcloudrun.recommended import get_recommended_products, update_recommended_products
+import re
 
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
 WX_ENV = 'prod-9gd4jllic76d4842'
-API_URL = 'http://api.weixin.qq.com'
+API_URL = os.environ.get("APIURL", "https://api.weixin.qq.com")
 
 # 用户认证中间件
 def login_required(f):
@@ -99,7 +99,7 @@ def admin_required(f):
                 return jsonify({'error': '用户不存在'}), 404
                 
             # 验证用户类型和角色
-            if user.user_type != 1 or user.role != 'admin':
+            if user.user_type != 1 or (user.role != 'admin' and user.role != 'ADMIN' and user.role != 'normal_admin'):
                 print(f"当前用户信息: ID={user.id}, 用户名={user.username}, 角色={user.role}, 用户类型={user.user_type}")
                 print('需要管理员权限')
                 return jsonify({'error': '需要管理员权限'}), 403
@@ -197,7 +197,7 @@ def check_staff_permission(permission):
                 
                 print(f'当前用户信息: {user.user_type}, {user.role}')
                 # 管理员拥有所有权限
-                if user.user_type == 1 or user.role == 'admin':
+                if user.user_type == 1 or user.role == 'admin' or user.role == 'normalAdmin':
                     # 将用户信息存储在请求上下文中
                     setattr(g, 'admin_user', user)
                     return f(*args, **kwargs)
@@ -814,6 +814,7 @@ def add_or_update_product(user_id):
         
         # 检查是否提供了商品ID
         product_id = data.get('id')
+        print(f'商品ID: {product_id}')
         if product_id:
             # 更新现有商品
             product = Product.query.get(product_id)
@@ -859,6 +860,7 @@ def add_or_update_product(user_id):
             product.updated_at = datetime.now()
         else:
             # 新增商品时的必需字段验证
+            print(f'新增商品!  字段验证: {data}')
             required_fields = ['name']
             if not all(field in data for field in required_fields):
                 missing_fields = [field for field in required_fields if field not in data]
@@ -874,27 +876,29 @@ def add_or_update_product(user_id):
             
             # 获取状态字段，设置默认值
             status = data.get('status', 1)  # 默认上架
-            is_public = data.get('is_public', 1)  # 默认公开
+            is_public = data.get('is_public', 0)  # 默认私密
             
             # 生成新的商品ID
             product_type = str(data['type']).zfill(2)  # 确保类型是两位数
             
-            # 查找当前类型下最大的编号
-            latest_product = Product.query.filter(
-                Product.id.like(f'qy{product_type}%')
-            ).order_by(Product.id.desc()).first()
+            # 生成新的商品ID，格式为 QY{number}
+            # 查找当前最大的编号
+            all_products = Product.query.filter(
+                Product.id.like('QY%')
+            ).all()
             
-            if latest_product:
+            max_number = 0
+            for product in all_products:
                 try:
-                    last_number = int(latest_product.id[4:])  # 跳过 'qyXX' 前缀
-                    new_number = str(last_number + 1).zfill(4)  # 确保是4位数
+                    num = int(product.id[2:])  # 跳过 'QY' 前缀
+                    if num > max_number:
+                        max_number = num
                 except ValueError:
-                    new_number = '0001'
-            else:
-                new_number = '0001'
+                    continue
             
-            # 生成新的商品ID
-            new_product_id = f'qy{product_type}{new_number}'
+            new_number = str(max_number + 1)
+            new_product_id = f'QY{new_number}'
+            print(f'新增商品ID: {new_product_id}')
             
             # 创建新商品
             product = Product(
@@ -907,7 +911,6 @@ def add_or_update_product(user_id):
                 price_d=price_d,
                 cost_price=cost_price,
                 type=data.get('type', 1),
-                specs_info=json.dumps(data.get('specs_info', {})),
                 specs=json.dumps(data.get('specs', {})),
                 images=json.dumps(data.get('images', [])),
                 status=status,
@@ -924,6 +927,7 @@ def add_or_update_product(user_id):
             
         try:
             db.session.commit()
+            print(f'商品保存成功: {product.id}')
             return jsonify({
                 'message': '商品保存成功',
                 'product_id': product.id,
@@ -986,37 +990,112 @@ def delete_product(user_id, product_id):
     except Exception as e:
         print(f"Error: {str(e)}")
         return jsonify({'error': f'处理请求失败: {str(e)}'}), 500
-
 # 获取商品详情
 @app.route('/products/<product_id>', methods=['GET'])
-@check_staff_permission('product.view')
+@login_required
 def get_product_detail(user_id, product_id):
     try:
         product = Product.query.get(product_id)
         if not product:
             return jsonify({'error': '商品不存在'}), 404
+            
+        # 获取当前用户信息
+        current_user = User.query.get(user_id)
+        if not current_user:
+            return jsonify({'error': '用户不存在'}), 404
+        
+        # 获取推送过该商品的用户
+        pushed_users = db.session.query(User.id, User.nickname, User.avatar)\
+            .join(PushOrder, PushOrder.target_user_id == User.id)\
+            .join(PushOrderProduct, PushOrderProduct.push_order_id == PushOrder.id)\
+            .filter(PushOrderProduct.product_id == product_id)\
+            .distinct().all()
+            
+        # 获取所有用户
+        all_users = db.session.query(User.id, User.nickname, User.avatar).all()
+        
+        # 获取未推送过的用户
+        pushed_user_ids = {user.id for user in pushed_users}
+        not_pushed_users = [user for user in all_users if user.id not in pushed_user_ids]
+        
+        # 格式化用户数据
+        pushed_users_data = [{
+            'id': user.id,
+            'nickname': user.nickname,
+            'avatar': user.avatar
+        } for user in pushed_users]
+        
+        not_pushed_users_data = [{
+            'id': user.id, 
+            'nickname': user.nickname,
+            'avatar': user.avatar
+        } for user in not_pushed_users]
 
+        # 获取基础价格
         base_price = float(product.price) if product.price is not None else 0
+        
+        # 初始化规格信息
+        specs = json.loads(product.specs) if product.specs else []
+        specs_info = json.loads(product.specs_info) if product.specs_info else {}
+        
+        # 如果是普通客户，检查推送单中的价格和规格
+        if current_user.role == 'customer':
+            # 查找该用户最新的有效推送单中的商品信息
+            latest_push = db.session.query(PushOrderProduct)\
+                .join(PushOrder, PushOrder.id == PushOrderProduct.push_order_id)\
+                .filter(
+                    PushOrderProduct.product_id == product_id,
+                    PushOrder.target_user_id == user_id  
+                )\
+                .order_by(PushOrder.created_at.desc())\
+                .first()
+                
+            if latest_push:
+                # 如果在推送单中找到信息，使用推送单中的价格和规格
+                display_price = float(latest_push.price)
+                if latest_push.specs:
+                    specs = json.loads(latest_push.specs)
+            else:
+                # 如果不在推送单中，检查是否是公开商品
+                if product.is_public:
+                    # 根据用户类型获取对应价格
+                    if current_user.customer_type == 2:
+                        display_price = float(product.price_b) if product.price_b is not None else base_price
+                    elif current_user.customer_type == 3:
+                        display_price = float(product.price_c) if product.price_c is not None else base_price
+                    elif current_user.customer_type == 4:
+                        display_price = float(product.price_d) if product.price_d is not None else base_price
+                    else:
+                        display_price = base_price
+                else:
+                    # 如果不是公开商品，返回错误
+                    return jsonify({'error': '该商品未对您开放'}), 403
+        else:
+            # 如果不是普通客户，显示基础价格
+            display_price = base_price
+
         product_detail = {
             'id': product.id,
             'name': product.name,
             'description': product.description,
-            'price': base_price,
+            'price': display_price,  # 使用计算后的价格
             'price_b': float(product.price_b) if product.price_b is not None else base_price,
             'price_c': float(product.price_c) if product.price_c is not None else base_price,
             'price_d': float(product.price_d) if product.price_d is not None else base_price,
             'cost_price': float(product.cost_price) if product.cost_price is not None else base_price,
-            'specs': json.loads(product.specs) if product.specs else [],
+            'specs': specs,
             'images': json.loads(product.images) if product.images else [],
             'type': product.type,
             'created_at': product.created_at.isoformat() if product.created_at else None,
-            'specs_info': json.loads(product.specs_info) if product.specs_info else {},
             'status': product.status if product.status is not None else 1,  # 默认上架
             'is_public': product.is_public if product.is_public is not None else 1,  # 默认公开
             'size': product.size if product.size is not None else '-',
             'weight': product.weight if product.weight is not None else '0',
             'yarn': product.yarn if product.yarn is not None else '-',
-            'composition': product.composition if product.composition is not None else '-'
+            'composition': product.composition if product.composition is not None else '-',
+            'pushed_users': pushed_users_data,
+            'not_pushed_users': not_pushed_users_data,
+            'video_url': product.video_url if product.video_url is not None else ''
         }
         return jsonify({'product': product_detail}), 200
 
@@ -1028,48 +1107,73 @@ def get_product_detail(user_id, product_id):
 @app.route('/products/recent', methods=['GET'])
 def get_recent_products():
     try:
-        page = int(request.args.get('page', 1))  # 默认第 1 页
-        limit = int(request.args.get('limit', 10))  # 默认每页 10 条
+        # 获取最近7天的商品
+        one_week_ago = datetime.now() - timedelta(days=7)
         
-        # 使用 SQLAlchemy 查询
-        products_query = Product.query.order_by(Product.created_at.desc())
-        
-        # 获取分页数据
-        paginated_products = products_query.paginate(
-            page=page, 
-            per_page=limit, 
-            error_out=False
-        )
-        
-        # 格式化数据
-        products = []
-        for product in paginated_products.items:
-            products.append({
+        # 查询最近一周添加的商品
+        recent_products = Product.query.filter(
+            Product.created_at >= one_week_ago,
+            Product.status == 1,  # 确保商品是上架状态
+            Product.is_public == 1  # 确保商品是公开的
+        ).order_by(Product.created_at.desc()).all()
+
+        # 如果一周内没有新商品，则获取最近的10件商品
+        if not recent_products:
+            recent_products = Product.query.filter(
+                Product.status == 1
+            ).order_by(Product.created_at.desc()).limit(10).all()
+
+        result = []
+        for product in recent_products:
+            # 获取规格信息
+            specs = json.loads(product.specs) if product.specs else []
+            all_colors_stock = []
+            total_stock = 0
+            
+            # 计算总库存和各颜色库存
+            for spec in specs:
+                try:
+                    stock = int(spec.get('stock', 0))
+                    total_stock += stock
+                    color_info = {
+                        'color': spec.get('color', '未知颜色'),
+                        'stock': stock
+                    }
+                    all_colors_stock.append(color_info)
+                except (ValueError, TypeError):
+                    continue
+
+            base_price = float(product.price) if product.price is not None else 0
+            product_data = {
                 'id': product.id,
                 'name': product.name,
                 'description': product.description,
-                'price': float(product.price),
-                'specs': json.loads(product.specs) if product.specs else [],
+                'price': base_price,
                 'images': json.loads(product.images) if product.images else [],
-                'type': product.type,
+                'total_stock': total_stock,
+                'all_colors_stock': all_colors_stock,
                 'created_at': product.created_at.isoformat() if product.created_at else None,
-                'specs_info': json.loads(product.specs_info) if product.specs_info else {},
-                'size': product.size if product.size is not None else '-',
-                'weight': product.weight if product.weight is not None else '0',
-                'yarn': product.yarn if product.yarn is not None else '-',
-                'composition': product.composition if product.composition is not None else '-'
-            })
-            
+                'days_since_created': (datetime.now() - product.created_at).days if product.created_at else None,
+                'is_new': (datetime.now() - product.created_at).days <= 7 if product.created_at else False  # 标记是否是一周内的新品
+            }
+            result.append(product_data)
+
         return jsonify({
-            'products': products,
-            'total': paginated_products.total,
-            'pages': paginated_products.pages,
-            'current_page': page
-        }), 200
-        
+            'code': 0,
+            'data': {
+                'products': result,
+                'total': len(result),
+                'has_new': any(p['is_new'] for p in result)  # 是否包含新品
+            },
+            'message': 'success'
+        })
+
     except Exception as e:
-        print(f"获取最近商品列表失败: {str(e)}")
-        return jsonify({'error': '获取商品列表失败'}), 500
+        print(f"获取近期上新商品失败: {str(e)}")
+        return jsonify({
+            'code': -1,
+            'message': '获取近期上新商品失败'
+        }), 500
 
 # 确保文件扩展名合法
 def allowed_file(filename):
@@ -1549,25 +1653,60 @@ def import_products(user_id):
         
         imported_count = 0
         errors = []
+
+
             
         for index, row in df.iterrows():
             try:
-                print(f'\n处理第 {index + 2} 行数据...')
+                print(f'\n处理第 {index + 2} 行数据...')                              
                 
                 # 验证商品名称（必填）
                 if pd.isna(row['商品名称']):
                     error_msg = f'第 {index + 2} 行：商品名称不能为空'
                     print(f'错误: {error_msg}')
                     errors.append(error_msg)
-                    continue
+                    continue   
                 
                 # 生成商品ID（使用时间戳+随机数）
-                product_id = f"P{int(time.time())}{random.randint(1000, 9999)}"
+                try:
+                    product_id = "QY" + str(row['货号']).strip()
+                except Exception as e:
+                    error_msg = f'第 {index + 2} 行：货号格式错误 - {str(e)}'
+                    print(f'错误: {error_msg}')
+                    errors.append(error_msg)
+                    continue
                 
                 # 打印行数据用于调试    
                 print(f'行数据: {dict(row)}')
                     
                 try:
+                    # 初始化specs列表
+                    specs = []
+                    
+                    # 处理颜色信息
+                    if not pd.isna(row.get('颜色', '')):
+                        colors = str(row['颜色']).strip()
+                        # 分割颜色（支持多个分隔符）
+                        color_list = [c.strip() for c in re.split('[，、,]', colors) if c.strip()]
+                        if not color_list:
+                            color_list = ['默认']
+                            
+                        # 为每个颜色创建规格
+                        for color in color_list:
+                            spec = {
+                                'color': color,
+                                'stock': 0,  # 默认库存为0
+                                'price': float(row['A类售价']) if not pd.isna(row.get('A类售价', '')) else 0
+                            }
+                            specs.append(spec)
+                    else:
+                        # 如果没有颜色信息，添加默认规格
+                        specs.append({
+                            'color': '默认',
+                            'stock': 0,
+                            'price': float(row['A类售价']) if not pd.isna(row.get('A类售价', '')) else 0
+                        })
+
                     # 构建商品数据，使用默认值处理空值
                     product_data = {
                         'id': product_id,
@@ -1580,6 +1719,7 @@ def import_products(user_id):
                         'description': str(row['备注']).strip() if not pd.isna(row.get('备注', '')) else '',  # 备注
                         'type': 1,  # 默认类型
                         'created_at': datetime.now().isoformat(),
+                        'specs': json.dumps(specs)
                     }
                 except ValueError as e:
                     error_msg = f'第 {index + 2} 行：数据格式错误 - {str(e)}'
@@ -1589,8 +1729,48 @@ def import_products(user_id):
                 
                 product_data['description'] = ''
   
-                # 设置默认规格
-                specs = [{'color': '默认', 'stock': 999999, 'image': ''}]
+                # 设置默认规格并获取商品颜色
+                specs = []
+                # 获取商品颜色
+                try:
+                    color_field = str(row['颜色']).strip() if not pd.isna(row.get('颜色', '')) else ''
+                    if color_field:
+                        # 尝试多种分隔符分离颜色
+                        if '，' in color_field:
+                            product_colors = color_field.split('，')
+                        elif '、' in color_field:
+                            product_colors = color_field.split('、')
+                        elif ',' in color_field:
+                            product_colors = color_field.split(',')
+                        else:
+                            # 如果没有分隔符，将整个字符串作为一个颜色
+                            product_colors = [color_field]
+                        
+                        # 清理颜色名称
+                        product_colors = [color.strip() for color in product_colors if color.strip()]
+                    else:
+                        product_colors = ['默认']
+                except Exception as e:
+                    print(f"处理颜色字段失败: {str(e)}")
+                    product_colors = ['默认']
+
+                # 为每个颜色创建规格
+                for color in product_colors:
+                    color_spec = {
+                        'color': color,
+                        'image': '',
+                        'stock': 999999
+                    }
+                    specs.append(color_spec)
+
+                # 如果没有有效的颜色，添加默认规格
+                if not specs:
+                    specs = [{
+                        'color': '默认',
+                        'image': '',
+                        'stock': 999999
+                    }]
+
                 product_data['specs'] = json.dumps(specs)
          
                 # 从系统设置获取商品类型配置
@@ -1605,25 +1785,34 @@ def import_products(user_id):
                 # 设置默认类型
                 product_data['type'] = 5  # 默认类型
 
-                # 根据商品名称匹配类型
-                for type_config in product_types:
-                    if product_data['name'].startswith(type_config['name']):
-                        product_data['type'] = type_config['id']
-                        break
+                # 从Excel获取类型名称
+                type_name = str(row.get('类型', '')).strip() if not pd.isna(row.get('类型', '')) else ''
+                
+                # 根据类型名称匹配类型ID
+                if type_name:
+                    for type_config in product_types:
+                        if type_name == type_config['name']:
+                            product_data['type'] = type_config['id']
+                            break
                 
                 print('插入新商品...')
                 new_product = Product(
                     id=product_data['id'],
                     name=product_data['name'],
                     description=product_data['description'],
+                    price = '0',
                     price_b=product_data['price'],
+                    price_c= float(product_data['price']) + 2,
+                    price_d= float(product_data['price']) + 4,
                     specs=product_data['specs'],
                     type=product_data['type'],
                     created_at=product_data['created_at'],
                     size=product_data['size'],
                     weight=product_data['weight'],
                     yarn=product_data['yarn'],
-                    composition=product_data['composition']
+                    composition=product_data['composition'],
+                    is_public = 0 #默认不公开
+                    
                 )
                 db.session.add(new_product)
                 db.session.commit()
@@ -1836,14 +2025,18 @@ def create_purchase_order(user_id):
         order_number = datetime.now().strftime('%Y%m%d%H%M%S') + str(random.randint(1000, 9999))
         
         # 计算总金额
-        total_amount = sum(item.get('price', 0) * item.get('quantity', 0) for item in data['items'])
-        
+        total_amount = sum(float(item.get('price', 0)) * float(item.get('quantity', 0)) for item in data['items'])
+        print(len(data['items']))
+        if len(data['items']) == 0:
+            return jsonify({'error': '请添加至少一个商品'}), 400
         # 创建采购单
+
+        status = data.get('status', 1)
         purchase_order = PurchaseOrder(
             order_number=order_number,
             user_id=data.get('user_id', user_id),            
             total_amount=total_amount,
-            status=0,  # 初始状态：待处理
+            status=status,  # 初始状态：待处理
             remark=data.get('remark', ''),
             created_at=datetime.now()
         )
@@ -1861,7 +2054,10 @@ def create_purchase_order(user_id):
                 product_id=item['product_id'],
                 quantity=item['quantity'],
                 price=item['price'],
-                color=item.get('color', '')
+                color=item.get('color', ''),
+                logo_price=item.get('logo_price', 0.0),  # 加标价格
+                accessory_price=item.get('accessory_price', 0.0),  # 辅料价格
+                packaging_price=item.get('packaging_price', 0.0)  # 包装价格
             )
             db.session.add(order_item)
 
@@ -1892,6 +2088,9 @@ def get_purchase_orders(user_id):
         page_size = min(int(request.args.get('page_size', 10)), 50)
         status = request.args.get('status')
         date_range = request.args.get('date_range')
+        keyword = request.args.get('keyword')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
         
         # 获取当前用户信息
         current_user = User.query.get(user_id)
@@ -1904,15 +2103,36 @@ def get_purchase_orders(user_id):
         )
         
         # 如果不是管理员，限制只能查看自己的订单
-        if current_user.user_type != 1:  # 假设 1 表示管理员
+        if current_user.role != 'admin' and current_user.role != 'STAFF':  # 假设 1 表示管理员
             query = query.filter(PurchaseOrder.user_id == user_id)
-            
+        
+        if keyword:
+            query = query.filter(db.or_(
+                PurchaseOrder.order_number.like(f'%{keyword}%'),
+                User.username.like(f'%{keyword}%'),
+                User.nickname.like(f'%{keyword}%'),
+                User.phone.like(f'%{keyword}%')
+            ))
         # 添加筛选条件
         if status:
             query = query.filter(PurchaseOrder.status == status)
             
         if date_range:
             query = query.filter(PurchaseOrder.created_at.between(date_range[0], date_range[1]))
+
+        # 日期范围筛选
+        if start_date and end_date:
+            print('开始时间和结束时间', start_date, end_date)
+            query = query.filter(
+                db.and_(
+                    func.date(PurchaseOrder.created_at) >= func.date(start_date),
+                    func.date(PurchaseOrder.created_at) <= func.date(end_date)
+                )
+            )
+        elif start_date:
+            query = query.filter(func.date(PurchaseOrder.created_at) >= func.date(start_date))
+        elif end_date:
+            query = query.filter(func.date(PurchaseOrder.created_at) <= func.date(end_date))
 
         # 按创建时间倒序排序
         query = query.order_by(PurchaseOrder.created_at.desc())
@@ -1945,25 +2165,41 @@ def get_purchase_orders(user_id):
                                 'id': product.id,
                                 'product_id': product.id,
                                 'product_name': product.name,
-                                'image': json.loads(product.images)[0] if product.images else None,
+                                'image': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None,
                                 'total_quantity': 0,
                                 'total_amount': 0,
+                                'total_amount_extra': 0,
                                 'specs': []
                             }
                         
+                        # 查询该商品规格的已发货数量
+                        shipped_quantity = 0
+                        if item.color:
+                            # 查询相同商品ID和颜色的已发货数量
+                            shipped_result = db.session.query(func.sum(DeliveryItem.quantity)).filter(
+                                DeliveryItem.product_id == item.product_id,
+                                DeliveryItem.color == item.color,
+                                DeliveryItem.order_number == order.order_number
+                            ).scalar()
+                            shipped_quantity = int(shipped_result) if shipped_result is not None else 0
                         # 添加当前规格信息
                         spec_info = {
                             'color': item.color,
                             'quantity': item.quantity,
                             'price': float(item.price),
-                            'subtotal': item.quantity * float(item.price)
+                            'logo_price': float(item.logo_price),  # 加标价格
+                            'accessory_price': float(item.accessory_price),  # 辅料价格
+                            'packaging_price': float(item.packaging_price),  # 包装价格
+                            'total': item.quantity * float(item.price),
+                            'extra': item.quantity * (float(item.logo_price) + float(item.accessory_price) + float(item.packaging_price)),
+                            'shipped_quantity': shipped_quantity  # 添加已发货数量字段
                         }
                         merged_products[item.product_id]['specs'].append(spec_info)
-                        
+                       
                         # 更新总数量和总金额
                         merged_products[item.product_id]['total_quantity'] += item.quantity
-                        merged_products[item.product_id]['total_amount'] += spec_info['subtotal']
-                        
+                        merged_products[item.product_id]['total_amount'] += spec_info['total']
+                        merged_products[item.product_id]['total_amount_extra'] += spec_info['extra']
                     except Exception as e:
                         print(f"处理订单项时出错: {str(e)}")
                         continue
@@ -1975,8 +2211,10 @@ def get_purchase_orders(user_id):
                 order_data = {
                     'id': order.id,
                     'order_number': order.order_number,
-                    'total_amount': float(order.total_amount),
+                    'total_amount': sum(item['total_amount'] for item in merged_products.values()),
                     'total_quantity': sum(item['total_quantity'] for item in merged_products.values()),
+                    'total_amount_extra': sum(item['total_amount_extra'] for item in merged_products.values()),
+                    'total_shipped_quantity': sum(sum(spec['shipped_quantity'] for spec in item['specs']) for item in merged_products.values()),
                     'status': order.status,
                     'remark': order.remark,
                     'created_at': order.created_at.isoformat() if order.created_at else None,
@@ -2007,6 +2245,7 @@ def get_purchase_orders(user_id):
         print(f'获取采购单列表失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '获取采购单列表失败'}), 500
+
 
 # 更新采购单状态
 @app.route('/purchase_orders/<int:order_id>', methods=['PUT'])
@@ -2043,9 +2282,96 @@ def update_purchase_order(user_id, order_id):
         return jsonify({'error': '更新采购单状态失败'}), 500
 
 
+# 编辑采购单商品信息
+@app.route('/purchase_orders/<int:order_id>/items', methods=['PUT'])
+@login_required
+def update_purchase_order_items(user_id, order_id):
+    try:
+        # 检查权限
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': '用户不存在'}), 404
+            
+        # 获取采购单
+        order = PurchaseOrder.query.get(order_id)
+        if not order:
+            return jsonify({'error': '采购单不存在'}), 404
+            
+        # 非管理员只能编辑自己的采购单
+        if user.role != 'admin' and order.user_id != user_id and user.role != 'STAFF' and user.role != 'normalAdmin':
+            return jsonify({'error': '无权限编辑此采购单'}), 403
+            
+            
+        data = request.json
+        items = data.get('items', [])
+        
+        if not items:
+            return jsonify({'error': '缺少商品信息'}), 400
+            
+        # 清除原有商品信息
+        PurchaseOrderItem.query.filter_by(order_id=order_id).delete()
+        
+        # 添加新的商品信息
+        total_amount = 0
+        for item_data in items:
+            product_id = item_data.get('product_id')
+            quantity = item_data.get('quantity', 0)
+            price = item_data.get('price', 0)
+            color = item_data.get('color', '')
+            logo_price = item_data.get('logo_price', 0)
+            accessory_price = item_data.get('accessory_price', 0)
+            packaging_price = item_data.get('packaging_price', 0)
+            
+            if not product_id or quantity <= 0:
+                continue
+                
+            # 检查产品是否存在
+            product = Product.query.get(product_id)
+            if not product:
+                continue
+                
+            # 创建新的订单项
+            item = PurchaseOrderItem(
+                order_id=order_id,
+                product_id=product_id,
+                quantity=quantity,
+                price=price,
+                color=color,
+                logo_price=logo_price,
+                accessory_price=accessory_price,
+                packaging_price=packaging_price
+            )
+            db.session.add(item)
+            
+            # 计算总金额
+            item_total = quantity * float(price) + float(logo_price) + float(accessory_price) + float(packaging_price)
+            total_amount += item_total
+            
+        # 更新采购单总金额
+        order.total_amount = total_amount
+        order.updated_at = datetime.now()
+        
+        try:
+            db.session.commit()
+            return jsonify({
+                'message': '采购单商品信息更新成功',
+                'total_amount': float(total_amount)
+            }), 200
+        except Exception as e:
+            db.session.rollback()
+            print(f'更新采购单商品信息失败: {str(e)}')
+            print(f'错误追踪:\n{traceback.format_exc()}')
+            return jsonify({'error': '更新采购单商品信息失败'}), 500
+            
+    except Exception as e:
+        print(f'处理采购单商品信息更新请求失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '更新采购单商品信息失败'}), 500
+
+
 # 添加用户管理相关接口
 @app.route('/users', methods=['GET'])
-@admin_required
+@check_staff_permission('users.view')   
 def get_users(user_id):
     try:       
         # 获取查询参数
@@ -2096,6 +2422,7 @@ def get_users(user_id):
             'address': user.address,
             'contact': user.contact,
             'user_type': user.user_type,
+            'role': user.role,
             'status': user.status,
             'created_at': user.created_at.isoformat() if user.created_at else None,
             'avatar': user.avatar,
@@ -2178,7 +2505,8 @@ def get_user_profile(user_id):
             'address': user.address,
             'contact': user.contact,
             'avatar': user.avatar,
-            'user_type': user.user_type
+            'user_type': user.user_type,
+            'role': user.role
         }
         print(f'获取用户信息成功: {user_info}')
         return jsonify({'user': user_info}), 200
@@ -2248,9 +2576,7 @@ def update_user_profile(user_id):
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '更新用户信息失败'}), 500
 
-
-
-# 创建配送单
+# 创建发货单
 @app.route('/delivery_orders', methods=['POST'])
 @login_required
 def create_delivery_order(user_id):
@@ -2260,48 +2586,119 @@ def create_delivery_order(user_id):
             return jsonify({'error': '无效的请求数据'}), 400
         
         # 验证必要字段
-        required_fields = ['customer_name', 'customer_phone', 'delivery_address', 'items']
+        required_fields = ['customer_name', 'packages']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'error': f'缺少必要字段: {field}'}), 400
         
-        # 生成订单号
-        order_number = 'D' + datetime.now().strftime('%Y%m%d%H%M%S') + str(random.randint(1000, 9999))
+        # 开始数据库事务
+        db.session.begin_nested()
         
-        # 创建配送单
-        delivery_order = DeliveryOrder(
-            order_number=order_number,
-            customer_name=data['customer_name'],
-            customer_phone=data['customer_phone'],
-            delivery_address=data['delivery_address'],
-            delivery_date=data.get('delivery_date'),
-            delivery_time_slot=data.get('delivery_time_slot'),
-            status=0,  # 待配送
-            remark=data.get('remark', ''),
-            created_by=user_id,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        
-        db.session.add(delivery_order)
-        
-        # 添加配送商品
-        for item in data['items']:
-            delivery_item = DeliveryItem(
-                delivery_id=delivery_order.id,
-                product_id=item['product_id'],
-                quantity=item['quantity'],
-                color=item.get('color', '')
-            )
-            db.session.add(delivery_item)
-
         try:
+            # 创建发货单
+            delivery_order = DeliveryOrder(
+                order_number=data['order_number'],
+                customer_id=data['customer_id'],
+                customer_name=data['customer_name'],
+                customer_phone=data['customer_phone'],
+                delivery_address=data['customer_address'],
+                delivery_date=data.get('delivery_date'),
+                delivery_time_slot=data.get('delivery_time_slot'),
+                status=data.get('status', 1),  # 待配送
+                remark=data.get('remark', ''),
+                created_by=user_id,
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            
+            db.session.add(delivery_order)
+            db.session.flush()  # 刷新会话以获取delivery_order.id
+            
+            # 添加商品并更新库存
+            for items in data['packages']:
+                for item in items:
+                    # 查找商品
+                    product = Product.query.get(item['product_id'])
+                    if not product:
+                        raise ValueError(f'商品不存在: {item["product_id"]}')
+                    
+                    # 查找并更新商品规格库存
+                    specs = json.loads(product.specs) if isinstance(product.specs, str) else product.specs
+                    spec_found = False
+                    
+                    for spec in specs:
+                        if spec['color'] == item.get('color', ''):                            
+                            # 更新库存
+                            spec['stock'] -= item['quantity']
+                            spec_found = True
+                            break
+                    
+                    if not spec_found and item.get('color'):
+                        raise ValueError(f'商品 {product.name} 不存在指定颜色: {item["color"]}')
+                    
+                    # 更新商品规格
+                    product.specs = json.dumps(specs)
+                    
+                    # 更新商品总库存
+                    product.stock = sum(spec['stock'] for spec in specs)
+                    print(f"package_id: {item.get('package_id', 0)}")
+                    # 创建发货单商品项
+                    delivery_item = DeliveryItem(
+                        delivery_id=delivery_order.id,
+                        product_id=item['product_id'],
+                        order_number=data['order_number'],
+                        quantity=item['quantity'],
+                        color=item.get('color', ''),
+                        package_id=item.get('package_id', 0)
+                    )
+                    db.session.add(delivery_item)
+            
+            # 提交事务
             db.session.commit()
+            
+            # 检查采购单是否所有商品都已发货完毕
+            try:
+                # 查找对应的采购单
+                purchase_order = PurchaseOrder.query.filter_by(order_number=data['order_number']).first()
+                if purchase_order:
+                    # 获取采购单所有商品项
+                    purchase_items = PurchaseOrderItem.query.filter_by(order_id=purchase_order.id).all()
+                    
+                    # 检查每个商品项是否都已发货完毕
+                    all_shipped = True
+                    for purchase_item in purchase_items:
+                        # 查询该商品规格的已发货数量
+                        shipped_result = db.session.query(func.sum(DeliveryItem.quantity)).filter(
+                            DeliveryItem.product_id == purchase_item.product_id,
+                            DeliveryItem.color == purchase_item.color,
+                            DeliveryItem.order_number == purchase_order.order_number
+                        ).scalar()
+                        
+                        shipped_quantity = int(shipped_result) if shipped_result is not None else 0
+                        
+                        # 如果已发货数量小于订单数量，则未全部发货
+                        if shipped_quantity < purchase_item.quantity:
+                            all_shipped = False
+                            break
+                    
+                    # 如果所有商品都已发货完毕，将采购单状态更新为已完成
+                    if all_shipped and purchase_order.status != 2:  # 状态2表示已完成
+                        purchase_order.status = 2  # 更新为已完成
+                        db.session.commit()
+                        print(f"采购单 {purchase_order.order_number} 所有商品已发货完毕，状态已更新为已完成")
+            except Exception as e:
+                print(f"检查采购单发货状态时出错: {str(e)}")
+                # 不影响发货单创建的结果
+            
             return jsonify({
                 'message': '配送单创建成功',
                 'order_id': delivery_order.id,
-                'order_number': order_number
+                'order_number': delivery_order.order_number
             }), 201
+            
+        except ValueError as ve:
+            db.session.rollback()
+            return jsonify({'error': str(ve)}), 400
         except Exception as e:
             db.session.rollback()
             print(f'保存配送单失败: {str(e)}')
@@ -2318,10 +2715,14 @@ def get_delivery_orders(user_id):
     try:
         # 获取查询参数
         page = int(request.args.get('page', 1))
-        page_size = min(int(request.args.get('page_size', 10)), 50)
-        status = request.args.get('status')
-        keyword = request.args.get('keyword', '').strip()
-        date_range = request.args.get('date_range', '').split(',')
+        page_size = min(int(request.args.get('pageSize', 10)), 50)
+        status = request.args.get('status') 
+        searchKey = request.args.get('keyword', '').strip()
+        order_number = request.args.get('order_number')  # 添加采购单号参数
+        start_date = request.args.get('start_date')  # 添加开始日期参数
+        end_date = request.args.get('end_date')  # 添加结束日期参数
+
+        print(f'获取配送单列表, status: {status}, searchKey: {searchKey}, order_number: {order_number}, start_date: {start_date}, end_date: {end_date}')
         
         # 检查用户类型
         user = User.query.get(user_id)
@@ -2329,22 +2730,25 @@ def get_delivery_orders(user_id):
             return jsonify({'error': '用户不存在'}), 404
             
         # 构建基础查询
-        query = DeliveryOrder.query\
-            .outerjoin(User, DeliveryOrder.created_by == User.id)\
-            .outerjoin(DeliveryItem)\
-            .outerjoin(Product, DeliveryItem.product_id == Product.id)
+        query = DeliveryOrder.query
             
         # 非管理员只能查看自己创建的订单
-        if user.user_type != 1:
+        if user.role != 'admin' and user.role != 'STAFF' and user.role != 'normalAdmin':
+            print(f'非管理员用户, user_id: {user_id}')
             query = query.filter(DeliveryOrder.created_by == user_id)
             
         # 状态筛选
         if status is not None and status.strip():
             query = query.filter(DeliveryOrder.status == int(status))
             
+        # 采购单号筛选
+        if order_number:
+            query = query.filter(DeliveryOrder.order_number == order_number)
+            
+        
         # 关键字搜索
-        if keyword:
-            search = f'%{keyword}%'
+        if searchKey:
+            search = f'%{searchKey}%'
             query = query.filter(db.or_(
                 DeliveryOrder.order_number.like(search),
                 DeliveryOrder.customer_name.like(search),
@@ -2352,12 +2756,23 @@ def get_delivery_orders(user_id):
                 DeliveryOrder.delivery_address.like(search),
                 Product.name.like(search)
             ))
-            
+        
         # 日期范围筛选
-        if len(date_range) == 2 and date_range[0] and date_range[1]:
+        # 日期范围筛选
+        if start_date and end_date:
+            print(f'start_date: {start_date}, end_date: {end_date}')
             query = query.filter(
-                DeliveryOrder.created_at.between(date_range[0], date_range[1])
+                db.and_(
+                    func.date(DeliveryOrder.created_at) >= func.date(start_date),
+                    func.date(DeliveryOrder.created_at) <= func.date(end_date)
+                )
             )
+        elif start_date:
+            start_date = datetime.fromisoformat(start_date.replace('T', '+08:00'))
+            query = query.filter(func.date(DeliveryOrder.created_at) >= func.date(start_date))
+        elif end_date:
+            end_date = datetime.fromisoformat(end_date.replace('T', '+08:00'))
+            query = query.filter(func.date(DeliveryOrder.created_at) <= func.date(end_date))
             
         # 获取分页数据
         paginated_orders = query.order_by(DeliveryOrder.created_at.desc())\
@@ -2367,7 +2782,7 @@ def get_delivery_orders(user_id):
         for order in paginated_orders.items:
             # 获取订单明细
             items = []
-            for item in order.items:
+            for item in DeliveryItem.query.filter_by(delivery_id=order.id).all():
                 product = Product.query.get(item.product_id)
                 if product:
                     items.append({
@@ -2376,31 +2791,50 @@ def get_delivery_orders(user_id):
                         'product_name': product.name,
                         'quantity': item.quantity,
                         'color': item.color,
-                        'image': json.loads(product.images)[0] if product.images else None
+                        'image': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None
                     })
+                    
+            # 获取创建者信息
+            creator = User.query.get(order.created_by)
+                    
+            # 状态文本映射
+            status_text_map = {
+                0: '已开单',
+                1: '已发货',
+                2: '已完成',
+                3: '已取消',
+                4: '异常'
+            }
                     
             orders.append({
                 'id': order.id,
-                'order_number': order.order_number,
-                'customer_name': order.customer_name,
-                'customer_phone': order.customer_phone,
-                'delivery_address': order.delivery_address,
-                'delivery_date': order.delivery_date,
+                'orderNumber': order.order_number,
+                'customerName': order.customer_name,
+                'customerPhone': order.customer_phone,
+                'deliveryAddress': order.delivery_address,
+                'deliveryDate': order.delivery_date,
                 'delivery_time_slot': order.delivery_time_slot,
                 'status': order.status,
+                'statusText': status_text_map.get(order.status, '未知状态'),
                 'remark': order.remark,
-                'created_at': order.created_at.isoformat(),
-                'updated_at': order.updated_at.isoformat(),
-                'created_by': order.created_by,
+                'createdAt': order.created_at.isoformat(),
+                'updatedAt': order.updated_at.isoformat(),
+                'creator': {
+                    'id': creator.id,
+                    'username': creator.username,
+                    'nickname': creator.nickname
+                } if creator else None,
                 'delivery_by': order.delivery_by,
-                'delivery_image': json.loads(order.delivery_image) if order.delivery_image else [],
-                'items': items
+                'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else [],
+                'items': items,
+                'total_quantity': sum(item['quantity'] for item in items),
+                'total_items': len(items)
             })
             
         return jsonify({
-                'orders': orders,
+            'orders': orders,
             'total': paginated_orders.total,
-                'page': page,
+            'page': page,
             'page_size': page_size,
             'total_pages': paginated_orders.pages
         }), 200
@@ -2417,7 +2851,6 @@ def get_delivery_order_detail(user_id, order_id):
     try:
         # 获取配送单及相关信息
         order = DeliveryOrder.query\
-            .join(User, DeliveryOrder.created_by == User.id)\
             .filter(DeliveryOrder.id == order_id)\
             .first()
         
@@ -2434,50 +2867,95 @@ def get_delivery_order_detail(user_id, order_id):
 
         # 获取配送商品列表
         items = []
-        for item in order.items:
+        total_amount = 0
+        for item in DeliveryItem.query.filter_by(delivery_id=order.id).all():
             product = Product.query.get(item.product_id)
             if product:
+                # 获取采购单中的价格信息
+                purchase_item = db.session.query(PurchaseOrderItem)\
+                    .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id)\
+                    .filter(
+                        PurchaseOrder.order_number == item.order_number,
+                        PurchaseOrderItem.product_id == item.product_id,
+                        PurchaseOrderItem.color == item.color
+                    ).first()
+
+                product_image = json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None
+                
+                # 计算价格信息
+                price = purchase_item.price if purchase_item else 0
+                logo_price = purchase_item.logo_price if purchase_item else 0
+                packaging_price = purchase_item.packaging_price if purchase_item else 0
+                accessory_price = purchase_item.accessory_price if purchase_item else 0
+                
+                # 计算总价
+                item_total = (price + logo_price + packaging_price + accessory_price) * item.quantity
+                total_amount += item_total
+
                 items.append({
                     'id': item.id,
                     'product_id': item.product_id,
                     'product_name': product.name,
                     'quantity': item.quantity,
                     'color': item.color,
-                    'image': json.loads(product.images)[0] if product.images else None
+                    'product_image': product_image,
+                    'price': price,
+                    'logo_price': logo_price,
+                    'packaging_price': packaging_price,
+                    'accessory_price': accessory_price,
+                    'total': item_total,
+                    'has_logo': logo_price > 0,
+                    'has_packaging': packaging_price > 0,
+                    'has_accessory': accessory_price > 0,
+                    'package_id': item.package_id
                 })
 
         # 获取创建者和配送员信息
         creator = User.query.get(order.created_by)
         delivery_user = User.query.get(order.delivery_by) if order.delivery_by else None
 
+        # 状态文本映射
+        status_text_map = {
+            0: '已开单',
+            1: '已发货',
+            2: '已完成',
+            3: '已取消',
+            4: '异常'
+        }
+
         # 格式化返回数据
         order_detail = {
             'id': order.id,
-            'order_number': order.order_number,
-            'customer_name': order.customer_name,
-            'customer_phone': order.customer_phone,
-            'delivery_address': order.delivery_address,
-            'delivery_date': order.delivery_date,
-            'delivery_time_slot': order.delivery_time_slot,
+            'orderNumber': order.order_number,
+            'customerName': order.customer_name,
+            'customerPhone': order.customer_phone,
+            'deliveryAddress': order.delivery_address,
+            'deliveryDate': order.delivery_date,
+            'deliveryTimeSlot': order.delivery_time_slot,
             'status': order.status,
+            'statusText': status_text_map.get(order.status, '未知状态'),
             'remark': order.remark,
-            'created_at': order.created_at.isoformat(),
-            'updated_at': order.updated_at.isoformat(),
+            'createdAt': order.created_at.isoformat(),
+            'updatedAt': order.updated_at.isoformat(),
             'creator': {
                 'id': creator.id,
                 'username': creator.username,
                 'nickname': creator.nickname
             } if creator else None,
-            'delivery_user': {
+            'deliveryUser': {
                 'id': delivery_user.id,
                 'username': delivery_user.username,
                 'nickname': delivery_user.nickname
             } if delivery_user else None,
-            'delivery_image': json.loads(order.delivery_image) if order.delivery_image else [],
-            'items': items
+            'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else [],
+            'total_quantity': sum(item['quantity'] for item in items),
+            'total_amount': total_amount
         }
 
-        return jsonify({'order': order_detail}), 200
+        return jsonify({
+            'order': order_detail,
+            'items': items
+        }), 200
 
     except Exception as e:
         print(f'获取配送单详情失败: {str(e)}')
@@ -2524,19 +3002,31 @@ def get_delivery_orders_stats(user_id):
         print('开始获取配送单统计数据')
         print('='*50)
         
+        # 检查用户类型
+        user = User.query.get(user_id)
+        user_type = user.user_type
+        
         # 使用SQLAlchemy进行数据库操作
-        total = db.session.query(func.count(DeliveryOrder.id)).scalar()
-        pending = db.session.query(func.count(DeliveryOrder.id)).filter(DeliveryOrder.status == 0).scalar()
-        delivering = db.session.query(func.count(DeliveryOrder.id)).filter(DeliveryOrder.status == 1).scalar()
-        completed = db.session.query(func.count(DeliveryOrder.id)).filter(DeliveryOrder.status == 2).scalar()
-        cancelled = db.session.query(func.count(DeliveryOrder.id)).filter(DeliveryOrder.status == 3).scalar()
+        # 构建基础查询
+        query = db.session.query(DeliveryOrder.id)
+        
+        # 非管理员只能看到自己的数据
+        if user_type != 1:
+            query = query.filter(DeliveryOrder.customer_id == user_id)
+            
+        # 统计数据
+        total = query.count()
+        pending = query.filter(DeliveryOrder.status == 0).count()
+        delivering = query.filter(DeliveryOrder.status == 1).count()
+        completed = query.filter(DeliveryOrder.status == 2).count()
+        cancelled = query.filter(DeliveryOrder.status == 3).count()
         
         stats = {
-            'total': total or 0,
-            'pending': pending or 0,
-            'delivering': delivering or 0,
-            'completed': completed or 0,
-            'cancelled': cancelled or 0
+            'all': total or 0,  # 全部
+            '0': pending or 0,  # 已开单
+            '1': delivering or 0,  # 已发货
+            '2': completed or 0,  # 已完成
+            '3': cancelled or 0  # 已取消
         }
         
         print('统计数据:', json.dumps(stats, indent=2))
@@ -2826,7 +3316,7 @@ def accept_purchase_order(user_id, order_id):
 
 # 取消采购单
 @app.route('/purchase_orders/<int:order_id>/cancel', methods=['PUT'])
-@admin_required
+@check_staff_permission('purchase_order.cancel')
 def cancel_purchase_order(user_id, order_id):
     try:
         # 检查采购单是否存在和状态
@@ -2841,12 +3331,39 @@ def cancel_purchase_order(user_id, order_id):
 
         purchase_order, user = order
 
-        # 只有待处理的订单可以取消
-        if purchase_order.status != 0:
-            return jsonify({'error': '只能取消待处理的采购单'}), 400
+        # 如果订单状态为2（已发货），需要恢复库存
+        if purchase_order.status == 2:
+            # 获取所有发货单商品
+            delivery_items = DeliveryItem.query.filter_by(
+                order_number=purchase_order.order_number
+            ).all()
+
+            # 恢复每个商品的库存
+            for item in delivery_items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    specs = json.loads(product.specs) if isinstance(product.specs, str) else product.specs
+                    spec_found = False
+                    
+                    for spec in specs:
+                        if spec['color'] == item.color:
+                            # 恢复库存
+                            spec['stock'] += item.quantity
+                            spec_found = True
+                            break
+                    
+                    if not spec_found and item.color:
+                        print(f'商品 {product.name} 不存在指定颜色: {item.color}')
+                        continue
+                    
+                    # 更新商品规格
+                    product.specs = json.dumps(specs)
+                    
+                    # 更新商品总库存
+                    product.stock = sum(spec['stock'] for spec in specs)
 
         # 更新采购单状态为已取消(2)
-        purchase_order.status = 2
+        purchase_order.status = 3
         db.session.commit()
 
         return jsonify({
@@ -2874,63 +3391,129 @@ def add_header(response):
                 response.headers['Content-Type'] = 'application/javascript; charset=utf-8'
     return response
 
+
 # 获取采购单详情
 @app.route('/purchase_orders/<int:order_id>', methods=['GET'])
 @login_required
 def get_purchase_order(user_id, order_id):
     try:
-        # 获取采购单及相关信息
-        order = PurchaseOrder.query\
-            .join(User)\
-            .filter(PurchaseOrder.id == order_id)\
-            .first()
+        print(f'开始获取采购单详情: order_id={order_id}, user_id={user_id}')
+        
+        # 获取采购单
+        order = PurchaseOrder.query.filter(
+            db.or_(
+                PurchaseOrder.id == order_id,
+                PurchaseOrder.order_number == order_id
+            )
+        ).first()
+# ... existing code ...
         
         if not order:
+            print(f'采购单不存在: order_id={order_id}')
             return jsonify({'error': '采购单不存在'}), 404
         
+        # 获取下单用户信息
+        order_user = User.query.get(order.user_id)
+        if not order_user:
+            print(f'下单用户不存在: user_id={order.user_id}')
+            return jsonify({'error': '下单用户不存在'}), 404
+        
         # 检查权限（非管理员只能查看自己的订单）
-        user = User.query.get(user_id)
-        if not user:
+        current_user = User.query.get(user_id)
+        if not current_user:
+            print(f'当前用户不存在: user_id={user_id}')
             return jsonify({'error': '用户不存在'}), 404
         
-        if user.user_type != 1 and order.user_id != user_id:
+        if current_user.role != 'admin' and order.user_id != user_id and current_user.role != 'STAFF':
+            print(f'无权限查看此采购单: user_id={user_id}, order_user_id={order.user_id}')
             return jsonify({'error': '无权限查看此采购单'}), 403
         
         # 获取订单明细
-        items = []
-        for item in order.items:
-            product = Product.query.get(item.product_id)
-            if product:
-                items.append({
-                    'id': item.id,
-                    'product_id': item.product_id,
-                    'product_name': product.name,
+        order_items = db.session.query(PurchaseOrderItem).filter(
+            PurchaseOrderItem.order_id == order.id
+        ).all()
+        
+        # 使用字典来临时存储合并的商品数据
+        merged_products = {}
+        
+        for item in order_items:
+            try:
+                product = Product.query.get(item.product_id)
+                if not product:
+                    continue
+                    
+                # 使用商品ID作为键
+                if item.product_id not in merged_products:
+                    merged_products[item.product_id] = {
+                        'id': product.id,
+                        'product_id': product.id,
+                        'product_name': product.name,
+                        'image': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None,
+                        'price': float(item.price),
+                        'total_quantity': 0,
+                        'total_amount': 0,
+                        'total_amount_extra': 0,
+                        'specs': []
+                    }
+                
+                # 添加当前规格信息
+                spec_info = {
+                    'color': item.color,
                     'quantity': item.quantity,
                     'price': float(item.price),
-                    'color': item.color,
-                    'image': json.loads(product.images)[0] if product.images else None,
-                    'subtotal': item.quantity * float(item.price)
-                })
+                    'logo_price': float(item.logo_price),  # 加标价格
+                    'accessory_price': float(item.accessory_price),  # 辅料价格
+                    'packaging_price': float(item.packaging_price),  # 包装价格
+                    'total': item.quantity * float(item.price),
+                    'extra': item.quantity * (float(item.logo_price) + float(item.accessory_price) + float(item.packaging_price)),
+                    'shipped_quantity': 0  # 添加已发货数量字段，默认为0
+                }
+                
+                # 查询该商品规格的已发货数量
+                if item.color:
+                    # 查询相同商品ID和颜色的已发货数量
+                    shipped_result = db.session.query(func.sum(DeliveryItem.quantity)).filter(
+                        DeliveryItem.product_id == item.product_id,
+                        DeliveryItem.color == item.color,
+                        DeliveryItem.order_number == order.order_number
+                    ).scalar()
+                    spec_info['shipped_quantity'] = int(shipped_result) if shipped_result is not None else 0
+                
+                merged_products[item.product_id]['specs'].append(spec_info)
+                
+                # 更新总数量和总金额
+                merged_products[item.product_id]['total_quantity'] += item.quantity
+                merged_products[item.product_id]['total_amount'] += spec_info['total']
+                merged_products[item.product_id]['total_amount_extra'] += spec_info['extra']
+            except Exception as e:
+                print(f"处理订单项时出错: {str(e)}")
+                continue
+        
+        # 将合并后的商品数据转换为列表
+        items = list(merged_products.values())
         
         # 格式化返回数据
         order_detail = {
             'id': order.id,
             'order_number': order.order_number,
-            'total_amount': float(order.total_amount),
+            'total_amount': sum(item['total_amount'] for item in merged_products.values()),
+            'total_quantity': sum(item['total_quantity'] for item in merged_products.values()),
+            'total_amount_extra': sum(item['total_amount_extra'] for item in merged_products.values()),
+            'total_shipped_quantity': sum(sum(spec['shipped_quantity'] for spec in item['specs']) for item in merged_products.values()),
             'status': order.status,
-            'created_at': order.created_at.isoformat(),
             'remark': order.remark,
+            'created_at': order.created_at.isoformat() if order.created_at else None,
+            'items': items,
             'user': {
-                'id': order.user.id,
-                'username': order.user.username,
-                'nickname': order.user.nickname,
-                'phone': order.user.phone,
-                'address': order.user.address,
-                'contact': order.user.contact
-            },
-            'items': items
+                'id': order_user.id,
+                'username': order_user.username,
+                'nickname': order_user.nickname,
+                'avatar': order_user.avatar,
+                'phone': order_user.phone
+            }
         }
         
+        print(f'成功获取采购单详情: order_id={order_id}, 商品数量={len(items)}')
         return jsonify({'order': order_detail}), 200
     
     except Exception as e:
@@ -3104,36 +3687,11 @@ def batch_delete_products(user_id):
                 images = json.loads(product.images)
                 for image_url in images:
                     try:
-                        # 从URL中提取文件路径
                         file_list.append(image_url)
                     except Exception as e:
                         print(f"处理图片URL失败: {str(e)}")
 
-        # 如果有图片需要删除，调用微信云开发API
-        if file_list:
-            try:
-                # 获取access_token
-                access_token = get_access_token()
-                if not access_token:
-                    return jsonify({'error': '获取access_token失败'}), 500
-
-                # 调用批量删除文件API
-                url = f'{API_URL}/tcb/batchdeletefile?access_token={access_token}'
-                print(f'调用批量删除文件列表: {file_list}')
-                data = {
-                    'env': WX_ENV,
-                    'fileid_list': file_list
-                }
-                response = requests.post(url, json=data)
-                result = response.json()
-                
-                if result.get('errcode') != 0:
-                    print(f"删除图片文件失败: {result}")
-
-            except Exception as e:
-                print(f"调用删除图片API失败: {str(e)}")
-
-        # 开始数据库操作
+        # 先删除数据库记录
         try:
             # 使用原生SQL删除相关记录
             for product_id in product_ids:
@@ -3155,6 +3713,33 @@ def batch_delete_products(user_id):
             # 提交事务
             db.session.commit()
             
+            # 数据库删除成功后，再删除文件
+            if file_list:
+                try:
+                    # 获取access_token
+                    access_token = get_access_token()
+                    if not access_token:
+                        print("警告：获取access_token失败，文件未删除")
+                    else:
+                        # 调用批量删除文件API
+                        url = f'{API_URL}/tcb/batchdeletefile?access_token={access_token}'
+                        print(f'调用批量删除文件列表: {file_list}')
+                        data = {
+                            'env': WX_ENV,
+                            'fileid_list': file_list
+                        }
+                        response = requests.post(url, json=data)
+                        result = response.json()
+                        
+                        if result.get('errcode') != 0:
+                            print(f"警告：删除图片文件失败: {result}")
+                        else:
+                            print("成功删除图片文件")
+
+                except Exception as e:
+                    print(f"警告：调用删除图片API失败: {str(e)}")
+                    # 文件删除失败不影响整体操作
+            
             return jsonify({
                 'code': 200,
                 'message': f'成功删除 {len(product_ids)} 个商品'
@@ -3172,7 +3757,7 @@ def batch_delete_products(user_id):
 
 @app.route('/delivery_orders/from_purchase/<int:purchase_id>', methods=['POST'])
 @login_required
-def create_delivery_from_purchase(current_user_id, purchase_id):
+def create_delivery_from_purchase(user_id, purchase_id):
     try:
         # 获取采购单信息
         purchase_order = PurchaseOrder.query\
@@ -3183,8 +3768,8 @@ def create_delivery_from_purchase(current_user_id, purchase_id):
             return jsonify({'error': '采购单不存在'}), 404
 
         # 检查权限
-        current_user = User.query.get(current_user_id)
-        if not current_user or current_user.user_type != 1:
+        current_user = User.query.get(user_id)
+        if not current_user or current_user.role != 'admin' and current_user.role != 'STAFF' and current_user.role != 'normalAdmin':
             return jsonify({'error': '没有权限执行此操作'}), 403
 
         # 生成配送单号
@@ -3200,7 +3785,7 @@ def create_delivery_from_purchase(current_user_id, purchase_id):
             delivery_time_slot='',
             status=0,  # 待配送
             remark=f'从采购单 {purchase_order.order_number} 生成',
-            created_by=current_user_id,
+            created_by=user_id,
             created_at=datetime.now(),
             updated_at=datetime.now()
         )
@@ -3706,9 +4291,6 @@ def create_push_order(user_id):
         if not data or 'products' not in data:
             return jsonify({'error': '无效的请求数据'}), 400
 
-        #if not share_code or not qrcode:
-        #    return jsonify({'error': '缺少分享码或二维码'}), 400
-
         # 生成推送单号
         order_number = f"PUSH{datetime.now().strftime('%Y%m%d%H%M%S')}{random.randint(100,999)}"
 
@@ -4005,7 +4587,7 @@ def get_push_order(user_id, order_id):
                     'price': float(item.price),
                     'specs': json.loads(item.specs) if item.specs else [],
                     'specs_info': json.loads(item.specs_info) if item.specs_info else {},
-                    'image': json.loads(product.images)[0] if product.images else None,
+                    'image': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None,
                     'type': product.type
                 })
                 
@@ -4112,32 +4694,112 @@ def get_user_statistics(user_id):
         user_type = user.user_type
         
         # 构建基础查询条件
-        base_query = PurchaseOrder.query
+        purchase_query = PurchaseOrder.query
+        delivery_query = DeliveryOrder.query
         
         # 非管理员只能看到自己的数据
-        if user_type != 1:
-            base_query = base_query.filter_by(user_id=user_id)
-            
+        if user.role != 'admin' and user.role != 'STAFF' and user.role != 'normalAdmin':
+            purchase_query = purchase_query.filter_by(user_id=user_id)
+            delivery_query = delivery_query.filter_by(user_id=user_id)
+        
         # 获取今日待办事项数量（未完成的采购单）
-        today_tasks = base_query.filter(
+        today_tasks = purchase_query.filter(
             PurchaseOrder.status == 0,
             func.date(PurchaseOrder.created_at) == func.curdate()
         ).count()
         
         # 获取未确认采购单数量（所有未确认的采购单）
-        unconfirmed_orders = base_query.filter(
+        unconfirmed_orders = purchase_query.filter(
             PurchaseOrder.status == 0
         ).count()
         
         # 获取今日总采购单数量
-        today_orders = base_query.filter(
+        today_orders = purchase_query.filter(
             func.date(PurchaseOrder.created_at) == func.curdate()
         ).count()
+        
+        # 获取今日下单的客户数（去重）及其信息
+        today_customers = db.session.query(
+            PurchaseOrder.user_id,
+            User.nickname,
+            User.phone
+        ).join(User, User.id == PurchaseOrder.user_id).filter(
+            func.date(PurchaseOrder.created_at) == func.curdate()
+        ).distinct().all()
+        
+        # 获取今日应发货商品数（今日创建的采购单中的商品总数量）
+        today_to_deliver_items = db.session.query(
+            PurchaseOrderItem.product_id,
+            Product.name.label('product_name'),  # 从 Product 模型中获取名称
+            PurchaseOrderItem.color,
+            func.sum(PurchaseOrderItem.quantity)
+        ).join(
+            PurchaseOrder,
+            PurchaseOrder.id == PurchaseOrderItem.order_id
+        ).join(
+            Product,
+            Product.id == PurchaseOrderItem.product_id  # 连接 Product 模型
+        ).filter(
+            func.date(PurchaseOrder.created_at) == func.curdate()
+        ).group_by(PurchaseOrderItem.product_id, PurchaseOrderItem.color).all()
+        
+        today_to_deliver = sum(item[3] for item in today_to_deliver_items)  # 计算总数量
+        
+        # 获取今日实发货商品数（今日创建的发货单中的商品总数量）
+        today_delivered_items = db.session.query(
+            DeliveryItem.product_id,
+            Product.name.label('product_name'),  # 从 Product 模型中获取名称
+            DeliveryItem.color,
+            func.sum(DeliveryItem.quantity)
+        ).join(
+            DeliveryOrder,
+            DeliveryOrder.id == DeliveryItem.delivery_id
+        ).join(
+            Product,
+            Product.id == DeliveryItem.product_id  # 连接 Product 模型
+        ).filter(
+            func.date(DeliveryOrder.created_at) == func.curdate()
+        ).group_by(DeliveryItem.product_id, DeliveryItem.color).all()
+        
+        today_delivered = sum(item[3] for item in today_delivered_items)  # 计算总数量
+        
+        # 获取累计发货商品总数（所有发货单中商品的总数量）
+        total_delivered_quantity = db.session.query(
+            func.sum(DeliveryItem.quantity)
+        ).join(
+            DeliveryOrder,
+            DeliveryOrder.id == DeliveryItem.delivery_id
+        ).scalar() or 0
+        
+        # 获取累计商品金额（使用 DeliveryItem 的数量和 PurchaseOrderItem 的价格）
+        total_delivered_amount = db.session.query(
+            func.sum(DeliveryItem.quantity * PurchaseOrderItem.price)
+        ).join(
+            DeliveryOrder,
+            DeliveryOrder.id == DeliveryItem.delivery_id
+        ).join(
+            PurchaseOrder,
+            PurchaseOrder.order_number == DeliveryOrder.order_number
+        ).join(
+            PurchaseOrderItem,
+            db.and_(
+                PurchaseOrderItem.order_id == PurchaseOrder.id,
+                PurchaseOrderItem.product_id == DeliveryItem.product_id,
+                PurchaseOrderItem.color == DeliveryItem.color
+            )
+        ).scalar() or 0
         
         return jsonify({
             'today_tasks': today_tasks,
             'unconfirmed_orders': unconfirmed_orders,
             'today_orders': today_orders,
+            'today_customers': [{'user_id': customer.user_id, 'nickname': customer.nickname, 'phone': customer.phone} for customer in today_customers],
+            'today_to_deliver': [{'product_id': item.product_id, 'product_name': item.product_name, 'color': item.color, 'quantity': item[3]} for item in today_to_deliver_items],
+            'today_delivered': [{'product_id': item.product_id, 'product_name': item.product_name, 'color': item.color, 'quantity': item[3]} for item in today_delivered_items],
+            'today_to_deliver_count': today_to_deliver,  # 今日应发货商品总数
+            'today_delivered_count': today_delivered,      # 今日实发货商品总数
+            'total_delivered_quantity': int(total_delivered_quantity),
+            'total_delivered_amount': float(total_delivered_amount),
             'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }), 200
             
@@ -4261,9 +4923,9 @@ def search_users(user_id):
                 User.nickname.like(search),
                 User.phone.like(search)
             ),
-            User.user_type == 0,  # 只搜索普通用户
+            User.role == 'customer',  # 只搜索客户角色
             User.status == 1      # 只搜索启用状态的用户
-        ).limit(10).all()
+        ).limit(20).all()
         
         # 格式化返回数据
         users_list = [{
@@ -4271,7 +4933,8 @@ def search_users(user_id):
             'username': user.username,
             'nickname': user.nickname,
             'phone': user.phone,
-            'avatar': user.avatar
+            'avatar': user.avatar,
+            'user_type': user.user_type
         } for user in users]
         
         return jsonify({'users': users_list}), 200
@@ -4343,6 +5006,8 @@ def get_products(user_id):
         product_type = request.args.get('type')
         status = request.args.get('status')
         is_public = request.args.get('is_public')
+        sort_field = request.args.get('sort_field', 'created_at')  # 添加排序字段参数
+        sort_order = request.args.get('sort_order', 'desc')  # 添加排序顺序参数
         
         # 获取规格筛选参数
         size = request.args.get('size')
@@ -4359,6 +5024,7 @@ def get_products(user_id):
         if keyword:
             search = f'%{keyword}%'
             query = query.filter(db.or_(
+                Product.id.like(search),
                 Product.name.like(search),
                 Product.description.like(search)
             ))
@@ -4403,37 +5069,56 @@ def get_products(user_id):
                 query = query.filter(Product.composition == composition)
         
         # 获取分页数据
-        paginated_products = query.order_by(Product.created_at.desc())\
-            .paginate(page=page, per_page=page_size, error_out=False)
+        # 根据排序字段和顺序构建排序
+        if sort_field == 'name':
+            order_column = Product.name
+        elif sort_field == 'id':  # 添加对货号的排序支持
+            order_column = Product.id
+        else:
+            order_column = Product.created_at
+            
+        if sort_order == 'asc':
+            query = query.order_by(order_column.asc())
+        else:
+            query = query.order_by(order_column.desc())
+            
+        paginated_products = query.paginate(page=page, per_page=page_size, error_out=False)
             
         # 格式化返回数据
         products = []
         for product in paginated_products.items:            
             # 安全地获取基础价格
             base_price = float(product.price) if product.price is not None else 0
+            product_dict = product.__dict__.copy()
             
-            products.append({
-                'id': product.id,
-                'name': product.name,
-                'description': product.description,
-                'price': base_price,
-                'price_b': float(product.price_b) if product.price_b is not None else base_price,
-                'price_c': float(product.price_c) if product.price_c is not None else base_price,
-                'price_d': float(product.price_d) if product.price_d is not None else base_price,
-                'cost_price': float(product.cost_price) if product.cost_price is not None else base_price,
-                'type': product.type,
-                'created_at': product.created_at.isoformat() if product.created_at else None,
-                'specs': json.loads(product.specs) if product.specs else [],
-                'images': json.loads(product.images) if product.images else [],
-                'status': product.status if product.status is not None else 1,  # 默认上架
-                'is_public': product.is_public if product.is_public is not None else 1,  # 默认公开
-                'video_url': product.video_url if product.video_url is not None else '',
-                'size': product.size if product.size is not None else '',
-                'weight': product.weight if product.weight is not None else '',
-                'yarn': product.yarn if product.yarn is not None else '',
-                'composition': product.composition if product.composition is not None else ''
-            })
+            # 删除不需要的属性
+            product_dict.pop('_sa_instance_state', None)
+            # 获取推送过该商品的用户
+           
             
+            # 处理特殊字段
+            product_dict['price'] = base_price
+            product_dict['price_b'] = float(product.price_b) if product.price_b is not None else 0
+            product_dict['price_c'] = float(product.price_c) if product.price_c is not None else 0
+            product_dict['price_d'] = float(product.price_d) if product.price_d is not None else 0
+            product_dict['cost_price'] = float(product.cost_price) if product.cost_price is not None else 0
+            product_dict['created_at'] = product.created_at.isoformat() if product.created_at else None
+            product_dict['specs'] = json.loads(product.specs) if product.specs else []
+            product_dict['images'] = json.loads(product.images) if product.images else []
+            product_dict['status'] = product.status if product.status is not None else 1
+            product_dict['is_public'] = product.is_public if product.is_public is not None else 1
+            product_dict['video_url'] = product.video_url if product.video_url is not None else ''
+            product_dict['size'] = product.size if product.size is not None else ''
+            product_dict['weight'] = product.weight if product.weight is not None else ''
+            product_dict['yarn'] = product.yarn if product.yarn is not None else ''
+            product_dict['composition'] = product.composition if product.composition is not None else ''
+            product_dict['video_url'] = product.video_url if product.video_url is not None else ''
+            
+            products.append(product_dict)
+
+
+
+
         return jsonify({
             'products': products,
             'total': paginated_products.total,
@@ -4620,7 +5305,7 @@ def bind_push_order(user_id, share_code):
                         'id': product.id,
                         'name': product.name,
                         'price': float(item.price) if item.price else 0,
-                        'images': json.loads(product.images)[0] if product.images else '',
+                        'images': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None,
                         'specs_info': json.loads(item.specs_info) if item.specs_info else {},
                         'specs': json.loads(item.specs) if item.specs else []
                     }
@@ -4736,7 +5421,7 @@ def get_push_order_detail(user_id, order_id):
                     'price': float(item.price),
                     'specs': json.loads(item.specs) if item.specs else [],
                     'specs_info': json.loads(item.specs_info) if item.specs_info else {},
-                    'image': json.loads(product.images)[0] if product.images else None
+                    'image': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None
                 })
                 
         # 格式化返回数据
@@ -5055,7 +5740,7 @@ def get_combined_products(user_id):
             'pages': (total + page_size - 1) // page_size,
             'current_page': page
         }), 200
-        
+            
     except Exception as e:
         print(f'获取组合商品列表失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
@@ -5087,12 +5772,13 @@ def edit_user(user_id, target_user_id):
             'user_type': int,
             'status': int,
             'password': str,
-            'avatar': str
+            'avatar': str,
+            'role': str
         }
         
         # 验证用户类型
         if 'user_type' in data:
-            if data['user_type'] not in [0, 1, 2, 3, 4]:  # 0:零售 1:管理员 2:A类 3:B类 4:C类
+            if data['user_type'] not in [0, 1, 2, 3, 4, 5, 6]:  # 0:零售 1:管理员 2:A类 3:B类 4:C类 5:STAFF 6:普通管理员
                 return jsonify({'error': '无效的用户类型'}), 400
                 
         # 验证状态
@@ -5150,6 +5836,7 @@ def edit_user(user_id, target_user_id):
                     'address': target_user.address,
                     'contact': target_user.contact,
                     'user_type': target_user.user_type,
+                    'role': target_user.role,
                     'status': target_user.status,
                     'avatar': target_user.avatar,
                     'created_at': target_user.created_at.isoformat() if target_user.created_at else None,
@@ -5499,6 +6186,7 @@ def get_latest_push_products(user_id):
             except Exception as e:
                 print(f'处理商品数据出错 - 商品ID: {product.id}, 错误: {str(e)}')
                 continue
+                
                 
         return jsonify({
             'products': products,
@@ -6184,7 +6872,7 @@ def bind_push_order_guest():
                         'id': product.id,
                         'name': product.name,
                         'price': float(item.price) if item.price else 0,
-                        'images': json.loads(product.images)[0] if product.images else '',
+                        'images': json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None,
                         'specs_info': json.loads(item.specs_info) if item.specs_info else {},
                         'specs': json.loads(item.specs) if item.specs else []
                     }
@@ -6224,6 +6912,7 @@ def add_to_cart(user_id):
         product_id = data['product_id']
         quantity = data.get('quantity', 1)
         specs_info = data.get('specs_info', {})
+        price = data.get('price', 0)
         
         # 检查商品是否存在
         product = Product.query.get(product_id)
@@ -6237,6 +6926,7 @@ def add_to_cart(user_id):
         cart_item = CartItem.query.filter_by(
             user_id=user_id,
             product_id=product_id,
+            price=price,
             specs_info=json.dumps(specs_info) if specs_info else None
         ).first()
         
@@ -6250,6 +6940,7 @@ def add_to_cart(user_id):
                 user_id=user_id,
                 product_id=product_id,
                 quantity=quantity,
+                price=price,
                 specs_info=json.dumps(specs_info) if specs_info else None
             )
             db.session.add(cart_item)
@@ -6654,3 +7345,129 @@ def batch_update_public(user_id):
         print(f'批量更新商品公开状态失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'code': -1, 'message': str(e)}), 500
+
+@app.route('/products/low-stock', methods=['GET'])
+@check_staff_permission('product.view')
+def get_low_stock_products(user_id):
+    try:
+        # 设置库存预警阈值
+        threshold = 100
+        
+        # 查询所有商品
+        products = Product.query.all()
+
+        # 过滤和处理结果
+        result = []
+        for product in products:
+            # 获取规格信息
+            specs = json.loads(product.specs) if product.specs else []
+            low_stock_colors = []
+            all_colors_stock = []
+            total_stock = 0
+            
+            # 检查每个颜色的库存
+            for spec in specs:
+                try:
+                    stock = int(spec.get('stock', 0))
+                    total_stock += stock
+                    color_info = {
+                        'color': spec.get('color', '未知颜色'),
+                        'stock': stock
+                    }
+                    all_colors_stock.append(color_info)
+                    if stock < threshold:
+                        low_stock_colors.append(color_info)
+                except (ValueError, TypeError):
+                    continue
+
+            # 如果有任何颜色的库存低于阈值，添加到结果中
+            if low_stock_colors:
+                product_data = {
+                    'id': product.id,
+                    'name': product.name,
+                    'images': json.loads(product.images) if product.images else [],
+                    'total_stock': total_stock,  # 添加总库存
+                    'all_colors_stock': all_colors_stock,  # 所有颜色的库存
+                    'low_stock_colors': low_stock_colors,  # 低库存的颜色
+                    'threshold': threshold
+                }
+                result.append(product_data)
+
+        return jsonify({
+            'code': 0,
+            'data': result,
+            'message': 'success'
+        })
+
+    except Exception as e:
+        print(f"获取库存预警商品失败: {str(e)}")
+        return jsonify({
+            'code': -1,
+            'message': '获取库存预警商品失败'
+        }), 500
+
+# 获取暗推产品列表
+@app.route('/api/hidden_products', methods=['GET'])
+def get_hidden_products_route():
+    """
+    获取暗推产品列表的路由
+    """
+    from .recommended import get_hidden_products
+    return get_hidden_products()
+
+# 更新暗推产品列表
+@app.route('/api/hidden_products', methods=['POST'])
+@admin_required
+def update_hidden_products_route(user_id):
+    """
+    更新暗推产品列表的路由
+    """
+    from .recommended import update_hidden_products
+    return update_hidden_products()
+
+# 获取商品已发货数量
+@app.route('/shipped_quantities', methods=['GET'])
+@login_required
+def get_shipped_quantities(user_id):
+    try:
+        # 获取请求参数
+        product_id = request.args.get('product_id')
+        color = request.args.get('color', '')
+        order_number = request.args.get('order_number', '')
+        status = request.args.getlist('status')  # 使用getlist获取多个相同名称的参数
+        
+        print(f'获取到请求参数: {product_id}, {color}, {order_number}, 状态: {status}')
+        
+        if not product_id:
+            return jsonify({'error': '缺少商品ID参数'}), 400
+            
+        # 计算已发货数量
+        query = db.session.query(func.sum(DeliveryItem.quantity).label('total_shipped'))\
+            .filter(DeliveryItem.product_id == product_id)
+        
+        if order_number:
+            query = query.filter(DeliveryItem.order_number == order_number)
+
+        # 如果有颜色参数，添加颜色过滤条件
+        if color:
+            query = query.filter(DeliveryItem.color == color)
+            
+        # 只统计指定状态的订单
+        query = query.join(DeliveryOrder, DeliveryItem.delivery_id == DeliveryOrder.id)
+
+            
+        result = query.scalar()
+        shipped_quantity = int(result) if result is not None else 0
+        
+        # 返回结果
+        return jsonify({
+            'product_id': product_id,
+            'color': color,
+            'shipped_quantity': shipped_quantity
+        }), 200
+        
+    except Exception as e:
+        print(f'获取已发货数量失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '获取已发货数量失败'}), 500
+    
