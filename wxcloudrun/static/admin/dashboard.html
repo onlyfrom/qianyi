@@ -2469,6 +2469,7 @@
                                                             @click="viewPurchaseDetail(scope.row)">
                                                             查看详情
                                                         </el-button>
+                                                        
 
                                                         <!-- 待发货状态显示发货和取消按钮 -->
                                                         <template v-if="scope.row.status === 0">
@@ -2493,6 +2494,12 @@
                                                             plain
                                                             @click="printDelivery(scope.row)">
                                                             打印
+                                                        </el-button>
+                                                        <el-button 
+                                                            size="small"
+                                                            type="danger"
+                                                            @click="handleDeleteDelivery(scope.row)">
+                                                            删除
                                                         </el-button>
                                                     </el-button-group>
                                                 </template>

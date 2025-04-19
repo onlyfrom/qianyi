@@ -3833,44 +3833,6 @@ def create_delivery_from_purchase(user_id, purchase_id):
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '创建配送单失败'}), 500
 
-@app.route('/delivery_orders/<int:order_id>', methods=['DELETE'])
-@login_required
-def delete_delivery_order(current_user_id, order_id):
-    try:
-        # 检查权限
-        current_user = User.query.get(current_user_id)
-        if not current_user or current_user.user_type != 1:
-            return jsonify({'error': '没有权限执行此操作'}), 403
-        
-        # 获取配送单
-        order = DeliveryOrder.query.get(order_id)
-        if not order:
-            return jsonify({'error': '配送单不存在'}), 404
-            
-        if order.status not in [0, 3]:  # 只能删除待配送或已取消的订单
-            return jsonify({'error': '当前状态不允许删除'}), 400
-        
-        # 删除配送单商品
-        DeliveryItem.query.filter_by(delivery_id=order_id).delete()
-        
-        # 删除配送单
-        db.session.delete(order)
-        
-        try:
-            db.session.commit()
-            return jsonify({
-                'code': 200,
-                'message': '配送单删除成功'
-            })
-        except Exception as e:
-            db.session.rollback()
-            print(f'删除配送单失败: {str(e)}')
-            return jsonify({'error': '删除配送单失败'}), 500
-            
-    except Exception as e:
-        print(f'处理删除配送单请求失败: {str(e)}')
-        print(f'错误追踪:\n{traceback.format_exc()}')
-        return jsonify({'error': '删除配送单失败'}), 500
 
 # 生成小程序码接口
 @app.route('/qrcode', methods=['POST'])

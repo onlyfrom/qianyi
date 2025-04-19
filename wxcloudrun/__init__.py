@@ -115,7 +115,9 @@ def after_request(response):
 from . import views
 from . import stock_import
 from . import billing
+from . import order
 
 # 注册蓝图
 app.register_blueprint(billing.billing_bp)
+app.register_blueprint(order.order_bp)
 
