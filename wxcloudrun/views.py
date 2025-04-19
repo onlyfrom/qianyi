@@ -2581,20 +2581,29 @@ def update_user_profile(user_id):
 @login_required
 def create_delivery_order(user_id):
     try:
+        print('='*50)
+        print('开始创建发货单')
+        print('='*50)
+        
         data = request.json
         if not data:
+            print('无效的请求数据')
             return jsonify({'error': '无效的请求数据'}), 400
+        
+        print(f'请求数据: {data}')
         
         # 验证必要字段
         required_fields = ['customer_name', 'packages']
         for field in required_fields:
             if not data.get(field):
+                print(f'缺少必要字段: {field}')
                 return jsonify({'error': f'缺少必要字段: {field}'}), 400
         
         # 开始数据库事务
         db.session.begin_nested()
         
         try:
+            print('创建发货单记录')
             # 创建发货单
             delivery_order = DeliveryOrder(
                 order_number=data['order_number'],
@@ -2612,11 +2621,14 @@ def create_delivery_order(user_id):
             )
             
             db.session.add(delivery_order)
-            db.session.flush()  # 刷新会话以获取delivery_order.id
+            db.session.flush()
+            print(f'发货单创建成功，ID: {delivery_order.id}')
             
             # 添加商品并更新库存
+            print('开始处理商品')
             for items in data['packages']:
                 for item in items:
+                    print(f'处理商品: {item}')
                     # 查找商品
                     product = Product.query.get(item['product_id'])
                     if not product:
@@ -2652,12 +2664,16 @@ def create_delivery_order(user_id):
                         package_id=item.get('package_id', 0)
                     )
                     db.session.add(delivery_item)
+                    print(f'添加发货单商品项: {delivery_item.id}')
             
             # 提交事务
+            print('提交事务')
             db.session.commit()
+            print('事务提交成功')
             
             # 检查采购单是否所有商品都已发货完毕
             try:
+                print('检查采购单发货状态')
                 # 查找对应的采购单
                 purchase_order = PurchaseOrder.query.filter_by(order_number=data['order_number']).first()
                 if purchase_order:
@@ -2690,6 +2706,7 @@ def create_delivery_order(user_id):
                 print(f"检查采购单发货状态时出错: {str(e)}")
                 # 不影响发货单创建的结果
             
+            print('发货单创建完成')
             return jsonify({
                 'message': '配送单创建成功',
                 'order_id': delivery_order.id,
@@ -2698,14 +2715,17 @@ def create_delivery_order(user_id):
             
         except ValueError as ve:
             db.session.rollback()
+            print(f'验证错误: {str(ve)}')
             return jsonify({'error': str(ve)}), 400
         except Exception as e:
             db.session.rollback()
             print(f'保存配送单失败: {str(e)}')
+            print(f'错误追踪:\n{traceback.format_exc()}')
             return jsonify({'error': '创建配送单失败'}), 500
             
     except Exception as e:
         print(f'创建配送单失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '创建配送单失败'}), 500
 
 # 获取配送单列表
@@ -6463,155 +6483,6 @@ def test_headers():
             }
         }), 500
 
-
-@app.route('/api/users', methods=['POST'])
-@admin_required
-def create_user(user_id):
-    """创建用户"""
-    try:
-        data = request.get_json()
-        
-        # 验证必要参数
-        required_fields = ['username', 'password', 'role']
-        if not all(field in data for field in required_fields):
-            return jsonify({
-                'code': 400,
-                'message': '缺少必要参数'
-            }), 400
-            
-        # 验证用户角色
-        if data['role'] not in [UserRole.ADMIN, UserRole.STAFF, UserRole.CUSTOMER]:
-            return jsonify({
-                'code': 400,
-                'message': '无效的用户角色'
-            }), 400
-            
-        # 如果是客户，验证客户类型
-        if data['role'] == UserRole.CUSTOMER:
-            if 'customer_type' not in data or data['customer_type'] not in [CustomerType.TYPE_A, CustomerType.TYPE_B, CustomerType.TYPE_C]:
-                return jsonify({
-                    'code': 400,
-                    'message': '客户必须指定有效的客户类型'
-                }), 400
-                
-        # 创建用户
-        user = User(
-            username=data['username'],
-            password=data['password'],  # 注意：实际应用中需要对密码进行加密
-            role=data['role'],
-            customer_type=data.get('customer_type')
-        )
-        
-        # 如果是员工，设置权限
-        if data['role'] == UserRole.STAFF and 'permissions' in data:
-            for permission in data['permissions']:
-                if permission in [Permission.PUSH_ORDER, Permission.DELIVERY_ORDER, Permission.PRODUCT_MANAGE]:
-                    user.permissions.append(permission)
-                    
-        db.session.add(user)
-        db.session.commit()
-        
-        return jsonify({
-            'code': 200,
-            'message': '用户创建成功',
-            'data': user.to_dict()
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            'code': 500,
-            'message': f'创建用户失败：{str(e)}'
-        }), 500
-
-@app.route('/api/users/<int:target_user_id>', methods=['PUT'])
-@admin_required
-def update_user(user_id, target_user_id):
-    """更新用户信息"""
-    try:
-        user = User.query.get(target_user_id)
-        if not user:
-            return jsonify({
-                'code': 404,
-                'message': '用户不存在'
-            }), 404
-            
-        data = request.get_json()
-        
-        # 更新基本信息
-        if 'username' in data:
-            user.username = data['username']
-        if 'password' in data:
-            user.password = data['password']  # 注意：实际应用中需要对密码进行加密
-            
-        # 更新角色
-        if 'role' in data:
-            if data['role'] not in [UserRole.ADMIN, UserRole.STAFF, UserRole.CUSTOMER]:
-                return jsonify({
-                    'code': 400,
-                    'message': '无效的用户角色'
-                }), 400
-            user.role = data['role']
-            
-        # 更新客户类型
-        if 'customer_type' in data:
-            if user.role != UserRole.CUSTOMER:
-                return jsonify({
-                    'code': 400,
-                    'message': '只能为客户设置客户类型'
-                }), 400
-            if data['customer_type'] not in [CustomerType.TYPE_A, CustomerType.TYPE_B, CustomerType.TYPE_C]:
-                return jsonify({
-                    'code': 400,
-                    'message': '无效的客户类型'
-                }), 400
-            user.customer_type = data['customer_type']
-            
-        # 更新员工权限
-        if 'permissions' in data and user.role == UserRole.STAFF:
-            user.permissions.clear()
-            for permission in data['permissions']:
-                if permission in [Permission.PUSH_ORDER, Permission.DELIVERY_ORDER, Permission.PRODUCT_MANAGE]:
-                    user.permissions.append(permission)
-                    
-        db.session.commit()
-        
-        return jsonify({
-            'code': 200,
-            'message': '用户信息更新成功',
-            'data': user.to_dict()
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            'code': 500,
-            'message': f'更新用户信息失败：{str(e)}'
-        }), 500
-
-@app.route('/api/users/<int:target_user_id>', methods=['GET'])
-@admin_required
-def get_user(user_id, target_user_id):
-    """获取用户信息"""
-    try:
-        user = User.query.get(target_user_id)
-        if not user:
-            return jsonify({
-                'code': 404,
-                'message': '用户不存在'
-            }), 404
-            
-        return jsonify({
-            'code': 200,
-            'message': '获取用户信息成功',
-            'data': user.to_dict()
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'code': 500,
-            'message': f'获取用户信息失败：{str(e)}'
-        }), 500
 
 @app.route('/api/users', methods=['GET'])
 @admin_required
