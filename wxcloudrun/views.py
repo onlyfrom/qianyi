@@ -2606,11 +2606,12 @@ def create_delivery_order(user_id):
                 customer_id=data['customer_id'],
                 customer_name=data['customer_name'],
                 customer_phone=data['customer_phone'],
-                delivery_address=data['customer_address'],
                 delivery_date=data.get('delivery_date'),
                 delivery_time_slot=data.get('delivery_time_slot'),
                 status=data.get('status', 1),  # 待配送
                 remark=data.get('remark', ''),
+                logistics_company=data.get('logistics_company'),  # 添加物流公司
+                tracking_number=data.get('tracking_number'),  # 添加物流单号
                 created_by=user_id,
                 created_at=datetime.now(),
                 updated_at=datetime.now()
@@ -2845,6 +2846,8 @@ def get_delivery_orders(user_id):
                 } if creator else None,
                 'delivery_by': order.delivery_by,
                 'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else [],
+                'logistics_company': order.logistics_company,  # 添加物流公司
+                'tracking_number': order.tracking_number,  # 添加物流单号
                 'items': items,
                 'total_quantity': sum(item['quantity'] for item in items),
                 'total_items': len(items)
@@ -2951,6 +2954,8 @@ def get_delivery_order_detail(user_id, order_id):
             'deliveryAddress': order.delivery_address,
             'deliveryDate': order.delivery_date,
             'deliveryTimeSlot': order.delivery_time_slot,
+            'logistics_company': order.logistics_company,
+            'tracking_number': order.tracking_number,
             'status': order.status,
             'statusText': status_text_map.get(order.status, '未知状态'),
             'remark': order.remark,
@@ -4720,8 +4725,6 @@ def get_user_statistics(user_id):
         ).join(
             Product,
             Product.id == PurchaseOrderItem.product_id  # 连接 Product 模型
-        ).filter(
-            func.date(PurchaseOrder.created_at) == func.curdate()
         ).group_by(PurchaseOrderItem.product_id, PurchaseOrderItem.color).all()
         
         today_to_deliver = sum(item[3] for item in today_to_deliver_items)  # 计算总数量

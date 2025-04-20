@@ -246,6 +246,8 @@ class DeliveryOrder(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))  # 创建者
     delivery_by = db.Column(db.Integer, db.ForeignKey('users.id'))  # 发货人
     delivery_image = db.Column(db.Text)  # 打包图
+    logistics_company = db.Column(db.String(50))  # 物流公司
+    tracking_number = db.Column(db.String(50))  # 物流单号
 
 # 发货订单商品模型
 class DeliveryItem(db.Model):

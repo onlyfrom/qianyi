@@ -14,6 +14,7 @@
     <script src="/admin/lib/sortable/Sortable.min.js"></script>
     <script src="components/ProductSelector.js"></script>
     <script src="components/PurchaseOrderDetail.js"></script>
+    <script src="components/CreateDeliveryDialog.js"> </script>
     <script src="https://unpkg.com/element-plus/dist/locale/zh-cn.js"></script>
     <style>
         * {
@@ -3088,141 +3089,13 @@
     </el-dialog>
     
     <!-- 新建发货单对话框 -->
-    <el-dialog 
-        v-model="createDeliveryVisible" 
-        title="新建发货单" 
-        width="900px"
-        destroy-on-close
+    <create-delivery-dialog
+        v-model="createDeliveryVisible"
+        :order="currentOrder"
+        @success="loadDeliveryOrders"
+        @close="currentOrder = null"
     >
-        <el-form :model="deliveryForm" label-width="100px">
-            <el-tabs v-model="activeTab">
-                <el-tab-pane label="基本信息">
-                    <el-form-item label="客户名称" prop="customerName">
-                        <el-input v-model="deliveryForm.customerName" placeholder="请输入客户名称" />
-                    </el-form-item>                    
-                    <el-form-item label="联系电话" prop="customerPhone" >
-                        <el-input v-model="deliveryForm.customerPhone" placeholder="请输入联系电话" />
-                    </el-form-item>                    
-                    <el-form-item label="收货地址" prop="deliveryAddress" >
-                        <el-input 
-                            v-model="deliveryForm.deliveryAddress" 
-                            type="textarea" 
-                            :rows="2"
-                            placeholder="请输入收货地址"
-                        />
-                    </el-form-item>
-                    
-                    <el-form-item label="发货日期" prop="deliveryDate">
-                        <el-date-picker 
-                            v-model="deliveryForm.deliveryDate" 
-                            type="date" 
-                            placeholder="选择发货日期"
-                            style="width: 100%"
-                        />
-                    </el-form-item>
-                    
-                    <el-form-item label="备注" prop="remark">
-                        <el-input 
-                            v-model="deliveryForm.remark" 
-                            type="textarea" 
-                            :rows="3"
-                            placeholder="请输入备注信息"
-                        />
-                    </el-form-item>
-                                    </el-tab-pane>
-                
-                <el-tab-pane label="包裹管理">
-                    <div class="packages-header">
-                        <h3>包裹列表</h3>
-                        <el-button type="primary" @click="addPackage">添加包裹</el-button>
-                    </div>
-                    
-                    <div v-for="(pkg, pkgIndex) in deliveryForm.packages" :key="pkgIndex" class="package-card">
-                        <div class="package-header">
-                            <h4>包裹 #{{ pkgIndex + 1 }}</h4>
-                            <el-button 
-                                type="danger" 
-                                size="small" 
-                                @click="deletePackage(pkgIndex)"
-                                :disabled="deliveryForm.packages.length <= 1"
-                            >删除包裹</el-button>
-                        </div>
-                        
-                        <el-table :data="pkg.items" border style="margin-top: 10px;">
-                            <el-table-column prop="productName" label="商品名称" min-width="180">
-                    <template #default="scope">
-                                    <div>
-                                        {{ scope.row.product_name }}
-                                        <div class="service-tags">
-                                            <el-tag v-if="scope.row.packaging_price > 0" size="small" type="info">包装</el-tag>
-                                            <el-tag v-if="scope.row.logo_price > 0" size="small" type="info">打标</el-tag>
-                                            <el-tag v-if="scope.row.accessory_price > 0" size="small" type="info">辅料</el-tag>
-                                        </div>
-                                    </div>
-                                        </template>
-                </el-table-column>
-                            <el-table-column prop="color" label="颜色" width="120" >
-                                <template #default="scope">
-                                    <el-tag size="small" type="info">{{ scope.row.color }}</el-tag>
-                                </template>
-                            </el-table-column>
-                            <el-table-column prop="quantity" label="数量" width="120">
-                                <template #default="scope">
-                                    <el-input-number 
-                                        v-model="scope.row.quantity" 
-                                        :min="1" 
-                                        controls-position="right"
-                                        size="small"
-                                        style="width: 100px;"
-                                    />
-                                </template>
-                            </el-table-column>
-                            <el-table-column prop="max_quantity" label="待发数量" width="120" >
-                                <template #default="scope">
-                                    <el-tag size="small" type="info">{{ scope.row.max_quantity }}</el-tag>
-                                </template>
-                            </el-table-column>
-                            <el-table-column label="操作" width="100">
-                                <template #default="scope">
-                                    <el-button 
-                                        type="danger" 
-                                        size="small" 
-                                        @click="removeItem(pkgIndex, scope.$index)"
-                                    >删除</el-button>
-                                </template>
-                            </el-table-column>
-            </el-table>
-                        
-                        <div class="add-item-row">
-                            <el-button 
-                                type="primary" 
-                                size="small" 
-                                @click="showAddProductPopup(pkgIndex)"
-                            >添加商品</el-button>
-        </div>
-                    </div>
-                </el-tab-pane>
-                
-                <el-tab-pane label="打包图片">
-                    <el-upload
-                        action="#"
-                        list-type="picture-card"
-                        :auto-upload="false"
-                        :file-list="deliveryImageFiles"
-                        :on-preview="handlePictureCardPreview"
-                        :on-remove="handleDeliveryImageRemove"
-                    >
-                        <i class="el-icon-plus"></i>
-                    </el-upload>
-                                    </el-tab-pane>
-                                </el-tabs>
-            
-            <div style="text-align: right; margin-top: 20px;">
-                <el-button @click="createDeliveryVisible = false">取消</el-button>
-                <el-button type="primary" @click="submitDeliveryForm">确定</el-button>
-            </div>
-        </el-form>
-    </el-dialog>
+    </create-delivery-dialog>
     
     <!-- 添加商品对话框 -->
     <el-dialog v-model="addProductPopupVisible" title="选择商品" width="70%">
@@ -3917,7 +3790,9 @@
                                 return [firstDay, today];
                             }
                         }
-                    ]
+                    ],
+                    createDeliveryVisible: false,
+                    currentOrder: null,
                 }
             },
             created() {
@@ -4167,75 +4042,9 @@
                     try {
                         // 获取订单详情，确保有完整数据
                         const response = await axios.get(`/purchase_orders/${order.id}`);
-                        this.handleOrderSelect(order);
-                        console.log('response:', response);
                         if (response.status === 200) {
-                            const orderDetail = response.data.order;
-                            
-                            // 跳转到创建发货单页面
-                            this.pendingOrdersVisible = false;
-                            
-                            // 准备发货单表单数据
+                            this.currentOrder = response.data.order;
                             this.createDeliveryVisible = true;
-                            this.deliveryForm = {
-                                customerName: orderDetail.user?.nickname || '无',
-                                customerPhone: orderDetail.user?.phone || '',
-                                deliveryAddress: orderDetail.user?.address || '',
-                                deliveryDate: new Date().toISOString().split('T')[0],
-                                deliveryName: '',
-                                remark: '',
-                                items: [],
-                                packages: [{
-                                    items: []
-                                }],
-                                orderNumber: orderDetail.order_number // 关联原订单号
-                            };
-
-                            console.log("deliveryForm:",this.deliveryForm);
-                            console.log("orderDetail:",orderDetail);
-                            const firstPackage = this.deliveryForm.packages[0];
-                            // 自动添加所有商品到第一个包裹
-                            if (orderDetail.items && orderDetail.items.length > 0) {
-                                
-                                orderDetail.items.forEach(item => {
-                                    if (item.specs && item.specs.length > 0) {
-                                        item.specs.forEach(spec => {
-                                            console.log("spec:",spec);
-                                            if ((spec.quantity - spec.shipped_quantity) > 0) {
-                                                firstPackage.items.push({
-                                                    product_id: item.product_id,
-                                                    product_name: item.product_name,
-                                                    color: spec.color,
-                                                    quantity: spec.quantity,
-                                                    max_quantity: spec.quantity - spec.shipped_quantity,
-                                                    price: spec.price,
-                                                    spec_id: spec.id,
-                                                    packaging_price: spec.packaging_price || item.packaging_price || 0,
-                                                    logo_price: spec.logo_price || item.logo_price || 0,
-                                                    accessory_price: spec.accessory_price || item.accessory_price || 0
-                                                });
-                                            }
-                                        });
-                                    } else if (item.pending_quantity > 0) {
-                                        firstPackage.items.push({
-                                            product_id: item.product_id,
-                                            product_name: item.product_name,
-                                            color: '',
-                                            quantity: item.pending_quantity,
-                                            max_quantity: item.pending_quantity,
-                                            price: item.price,
-                                            packaging_price: item.packaging_price || 0,
-                                            logo_price: item.logo_price || 0,
-                                            accessory_price: item.accessory_price || 0
-                                        });
-                                    }
-                                });
-                                console.log("firstPackage:",firstPackage);
-                            }
-                            this.deliveryForm.packages[0] = firstPackage;
-                            
-                            // 初始化空的发货单表单
-                            // 之后用户需要手动添加要发货的商品
                         } else {
                             throw new Error('获取订单详情失败');
                         }
@@ -7439,6 +7248,8 @@
                         remark: '',
                         items: []
                     };
+                    console.log('placeOrderForm',this.placeOrderForm);
+
                     this.placeOrderDialogVisible = true;
                 },
                 
@@ -7624,8 +7435,10 @@
         app.component('product-selector', window.ProductSelector);
         // 注册采购单详情组件
         app.component('purchase-order-detail', window.PurchaseOrderDetail);
-
+        app.component('create-delivery-dialog', window.CreateDeliveryDialog);
         app.mount('#app')
+
+        
     </script>
 </body>
 </html>

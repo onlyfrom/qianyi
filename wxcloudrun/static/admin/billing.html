@@ -723,7 +723,7 @@
                 <div v-if="currentDeliveryDetail" class="delivery-detail">
                     <el-descriptions :column="2" border>
                         <el-descriptions-item label="物流单号">
-                            {{ currentDeliveryDetail.orderNumber }}
+                            {{ currentDeliveryDetail.tracking_number }}
                         </el-descriptions-item>
                         <el-descriptions-item label="创建时间">
                             {{ formatDate(currentDeliveryDetail.createdAt) }}
@@ -738,7 +738,7 @@
                         </el-descriptions-item>
                         <el-descriptions-item label="发包数" >{{ packageCount }}包
                         </el-descriptions-item>
-                        <el-descriptions-item label="发货物流：" >{{ currentDeliveryDetail.delivery_logistics || '无' }}
+                        <el-descriptions-item label="发货物流：" >{{ currentDeliveryDetail.logistics_company || '无' }}
                         </el-descriptions-item>
                     </el-descriptions>
 

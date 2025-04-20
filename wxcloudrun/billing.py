@@ -284,6 +284,8 @@ def get_customer_orders(user_id, customer_id):
                 'total_amount': total_amount,
                 'status': order.status,
                 'status_text': status_text_map.get(order.status, '未知状态'),
+                'logistics_company': order.logistics_company,
+                'tracking_number': order.tracking_number,
                 'remark': order.remark,
                 'creator': {
                     'id': creator.id if creator else None,
