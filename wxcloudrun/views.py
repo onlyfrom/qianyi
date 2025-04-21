@@ -4713,10 +4713,10 @@ def get_user_statistics(user_id):
             func.date(PurchaseOrder.created_at) == func.curdate()
         ).distinct().all()
         
-        # 获取今日应发货商品数（今日创建的采购单中的商品总数量）
+        # 获取所有待发货商品数（所有已确认但未发货的采购单中的商品总数量）
         today_to_deliver_items = db.session.query(
             PurchaseOrderItem.product_id,
-            Product.name.label('product_name'),  # 从 Product 模型中获取名称
+            Product.name.label('product_name'),
             PurchaseOrderItem.color,
             func.sum(PurchaseOrderItem.quantity)
         ).join(
@@ -4724,7 +4724,9 @@ def get_user_statistics(user_id):
             PurchaseOrder.id == PurchaseOrderItem.order_id
         ).join(
             Product,
-            Product.id == PurchaseOrderItem.product_id  # 连接 Product 模型
+            Product.id == PurchaseOrderItem.product_id
+        ).filter(
+            PurchaseOrder.status == 1  # 状态为已确认
         ).group_by(PurchaseOrderItem.product_id, PurchaseOrderItem.color).all()
         
         today_to_deliver = sum(item[3] for item in today_to_deliver_items)  # 计算总数量
