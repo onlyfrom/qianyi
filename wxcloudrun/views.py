@@ -7308,3 +7308,67 @@ def get_shipped_quantities(user_id):
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '获取已发货数量失败'}), 500
     
+@app.route('/users/list', methods=['GET'])
+@login_required
+def get_users_list(user_id):
+    """获取用户列表 - 简化版"""
+    try:
+        # 获取查询参数
+        page = int(request.args.get('page', 1))
+        page_size = min(int(request.args.get('page_size', 20)), 100)
+        keyword = request.args.get('keyword', '').strip()
+        role = request.args.get('role')  # 按角色筛选
+        customer_type = request.args.get('customer_type')  # 按客户类型筛选
+        
+        # 构建基础查询
+        query = User.query
+        
+        # 添加筛选条件
+        if keyword:
+            search = f'%{keyword}%'
+            query = query.filter(db.or_(
+                User.username.like(search),
+                User.nickname.like(search),
+                User.phone.like(search)
+            ))
+            
+        if role:
+            query = query.filter(User.role == role)
+            
+        if customer_type:
+            query = query.filter(User.customer_type == customer_type)
+            
+        # 获取分页数据
+        paginated_users = query.order_by(User.created_at.desc())\
+            .paginate(page=page, per_page=page_size, error_out=False)
+            
+        # 格式化返回数据 - 简化版
+        users = [{
+            'id': user.id,
+            'username': user.username,
+            'nickname': user.nickname,
+            'phone': user.phone,
+            'role': user.role,
+            'customer_type': user.customer_type,
+            'status': user.status,
+            'created_at': user.created_at.isoformat() if user.created_at else None
+        } for user in paginated_users.items]
+
+        return jsonify({
+            'code': 0,
+            'data': {
+                'users': users,
+                'total': paginated_users.total,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': paginated_users.pages
+            }
+        }), 200
+
+    except Exception as e:
+        print(f'获取用户列表失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({
+            'code': -1,
+            'message': f'获取用户列表失败: {str(e)}'
+        }), 500
