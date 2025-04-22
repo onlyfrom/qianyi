@@ -194,6 +194,9 @@ class PurchaseOrder(db.Model):
     remark = db.Column(db.Text)
     handler_id = db.Column(db.Integer, db.ForeignKey('users.id')) # 处理人
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    
+    # 添加与 PurchaseOrderItem 的关系
+    items = db.relationship('PurchaseOrderItem', backref='purchase_order', lazy='dynamic')
 
 # 采购订单商品模型
 class PurchaseOrderItem(db.Model):

@@ -803,17 +803,24 @@
                     </div>
 
                     <div v-if="currentDeliveryDetail.deliveryImage && currentDeliveryDetail.deliveryImage.length > 0" style="margin-top: 20px;">
-                        <el-divider>送货凭证</el-divider>
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <el-divider>发货单预览</el-divider>
+                        <div style="display: flex; justify-content: center;">
                             <el-image
-                                v-for="(image, index) in currentDeliveryDetail.deliveryImage"
-                                :key="index"
-                                style="width: 100px; height: 100px"
-                                :src="image"
+                                style="max-width: 100%; height: auto;"
+                                :src="currentDeliveryDetail.deliveryImage[0]"
                                 :preview-src-list="currentDeliveryDetail.deliveryImage"
-                                fit="cover"
+                                fit="contain"
                             />
                         </div>
+                    </div>
+
+                    <div style="margin-top: 20px; text-align: right;">
+                        <el-button 
+                            type="primary" 
+                            @click="generateDeliveryImage(currentDeliveryDetail)"
+                        >
+                            <el-icon><Picture /></el-icon>重新生成发货单
+                        </el-button>
                     </div>
                 </div>
             </el-dialog>
@@ -1513,6 +1520,24 @@
                     }
                 };
 
+                // 在 setup 函数中添加 generateDeliveryImage 方法
+                const generateDeliveryImage = async (delivery) => {
+                    try {
+                        const response = await axios.get(`/billing/${delivery.id}/image`);
+                        
+                        if (response.data.code === 0) {
+                            // 更新发货单对象的图片URL
+                            currentDeliveryDetail.value.deliveryImage = [response.data.data.image_url];
+                            ElementPlus.ElMessage.success('发货单图片生成成功');
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.message || '生成发货单图片失败');
+                        }
+                    } catch (error) {
+                        console.error('生成发货单图片失败:', error);
+                        ElementPlus.ElMessage.error('生成发货单图片失败');
+                    }
+                };
+
                 return {
                     statistics,
                     filterForm,
@@ -1581,6 +1606,7 @@
                     filterTotalQuantity,
                     filterUnpaidAmount,
                     filterTotalAmount,
+                    generateDeliveryImage,
                 };
             }
         });

@@ -1,10 +1,16 @@
 from datetime import datetime, timedelta
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, send_from_directory
 from decimal import Decimal
-from .model import PurchaseOrder, PurchaseOrderItem, User, db, DeliveryOrder, DeliveryItem, Payment
+from .model import PurchaseOrder, PurchaseOrderItem, User, db, DeliveryOrder, DeliveryItem, Payment, Product
 from .views import login_required, app
 import pandas as pd
 from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+import os
+import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 # 恢复使用蓝图，确保登录状态正确继承
 billing_bp = Blueprint('billing', __name__)
@@ -654,4 +660,239 @@ def get_payment_history(user_id, customer_id):
         return jsonify({
             'code': -1,
             'message': f'获取收款历史失败: {str(e)}'
-        }) 
+        })
+
+@billing_bp.route('/billing/<int:delivery_id>/image', methods=['GET'])
+@login_required
+def generate_delivery_image(user_id, delivery_id):
+    """生成发货单图片"""
+    try:
+        # 获取发货单信息
+        delivery_order = DeliveryOrder.query.get_or_404(delivery_id)
+        
+        # 获取发货单商品
+        delivery_items = DeliveryItem.query.filter_by(delivery_id=delivery_id).all()
+        
+        # 获取对应的采购单
+        purchase_order = PurchaseOrder.query.filter_by(order_number=delivery_order.order_number).first()
+        if not purchase_order:
+            return jsonify({'error': '未找到对应的采购单'}), 404
+            
+        # 获取客户的所有采购单，计算累计应付总额
+        customer_orders = PurchaseOrder.query.filter_by(user_id=purchase_order.user_id).all()
+        total_unpaid = sum(
+            (order.total_amount or 0) - (order.paid_amount or 0)
+            for order in customer_orders
+        )
+        
+        # 计算总数量和总金额
+        total_quantity = sum(item.quantity for item in delivery_items)
+        total_amount = 0
+        
+        # 创建商品单价映射
+        price_map = {}
+        for po_item in purchase_order.items:
+            key = (po_item.product_id, po_item.color)
+            price_map[key] = {
+                'price': po_item.price,
+                'logo_price': po_item.logo_price,
+                'accessory_price': po_item.accessory_price,
+                'packaging_price': po_item.packaging_price
+            }
+
+        # 确保图片保存目录存在
+        image_dir = os.path.join(os.path.dirname(__file__), 'static')
+        if not os.path.exists(image_dir):
+            os.makedirs(image_dir)
+        
+        # 使用固定的文件名
+        image_filename = f'deliverylist.png'
+        image_path = os.path.join(image_dir, image_filename)
+        
+        logger.info(f"生成发货单图片路径: {image_path}")
+        # 计算不同的包裹数
+        package_count = len(set(item.package_id for item in delivery_items if item.package_id))
+        
+        # 创建图片
+        image = Image.new('RGB', (800, 1200), 'white')
+        draw = ImageDraw.Draw(image)
+        
+        # 使用宋体
+        font = ImageFont.truetype("simsun.ttc", 24)
+        title_font = ImageFont.truetype("simsun.ttc", 32)
+        small_font = ImageFont.truetype("simsun.ttc", 20)
+        
+        # 绘制表格边框
+        def draw_cell(x, y, width, height, text, font, align='left', fill='black'):
+            # 绘制边框
+            draw.rectangle((x, y, x + width, y + height), outline='black', width=1)
+            # 计算文本位置
+            text_width = draw.textlength(text, font=font)
+            if align == 'center':
+                text_x = x + (width - text_width) // 2
+            elif align == 'right':
+                text_x = x + width - text_width - 10
+            else:
+                text_x = x + 10
+            text_y = y + (height - font.size) // 2
+            # 绘制文本
+            draw.text((text_x, text_y), text, fill=fill, font=font)
+            
+        # 绘制标题
+        title = "发货单"
+        title_width = draw.textlength(title, font=title_font)
+        draw.text(((800 - title_width) // 2, 30), title, fill='black', font=title_font)
+        
+        # 绘制基本信息表格
+        y = 100
+        row_height = 40
+        
+        # 第一行
+        draw_cell(50, y, 200, row_height, "发货物流", font, 'left')
+        draw_cell(250, y, 200, row_height, delivery_order.logistics_company or "无", font, 'left')
+        draw_cell(450, y, 150, row_height, "创建时间", font, 'left')
+        draw_cell(600, y, 150, row_height, delivery_order.created_at.strftime('%Y/%m/%d'), font, 'left')
+        
+        # 第二行
+        y += row_height
+        draw_cell(50, y, 200, row_height, "客户名称", font, 'left')
+        draw_cell(250, y, 500, row_height, delivery_order.customer_name, font, 'left')
+        
+        # 绘制商品表格标题
+        y += row_height + 20
+        draw.text((50, y), "商品明细", fill='black', font=font)
+        y += 40
+        
+        # 表头
+        header_height = 40
+        # 新的列宽分配
+        col_widths = {
+            'name': 250,    # 商品名称加宽
+            'color': 120,   # 颜色
+            'quantity': 100, # 数量
+            'price': 120,   # 单价加宽
+            'total': 120    # 小计加宽
+        }
+        
+        # 计算起始x坐标
+        x = 50
+        
+        # 绘制表头
+        draw_cell(x, y, col_widths['name'], header_height, "商品名称", font, 'center')
+        x += col_widths['name']
+        draw_cell(x, y, col_widths['color'], header_height, "颜色", font, 'center')
+        x += col_widths['color']
+        draw_cell(x, y, col_widths['quantity'], header_height, "数量", font, 'center')
+        x += col_widths['quantity']
+        draw_cell(x, y, col_widths['price'], header_height, "单价", font, 'center')
+        x += col_widths['price']
+        draw_cell(x, y, col_widths['total'], header_height, "小计", font, 'center')
+        
+        # 按商品ID和颜色分组汇总数量
+        grouped_items = {}
+        for item in delivery_items:
+            key = (item.product_id, item.color)
+            if key not in grouped_items:
+                grouped_items[key] = {
+                    'product_id': item.product_id,
+                    'color': item.color,
+                    'quantity': 0
+                }
+            grouped_items[key]['quantity'] += item.quantity
+
+        # 绘制商品列表
+        y += header_height
+        total_amount = 0  # 重置总金额
+        total_quantity = 0  # 重置总数量
+        
+        for item_info in grouped_items.values():
+            product = Product.query.get(item_info['product_id'])
+            if product:
+                # 从价格映射中获取单价信息
+                price_info = price_map.get((item_info['product_id'], item_info['color']), {
+                    'price': 0,
+                    'logo_price': 0,
+                    'accessory_price': 0,
+                    'packaging_price': 0
+                })
+                
+                # 计算总价（基础价格 + 加工费用）
+                unit_price = (price_info['price'] + price_info['logo_price'] + 
+                            price_info['accessory_price'] + price_info['packaging_price'])
+                item_total = float(item_info['quantity'] * unit_price)
+                total_amount += item_total
+                total_quantity += item_info['quantity']
+                
+                row_height = 40
+                x = 50  # 重置x坐标到起始位置
+                
+                # 绘制每一列
+                draw_cell(x, y, col_widths['name'], row_height, product.name, small_font, 'left')
+                x += col_widths['name']
+                draw_cell(x, y, col_widths['color'], row_height, item_info['color'] or '', small_font, 'center')
+                x += col_widths['color']
+                draw_cell(x, y, col_widths['quantity'], row_height, str(item_info['quantity']), small_font, 'center')
+                x += col_widths['quantity']
+                draw_cell(x, y, col_widths['price'], row_height, f"¥{unit_price:.2f}", small_font, 'right')
+                x += col_widths['price']
+                draw_cell(x, y, col_widths['total'], row_height, f"¥{item_total:.2f}", small_font, 'right')
+                
+                y += row_height
+        
+        # 移除合计行，改为在右下角显示统计信息
+        y += 40  # 添加一些间距
+        summary_font = ImageFont.truetype("simsun.ttc", 28)
+        
+        # 绘制统计信息（右对齐）
+        # 图片宽度为800，预留右边距20像素
+        right_margin = 20
+        right_x = 800 - right_margin
+        
+        # 绘制总包数（右对齐）
+        text = f"总包数：{package_count or 1}包"
+        text_width = draw.textlength(text, font=summary_font)
+        draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
+        y += 50
+        
+        # 绘制商品总数（右对齐）
+        text = f"商品总数：{total_quantity}件"
+        text_width = draw.textlength(text, font=summary_font)
+        draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
+        y += 50
+        
+        # 绘制货款总额（右对齐）
+        text = f"货款总额：¥{int(total_amount)}"
+        text_width = draw.textlength(text, font=summary_font)
+        draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
+        y += 50
+        
+        # 绘制累计应付总额（右对齐）
+        text = f"累计应付总额：¥{int(total_unpaid)}"
+        text_width = draw.textlength(text, font=summary_font)
+        draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
+        
+        # 绘制备注
+        if delivery_order.remark:
+            y += 60  # 增加间距
+            text = f"备注：{delivery_order.remark}"
+            text_width = draw.textlength(text, font=title_font)
+            draw.text((right_x - text_width, y), text, fill='black', font=title_font)
+        
+        # 保存图片到本地文件（直接覆盖）
+        image.save(image_path, 'PNG')
+        
+        db.session.commit()
+        
+        # 返回图片访问地址
+        return jsonify({
+            'code': 0,
+            'message': '发货单图片生成成功',
+            'data': {
+                'image_url': f'/static/delivery_images/{image_filename}'
+            }
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 生成发货单图片失败: {str(e)}")
+        return jsonify({'error': '生成发货单图片失败'}), 500
+
