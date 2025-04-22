@@ -723,12 +723,14 @@ def generate_delivery_image(user_id, delivery_id):
             
             # 加载字体
             try:
-                font = ImageFont.truetype("simsun.ttc", 24)
-                title_font = ImageFont.truetype("simsun.ttc", 32)
-                small_font = ImageFont.truetype("simsun.ttc", 20)
+                font_path = os.path.join(os.path.dirname(__file__), 'static', 'simsun.ttc')
+                font = ImageFont.truetype(font_path, 24)
+                title_font = ImageFont.truetype(font_path, 32)
+                small_font = ImageFont.truetype(font_path, 20)
+                summary_font = ImageFont.truetype(font_path, 28)
             except Exception as e:
                 logger.error(f"加载字体失败: {str(e)}")
-                return jsonify({'error': '加载字体失败，请确保系统安装了宋体字体'}), 500
+                return jsonify({'error': '加载字体失败，请确保static目录下存在simsun.ttc字体文件'}), 500
 
             # 绘制表格边框
             def draw_cell(x, y, width, height, text, font, align='left', fill='black'):
@@ -849,7 +851,7 @@ def generate_delivery_image(user_id, delivery_id):
             
             # 移除合计行，改为在右下角显示统计信息
             y += 40  # 添加一些间距
-            summary_font = ImageFont.truetype("simsun.ttc", 28)
+            
             
             # 绘制统计信息（右对齐）
             # 图片宽度为800，预留右边距20像素
