@@ -9,8 +9,10 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import time
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
+WX_ENV = 'prod-9gd4jllic76d4842'
 
 # 恢复使用蓝图，确保登录状态正确继承
 billing_bp = Blueprint('billing', __name__)
@@ -710,21 +712,6 @@ def generate_delivery_image(user_id, delivery_id):
                 'packaging_price': po_item.packaging_price
             }
 
-        # 确保图片保存目录存在
-        try:
-            image_dir = os.path.join(os.path.dirname(__file__), 'static')
-            if not os.path.exists(image_dir):
-                os.makedirs(image_dir)
-                logger.info(f"创建图片保存目录: {image_dir}")
-        except Exception as e:
-            logger.error(f"创建图片保存目录失败: {str(e)}")
-            return jsonify({'error': '创建图片保存目录失败'}), 500
-        
-        # 使用固定的文件名
-        image_filename = f'deliverylist.png'
-        image_path = os.path.join(image_dir, image_filename)
-        logger.info(f"图片保存路径: {image_path}")
-
         # 计算不同的包裹数
         package_count = len(set(item.package_id for item in delivery_items if item.package_id))
         logger.info(f"计算包裹数: package_count={package_count}")
@@ -899,25 +886,70 @@ def generate_delivery_image(user_id, delivery_id):
                 text_width = draw.textlength(text, font=title_font)
                 draw.text((right_x - text_width, y), text, fill='black', font=title_font)
             
-            # 保存图片到本地文件（直接覆盖）
-            try:
-                image.save(image_path, 'PNG')
-                logger.info(f"图片保存成功: {image_path}")
-            except Exception as e:
-                logger.error(f"保存图片失败: {str(e)}")
-                return jsonify({'error': '保存图片失败'}), 500
-
-            db.session.commit()
-            logger.info(f"发货单图片生成完成: delivery_id={delivery_id}")
+            # 将图片保存到内存中
+            img_io = BytesIO()
+            image.save(img_io, 'PNG')
+            img_io.seek(0)
             
-            # 返回图片访问地址
-            return jsonify({
-                'code': 0,
-                'message': '发货单图片生成成功',
-                'data': {
-                    'image_url': f'/static/{image_filename}'
+            # 获取云存储上传链接
+            try:
+                upload_url = 'http://api.weixin.qq.com/tcb/uploadfile'
+                upload_params = {
+                    'env': WX_ENV,
+                    'path': f'delivery_images/delivery.png'
                 }
-            })
+                logger.info(f"请求云存储上传链接: {upload_params}")
+                
+                upload_response = requests.post(upload_url, json=upload_params)
+                upload_data = upload_response.json()
+                logger.info(f"获取上传链接响应: {upload_data}")
+                
+                if upload_data.get('errcode', 0) != 0:
+                    logger.error(f"获取上传链接失败: {upload_data}")
+                    return jsonify({
+                        'code': 500,
+                        'message': '获取上传链接失败',
+                        'data': upload_data
+                    }), 500
+                
+            except Exception as e:
+                logger.error(f"获取上传链接失败: {str(e)}")
+                return jsonify({'error': f'获取上传链接失败: {str(e)}'}), 500
+            
+            # 上传文件到云存储
+            try:
+                cos_url = upload_data['url']
+                files = {
+                    'file': (f'delivery.png', img_io, 'image/png')
+                }
+                form_data = {
+                    'key': f'delivery_images/delivery.png',
+                    'Signature': upload_data['authorization'],
+                    'x-cos-security-token': upload_data['token'],
+                    'x-cos-meta-fileid': upload_data['file_id']
+                }
+                
+                upload_result = requests.post(cos_url, data=form_data, files=files)
+                if upload_result.status_code != 200:
+                    logger.error(f"上传文件到云存储失败: {upload_result.text}")
+                    return jsonify({'error': '上传文件到云存储失败'}), 500
+                
+                logger.info(f"图片上传成功: file_id={upload_data['file_id']}")
+                
+                db.session.commit()
+                
+                # 返回图片访问地址
+                return jsonify({
+                    'code': 0,
+                    'message': '发货单图片生成成功',
+                    'data': {
+                        'image_url': upload_data['file_id']
+                    }
+                })
+                
+            except Exception as e:
+                logger.error(f"上传文件到云存储失败: {str(e)}")
+                return jsonify({'error': f'上传文件到云存储失败: {str(e)}'}), 500
             
         except Exception as e:
             logger.error(f"图片生成过程发生错误: {str(e)}")
