@@ -819,7 +819,7 @@
                             type="primary" 
                             @click="generateDeliveryImage(currentDeliveryDetail)"
                         >
-                            <el-icon><Picture /></el-icon>重新生成发货单
+                            <el-icon><Picture /></el-icon>生成发货单
                         </el-button>
                     </div>
                 </div>
@@ -1527,7 +1527,7 @@
                         
                         if (response.data.code === 0) {
                             // 更新发货单对象的图片URL
-                            currentDeliveryDetail.value.deliveryImage = [response.data.data.image_url];
+                            currentDeliveryDetail.value.deliveryImage = 'https://7072-prod-9gd4jllic76d4842-1348936510.tcb.qcloud.la/delivery_images/delivery.png?sign=a329017304aa3a1aa4e40c3d02468956&t=1745341642';
                             ElementPlus.ElMessage.success('发货单图片生成成功');
                         } else {
                             ElementPlus.ElMessage.error(response.data.message || '生成发货单图片失败');

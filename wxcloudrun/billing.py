@@ -685,17 +685,33 @@ def generate_delivery_image(user_id, delivery_id):
             logger.error(f"未找到对应的采购单: order_number={delivery_order.order_number}")
             return jsonify({'error': '未找到对应的采购单'}), 404
             
-        # 获取客户的所有采购单，计算累计应付总额
-        try:
-            customer_orders = PurchaseOrder.query.filter_by(user_id=purchase_order.user_id).all()
-            total_unpaid = sum(
-                (order.total_amount or 0) - (order.paid_amount or 0)
-                for order in customer_orders
+        # 获取客户的所有发货单总额
+        total_delivery_amount = db.session.query(
+            db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity)
+        ).join(
+            DeliveryItem, 
+            db.and_(
+                DeliveryItem.order_number == PurchaseOrder.order_number,
+                DeliveryItem.product_id == PurchaseOrderItem.product_id,
+                DeliveryItem.color == PurchaseOrderItem.color
             )
-            logger.info(f"客户累计应付总额: customer_id={purchase_order.user_id}, total_unpaid={total_unpaid}")
-        except Exception as e:
-            logger.error(f"计算累计应付总额失败: {str(e)}")
-            total_unpaid = 0
+        ).join(
+            DeliveryOrder,
+            DeliveryOrder.id == DeliveryItem.delivery_id
+        ).filter(
+            PurchaseOrder.user_id == purchase_order.user_id
+        ).scalar() or 0
+
+        # 获取客户的已收款总额
+        total_paid = db.session.query(
+            db.func.sum(Payment.amount)
+        ).filter(
+            Payment.customer_id == purchase_order.user_id
+        ).scalar() or 0
+
+        # 计算累计应付总额
+        total_unpaid = float(total_delivery_amount) - float(total_paid)
+        logger.info(f"客户累计应付总额: customer_id={purchase_order.user_id}, total_delivery={total_delivery_amount}, total_paid={total_paid}, total_unpaid={total_unpaid}")
 
         # 计算总数量和总金额
         total_quantity = sum(item.quantity for item in delivery_items)

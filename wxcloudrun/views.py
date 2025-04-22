@@ -3935,7 +3935,7 @@ def generate_qrcode(page, scene):
         params = {
             "scene": scene,
             "page": page,
-            "env_version": "trial",  #体验版
+            "env_version": "release",  #体验版
             "check_path": False
         }
         
@@ -4051,7 +4051,7 @@ def generate_qrcode_wx(page, scene):
         params = {
             "scene": scene,
             "page": page,
-            "env_version": "trial",  #体验版
+            "env_version": "release",  #体验版  trial 正式 release 
             "check_path": False
         }
         
