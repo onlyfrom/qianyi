@@ -906,7 +906,7 @@ def generate_delivery_image(user_id, delivery_id):
                 upload_data = upload_response.json()
                 logger.info(f"获取上传链接响应: {upload_data}")
                 
-                if upload_data.get('errcode', 0) != 0:
+                if upload_data.get('errcode') != 0:
                     logger.error(f"获取上传链接失败: {upload_data}")
                     return jsonify({
                         'code': 500,
