@@ -932,9 +932,6 @@ def generate_delivery_image(user_id, delivery_id):
                 }
                 
                 upload_result = requests.post(cos_url, data=form_data, files=files)
-                if upload_result.status_code != 200:
-                    logger.error(f"上传文件到云存储失败: {upload_result.text}")
-                    return jsonify({'error': '上传文件到云存储失败'}), 500
                 
                 logger.info(f"图片上传成功: file_id={upload_data['file_id']}")
                 
