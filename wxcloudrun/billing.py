@@ -689,6 +689,9 @@ def generate_delivery_image(user_id, delivery_id):
         total_delivery_amount = db.session.query(
             db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity)
         ).join(
+            PurchaseOrder,
+            PurchaseOrder.id == PurchaseOrderItem.order_id
+        ).join(
             DeliveryItem, 
             db.and_(
                 DeliveryItem.order_number == PurchaseOrder.order_number,
