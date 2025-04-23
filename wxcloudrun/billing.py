@@ -698,15 +698,21 @@ def generate_delivery_image(user_id, delivery_id):
         ).join(
             DeliveryOrder,
             DeliveryOrder.id == DeliveryItem.delivery_id
+        ).join(
+            User,
+            User.id == PurchaseOrder.user_id
         ).filter(
-            PurchaseOrder.user_id == purchase_order.user_id
+            User.id == purchase_order.user_id
         ).scalar() or 0
 
         # 获取客户的已收款总额
         total_paid = db.session.query(
             db.func.sum(Payment.amount)
+        ).join(
+            User,
+            User.id == Payment.customer_id
         ).filter(
-            Payment.customer_id == purchase_order.user_id
+            User.id == purchase_order.user_id
         ).scalar() or 0
 
         # 计算累计应付总额
