@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, send_file, send_from_directory
 from decimal import Decimal
-from .model import PurchaseOrder, PurchaseOrderItem, User, db, DeliveryOrder, DeliveryItem, Payment, Product
+from .model import PurchaseOrder, PurchaseOrderItem, User, db, DeliveryOrder, DeliveryItem, Payment, Product, UserProductPrice
 from .views import login_required, app
 import pandas as pd
 from io import BytesIO
@@ -10,6 +10,8 @@ import os
 import time
 import logging
 import requests
+import traceback
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 logger = logging.getLogger(__name__)
 WX_ENV = 'prod-9gd4jllic76d4842'
@@ -229,6 +231,7 @@ def get_customer_orders(user_id, customer_id):
             Payment.customer_id == customer_id
         ).scalar() or 0
         print(f"[DEBUG] 获取客户的已收款总额: {total_paid}")
+        
         # 构建基础查询
         query = db.session.query(
             DeliveryOrder,
@@ -255,8 +258,11 @@ def get_customer_orders(user_id, customer_id):
         if end_date:
             query = query.filter(db.func.date(DeliveryOrder.created_at) <= end_date)
             
-        # 分组并执行查询
-        orders = query.group_by(DeliveryOrder.id).all()
+        # 分组并按创建时间降序排序
+        query = query.group_by(DeliveryOrder.id, DeliveryOrder.created_at).order_by(DeliveryOrder.created_at.desc())
+        
+        # 执行查询
+        orders = query.all()
         
         # 计算总发货金额
         total_delivery_amount = sum(float(order[2] or 0) for order in orders)
@@ -282,7 +288,6 @@ def get_customer_orders(user_id, customer_id):
             
             # 计算未付金额
             total_amount = float(total_amount or 0)
-
             
             result.append({
                 'id': order.id,
@@ -983,4 +988,384 @@ def generate_delivery_image(user_id, delivery_id):
         error_msg = f"生成发货单图片失败: delivery_id={delivery_id}, error={str(e)}"
         logger.error(error_msg)
         return jsonify({'error': error_msg}), 500
+
+@billing_bp.route('/delivery-orders/export', methods=['GET'])
+@login_required
+def export_delivery_orders(user_id):
+    """导出发货单列表为Excel文件"""
+    try:
+        # 获取查询参数
+        customer_id = request.args.get('customer_id')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # 构建基础查询
+        query = db.session.query(
+            DeliveryOrder,
+            User.nickname.label('customer_name'),
+            db.func.sum(DeliveryItem.quantity).label('total_quantity'),
+            db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_amount')
+        ).join(
+            DeliveryItem, DeliveryOrder.id == DeliveryItem.delivery_id
+        ).join(
+            PurchaseOrder, DeliveryItem.order_number == PurchaseOrder.order_number
+        ).join(
+            PurchaseOrderItem, 
+            db.and_(
+                PurchaseOrder.id == PurchaseOrderItem.order_id,
+                PurchaseOrderItem.product_id == DeliveryItem.product_id,
+                PurchaseOrderItem.color == DeliveryItem.color
+            )
+        ).join(
+            User, DeliveryOrder.customer_id == User.id
+        )
+        
+        # 添加筛选条件
+        if customer_id:
+            query = query.filter(DeliveryOrder.customer_id == customer_id).order_by(DeliveryOrder.created_at.desc())
+        if start_date:
+            try:
+                start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
+                query = query.filter(DeliveryOrder.created_at >= start_datetime)
+            except ValueError:
+                return jsonify({'error': '开始日期格式错误，请使用YYYY-MM-DD格式'}), 400
+        if end_date:
+            try:
+                end_datetime = datetime.strptime(end_date, '%Y-%m-%d')
+                end_datetime = end_datetime + timedelta(days=1) - timedelta(seconds=1)
+                query = query.filter(DeliveryOrder.created_at <= end_datetime)
+            except ValueError:
+                return jsonify({'error': '结束日期格式错误，请使用YYYY-MM-DD格式'}), 400
+            
+        # 分组并执行查询
+        orders = query.group_by(DeliveryOrder.id, User.nickname).all()
+        
+        # 准备数据
+        data = []
+        for order, customer_name, total_quantity, total_amount in orders:
+            # 状态文本映射
+            status_text_map = {
+                0: '已开单',
+                1: '已发货',
+                2: '已完成',
+                3: '已取消',
+                4: '异常'
+            }
+            
+            data.append({
+                '发货单号': order.order_number,
+                '客户名称': customer_name,
+                '发货日期': order.created_at.strftime('%Y-%m-%d'),
+                '商品总数': total_quantity or 0,
+                '货款总额': float(total_amount or 0),
+                '状态': status_text_map.get(order.status, '未知状态'),
+                '物流公司': order.logistics_company or '',
+                '物流单号': order.tracking_number or '',
+                '备注': order.remark or ''
+            })
+        
+        # 创建DataFrame
+        df = pd.DataFrame(data)
+        
+        # 设置列宽
+        column_widths = {
+            '发货单号': 20,
+            '客户名称': 15,
+            '发货日期': 12,
+            '商品总数': 10,
+            '货款总额': 12,
+            '状态': 10,
+            '物流公司': 15,
+            '物流单号': 15,
+            '备注': 30
+        }
+        
+        # 创建Excel写入器
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='发货单列表')
+            
+            # 获取工作表
+            worksheet = writer.sheets['发货单列表']
+            
+            # 设置列宽
+            for col, width in column_widths.items():
+                col_idx = df.columns.get_loc(col)
+                worksheet.column_dimensions[chr(65 + col_idx)].width = width
+            
+            # 设置表头样式
+            for col in range(len(df.columns)):
+                cell = worksheet.cell(row=1, column=col+1)
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                cell.fill = PatternFill(start_color='D9D9D9', end_color='D9D9D9', fill_type='solid')
+                cell.border = Border(
+                    left=Side(style='thin'),
+                    right=Side(style='thin'),
+                    top=Side(style='thin'),
+                    bottom=Side(style='thin')
+                )
+            
+            # 设置数据样式
+            for row in range(2, len(df) + 2):
+                for col in range(len(df.columns)):
+                    cell = worksheet.cell(row=row, column=col+1)
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                    cell.border = Border(
+                        left=Side(style='thin'),
+                        right=Side(style='thin'),
+                        top=Side(style='thin'),
+                        bottom=Side(style='thin')
+                    )
+                    
+                    # 如果是货款总额列，设置为右对齐
+                    if df.columns[col] == '货款总额':
+                        cell.alignment = Alignment(horizontal='right', vertical='center')
+                        cell.number_format = '¥#,##0.00'
+        
+        output.seek(0)
+        
+        # 生成文件名
+        filename = f'发货单列表_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        print(f'导出发货单列表失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '导出发货单列表失败'}), 500
+
+@billing_bp.route('/user-product-prices/import', methods=['POST'])
+@login_required
+def import_user_product_prices(user_id):
+    """导入用户商品价格"""
+    try:
+        print("[DEBUG] 开始导入用户商品价格")
+        # 检查是否有文件上传
+        if 'file' not in request.files:
+            print("[ERROR] 没有上传文件")
+            return jsonify({'error': '没有上传文件'}), 400
+            
+        file = request.files['file']
+        print(f"[DEBUG] 收到文件: {file.filename}")
+        if not file.filename.endswith('.xlsx'):
+            print("[ERROR] 文件格式不支持")
+            return jsonify({'error': '只支持.xlsx格式的Excel文件'}), 400
+            
+        # 读取Excel文件
+        print("[DEBUG] 开始读取Excel文件")
+        df = pd.read_excel(file)
+        print(f"[DEBUG] Excel文件读取完成，共{len(df)}行数据")
+        
+        # 检查必要的列是否存在
+        required_columns = ['客户名称', '商品', '价格']
+        if not all(col in df.columns for col in required_columns):
+            print(f"[ERROR] Excel文件缺少必要列，需要: {required_columns}")
+            return jsonify({'error': f'Excel文件必须包含以下列：{", ".join(required_columns)}'}), 400
+            
+        # 验证数据类型
+        try:
+            print("[DEBUG] 开始验证价格列数据类型")
+            df['价格'] = df['价格'].astype(float)
+            print("[DEBUG] 价格列数据类型验证通过")
+        except Exception as e:
+            print(f"[ERROR] 价格列数据类型验证失败: {str(e)}")
+            return jsonify({'error': f'价格列必须为数字：{str(e)}'}), 400
+            
+        # 获取所有客户名称和商品名称
+        customer_names = df['客户名称'].unique()
+        product_names = df['商品'].unique()
+        print(f"[DEBUG] 共发现{len(customer_names)}个客户，{len(product_names)}个商品")
+        
+        # 查询数据库中存在的客户和商品
+        print("[DEBUG] 开始查询数据库中的客户和商品")
+        existing_customers = User.query.filter(
+            User.nickname.in_(customer_names)
+        ).all()
+        existing_products = Product.query.filter(Product.name.in_(product_names)).all()
+        print(f"[DEBUG] 数据库中存在{len(existing_customers)}个客户，{len(existing_products)}个商品")
+        
+        # 创建名称到ID的映射
+        customer_name_to_id = {customer.nickname: customer.id for customer in existing_customers}
+        product_name_to_id = {product.name: product.id for product in existing_products}
+        
+        # 检查不存在的客户和商品
+        invalid_customers = set(customer_names) - set(customer_name_to_id.keys())
+        invalid_products = set(product_names) - set(product_name_to_id.keys())
+        
+        if invalid_customers:
+            print(f"[ERROR] 发现不存在的客户: {invalid_customers}")
+            return jsonify({'error': f'以下客户不存在：{", ".join(invalid_customers)}'}), 400
+            
+        if invalid_products:
+            print(f"[WARNING] 发现不存在的商品: {invalid_products}，将跳过这些商品")
+            
+        # 开始导入数据
+        print("[DEBUG] 开始导入数据")
+        success_count = 0
+        error_count = 0
+        skip_count = 0
+        error_messages = []
+        skip_messages = []
+        
+        for _, row in df.iterrows():
+            try:
+                customer_id = customer_name_to_id[row['客户名称']]
+                product_name = row['商品']
+                
+                # 检查商品是否存在
+                if product_name not in product_name_to_id:
+                    skip_count += 1
+                    skip_msg = f'第{_+2}行跳过：商品"{product_name}"不存在'
+                    print(f"[WARNING] {skip_msg}")
+                    skip_messages.append(skip_msg)
+                    continue
+                    
+                product_id = product_name_to_id[product_name]
+                
+                # 检查是否已存在相同的记录
+                existing_price = UserProductPrice.query.filter_by(
+                    user_id=customer_id,
+                    product_id=product_id
+                ).first()
+                
+                if existing_price:
+                    print(f"[DEBUG] 更新现有价格记录: 客户ID={customer_id}, 商品ID={product_id}")
+                    # 更新现有记录
+                    existing_price.custom_price = row['价格']
+                else:
+                    print(f"[DEBUG] 创建新价格记录: 客户ID={customer_id}, 商品ID={product_id}")
+                    # 创建新记录
+                    new_price = UserProductPrice(
+                        user_id=customer_id,
+                        product_id=product_id,
+                        custom_price=row['价格']
+                    )
+                    db.session.add(new_price)
+                
+                success_count += 1
+                
+            except Exception as e:
+                error_count += 1
+                error_msg = f'第{_+2}行导入失败：{str(e)}'
+                print(f"[ERROR] {error_msg}")
+                error_messages.append(error_msg)
+                
+        # 提交事务
+        print(f"[DEBUG] 开始提交事务，成功导入{success_count}条，失败{error_count}条，跳过{skip_count}条")
+        db.session.commit()
+        print("[DEBUG] 事务提交成功")
+        
+        return jsonify({
+            'message': '导入完成',
+            'success_count': success_count,
+            'error_count': error_count,
+            'skip_count': skip_count,
+            'errors': error_messages,
+            'skips': skip_messages
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 导入用户商品价格失败: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': f'导入失败：{str(e)}'}), 500
+
+@billing_bp.route('/purchase_orders/update_prices', methods=['POST'])
+@login_required
+def update_purchase_order_prices(user_id):
+    """更新指定客户在指定时间段的采购单价格"""
+    try:
+        print("[DEBUG] 开始更新采购单价格")
+        data = request.get_json()
+        
+        # 获取请求参数
+        customer_id = data.get('customer_id')
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        
+        if not all([customer_id, start_date, end_date]):
+            print("[ERROR] 缺少必要参数")
+            return jsonify({'error': '缺少必要参数：customer_id, start_date, end_date'}), 400
+            
+        try:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1) - timedelta(seconds=1)
+        except ValueError as e:
+            print(f"[ERROR] 日期格式错误: {str(e)}")
+            return jsonify({'error': '日期格式错误，请使用YYYY-MM-DD格式'}), 400
+            
+        print(f"[DEBUG] 查询参数: 客户ID={customer_id}, 开始日期={start_date}, 结束日期={end_date}")
+        
+        # 获取客户的所有采购单
+        purchase_orders = PurchaseOrder.query.filter(
+            PurchaseOrder.user_id == customer_id,
+            PurchaseOrder.created_at.between(start_date, end_date)
+        ).all()
+        
+        if not purchase_orders:
+            print("[WARNING] 未找到符合条件的采购单")
+            return jsonify({'message': '未找到符合条件的采购单'}), 200
+            
+        print(f"[DEBUG] 找到{len(purchase_orders)}个采购单")
+        
+        # 获取客户的所有商品价格
+        user_prices = UserProductPrice.query.filter_by(user_id=customer_id).all()
+        price_map = {price.product_id: price.custom_price for price in user_prices}
+        
+        if not price_map:
+            print("[WARNING] 未找到客户商品价格记录")
+            return jsonify({'message': '未找到客户商品价格记录'}), 200
+            
+        print(f"[DEBUG] 找到{len(price_map)}个商品价格记录")
+        
+        # 更新采购单价格
+        updated_count = 0
+        error_count = 0
+        error_messages = []
+        
+        for order in purchase_orders:
+            try:
+                # 获取采购单的所有商品
+                order_items = PurchaseOrderItem.query.filter_by(order_id=order.id).all()
+                
+                for item in order_items:
+                    if item.product_id in price_map:
+                        # 更新商品价格
+                        old_price = item.price
+                        new_price = price_map[item.product_id]
+                        item.price = new_price
+                        print(f"[DEBUG] 更新价格: 订单ID={order.id}, 商品ID={item.product_id}, 原价={old_price}, 新价={new_price}")
+                        updated_count += 1
+                
+                # 重新计算采购单总金额
+                order.total_amount = sum(item.price * item.quantity for item in order_items)
+                
+            except Exception as e:
+                error_count += 1
+                error_msg = f'更新采购单{order.id}失败: {str(e)}'
+                print(f"[ERROR] {error_msg}")
+                error_messages.append(error_msg)
+                continue
+        
+        # 提交事务
+        print(f"[DEBUG] 开始提交事务，成功更新{updated_count}个商品价格，失败{error_count}个")
+        db.session.commit()
+        print("[DEBUG] 事务提交成功")
+        
+        return jsonify({
+            'message': '更新完成',
+            'updated_count': updated_count,
+            'error_count': error_count,
+            'errors': error_messages
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 更新采购单价格失败: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': f'更新失败：{str(e)}'}), 500
 

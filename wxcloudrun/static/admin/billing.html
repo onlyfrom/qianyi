@@ -181,11 +181,6 @@
                 <div class="page-title">
                     <h2>账单管理</h2>
                     <div class="actions">
-                        <el-upload class="excel-uploader" action="/products/import-stock" :headers="uploadHeaders"
-                                    :on-success="handleImportSuccess" :on-error="handleImportError"
-                                    :before-upload="beforeImportUpload" accept=".xlsx,.xls" :show-file-list="false">
-                                    <el-button type="success">导入历史账单</el-button>
-                        </el-upload>
                         <el-button type="primary" @click="exportBilling">
                             <el-icon><Download /></el-icon>导出账单
                         </el-button>
@@ -412,12 +407,51 @@
                     </el-descriptions>
 
                     <div style="margin-top: 20px; text-align: right;">
+                        <el-button type="primary" @click="showUpdatePriceDialog">批量核对采购单价格</el-button>
+                        <el-button type="primary" @click="exportDeliverylist">导出发货单</el-button>
                         <el-button 
                             type="success" 
                             @click="handlePayment(currentBilling)"
                             :disabled="currentBilling.unpaid_amount <= 0"
                         >收款</el-button>
                     </div>
+
+                    <!-- 批量核对采购单价格弹窗 -->
+                    <el-dialog
+                        title="批量核对采购单价格"
+                        v-model="updatePriceDialogVisible"
+                        width="500px"
+                        :close-on-click-modal="false"
+                    >
+                        <el-form :model="updatePriceForm" label-width="120px">
+                            <el-form-item label="开始日期">
+                                <el-date-picker
+                                    v-model="updatePriceForm.start_date"
+                                    type="date"
+                                    placeholder="选择开始日期"
+                                    value-format="YYYY-MM-DD"
+                                    style="width: 100%"
+                                />
+                            </el-form-item>
+                            <el-form-item label="结束日期">
+                                <el-date-picker
+                                    v-model="updatePriceForm.end_date"
+                                    type="date"
+                                    placeholder="选择结束日期"
+                                    value-format="YYYY-MM-DD"
+                                    style="width: 100%"
+                                />
+                            </el-form-item>
+                        </el-form>
+                        <template #footer>
+                            <span class="dialog-footer">
+                                <el-button @click="updatePriceDialogVisible = false">取消</el-button>
+                                <el-button type="primary" @click="updatePurchaseOrderPrices" :loading="updatingPrices">
+                                    开始核对
+                                </el-button>
+                            </span>
+                        </template>
+                    </el-dialog>
 
                     <div style="margin-top: 20px;">
                         <h4>发货单列表</h4>
@@ -1123,6 +1157,80 @@
                     }
                 };
 
+                const exportDeliverylist = async () => {
+                    try {
+                        console.log('开始导出发货单，当前账单信息：', currentBilling.value);
+                        
+                        if (!currentBilling.value || !currentBilling.value.id) {
+                            ElementPlus.ElMessage.error('无法获取客户信息');
+                            return;
+                        }
+
+                        // 显示加载提示
+                        const loading = ElementPlus.ElLoading.service({
+                            lock: true,
+                            text: '正在导出数据，请稍候...',
+                            background: 'rgba(0, 0, 0, 0.7)'
+                        });
+
+                        // 构建查询参数
+                        const params = {
+                            customer_id: currentBilling.value.id
+                        };
+                        
+                        console.log('导出请求参数：', params);
+
+                        try {
+                            // 发送请求
+                            const response = await axios.get('/delivery-orders/export', {
+                                params: params,
+                                responseType: 'blob',
+                                headers: {
+                                    'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                                }
+                            });
+
+                            console.log('导出请求成功，响应状态：', response.status);
+
+                            // 创建下载链接
+                            const url = window.URL.createObjectURL(new Blob([response.data]));
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.setAttribute('download', `发货单列表_${new Date().toLocaleDateString()}.xlsx`);
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            window.URL.revokeObjectURL(url);
+
+                            // 显示成功提示
+                            ElementPlus.ElMessage.success('导出成功');
+                        } catch (error) {
+                            console.error('导出请求失败：', error);
+                            if (error.response) {
+                                console.error('错误响应：', error.response);
+                                // 尝试读取错误信息
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                    try {
+                                        const errorData = JSON.parse(reader.result);
+                                        ElementPlus.ElMessage.error(errorData.error || '导出失败');
+                                    } catch (e) {
+                                        ElementPlus.ElMessage.error('导出失败：' + error.message);
+                                    }
+                                };
+                                reader.readAsText(error.response.data);
+                            } else {
+                                ElementPlus.ElMessage.error('导出失败：' + error.message);
+                            }
+                        } finally {
+                            loading.close();
+                        }
+                    } catch (error) {
+                        console.error('导出发货单失败:', error);
+                        ElementPlus.ElMessage.error('导出发货单失败：' + error.message);
+                    }
+                };
+
                 const exportBilling = async () => {
                     try {
                         const response = await axios.get('/billing/export', {
@@ -1538,6 +1646,57 @@
                     }
                 };
 
+                // 在 setup 函数中添加 showUpdatePriceDialog 方法
+                const updatePriceDialogVisible = ref(false);
+                const updatePriceForm = reactive({
+                    start_date: '',
+                    end_date: ''
+                });
+                const updatingPrices = ref(false);
+
+                const showUpdatePriceDialog = () => {
+                    const today = new Date().toISOString().split('T')[0];
+                    const defaultStartDate = '2025-04-12';  // 使用标准的日期格式
+                    updatePriceForm.start_date = defaultStartDate;
+                    updatePriceForm.end_date = today;
+                    updatePriceDialogVisible.value = true;
+                };
+
+                const updatePurchaseOrderPrices = async () => {
+                    if (!updatePriceForm.start_date || !updatePriceForm.end_date) {
+                        ElementPlus.ElMessage.error('请选择开始日期和结束日期');
+                        return;
+                    }
+
+                    try {
+                        updatingPrices.value = true;
+                        const response = await axios.post('/purchase_orders/update_prices', {
+                            customer_id: currentBilling.value.id,
+                            start_date: updatePriceForm.start_date,
+                            end_date: updatePriceForm.end_date
+                        });
+
+                        if (response.data.error) {
+                            ElementPlus.ElMessage.error(response.data.error);
+                            return;
+                        }
+
+                        ElementPlus.ElMessage.success(`更新完成：成功更新${response.data.updated_count}个商品价格`);
+                        if (response.data.error_count > 0) {
+                            ElementPlus.ElMessage.warning(`有${response.data.error_count}个更新失败`);
+                        }
+
+                        // 刷新当前账单数据
+                        await loadCustomerOrders(currentBilling.value.id);
+                        updatePriceDialogVisible.value = false;
+                    } catch (error) {
+                        console.error('更新采购单价格失败:', error);
+                        ElementPlus.ElMessage.error('更新采购单价格失败');
+                    } finally {
+                        updatingPrices.value = false;
+                    }
+                };
+
                 return {
                     statistics,
                     filterForm,
@@ -1574,6 +1733,7 @@
                     confirmOrderPayment,
                     submitPayment,
                     exportBilling,
+                    exportDeliverylist,
                     viewOrderDetail,
                     loadDeliveryOrders,
                     viewDeliveryDetail,
@@ -1607,6 +1767,11 @@
                     filterUnpaidAmount,
                     filterTotalAmount,
                     generateDeliveryImage,
+                    updatePriceDialogVisible,
+                    updatePriceForm,
+                    updatingPrices,
+                    showUpdatePriceDialog,
+                    updatePurchaseOrderPrices,
                 };
             }
         });

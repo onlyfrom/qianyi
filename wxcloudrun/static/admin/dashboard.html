@@ -1372,8 +1372,8 @@
                                 
                                 
                                 </el-switch>
-                                <!-- 筛选区域 -->
-                                <el-upload class="excel-uploader" action="/products/import-stock" :headers="uploadHeaders"
+                                <!-- 筛选区域 /user-product-prices/import  /delivery-orders/import-history --> 
+                                <el-upload class="excel-uploader" action="/user-product-prices/import" :headers="uploadHeaders"
                                     :on-success="handleImportSuccess" :on-error="handleImportError"
                                     :before-upload="beforeImportUpload" accept=".xlsx,.xls" :show-file-list="false">
                                     <el-button type="success">Excel导入</el-button>

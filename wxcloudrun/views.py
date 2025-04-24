@@ -4263,7 +4263,6 @@ def get_access_token():
         print(f'- 错误追踪:\n{traceback.format_exc()}')
         return None
 
-
 @app.route('/push_orders', methods=['POST'])
 @admin_required
 def create_push_order(user_id):
@@ -4307,6 +4306,27 @@ def create_push_order(user_id):
         for product_info in data['products']:
             product = Product.query.filter_by(id=product_info['id']).first()
             if product:
+                # 创建或更新用户商品价格记录
+                user_price = UserProductPrice.query.filter_by(
+                    user_id=target_user_id,
+                    product_id=product_info['id']
+                ).first()
+                
+                if user_price:
+                    # 更新现有价格记录
+                    user_price.custom_price = product_info['price']
+                    print(f'更新用户商品价格: 用户ID={target_user_id}, 商品ID={product_info["id"]}, 价格={product_info["price"]}')
+                else:
+                    # 创建新的价格记录
+                    new_price = UserProductPrice(
+                        user_id=target_user_id,
+                        product_id=product_info['id'],
+                        custom_price=product_info['price']
+                    )
+                    db.session.add(new_price)
+                    print(f'创建用户商品价格: 用户ID={target_user_id}, 商品ID={product_info["id"]}, 价格={product_info["price"]}')
+
+                # 创建推送商品记录
                 push_product = PushOrderProduct(
                     push_order_id=push_order.id,
                     product_id=product_info['id'],

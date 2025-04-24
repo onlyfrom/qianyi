@@ -6,7 +6,7 @@ import string
 from datetime import datetime
 from flask import jsonify, request
 from wxcloudrun.views import login_required, db, app
-from wxcloudrun.model import Product, StockRecord, User, PushOrder, PushOrderProduct, UserRole
+from wxcloudrun.model import Product, StockRecord, User, PushOrder, PushOrderProduct, UserRole, DeliveryOrder, DeliveryItem, PurchaseOrder, PurchaseOrderItem
 
 @app.route('/products/import-stock', methods=['POST'])
 @login_required
@@ -466,5 +466,312 @@ def import_users_and_push(user_id):
             'code': 500,
             'message': '导入失败',
             'error': str(e)
-        }), 500 
+        }), 500
+
+@app.route('/delivery-orders/import-history', methods=['POST'])
+@login_required
+def import_history_delivery_orders(user_id):
+    """
+    导入历史发货单数据
+    Excel格式要求：
+    数量表：
+    - 日期
+    - 客户名称
+    - 商品
+    - 颜色
+    - 商品数量
+    
+    单价表：
+    - 客户名称
+    - 商品
+    - 单价
+    """
+    try:
+        print('开始处理历史发货单导入请求...')
+        if 'file' not in request.files:
+            print('错误：没有上传文件')
+            return jsonify({'error': '没有上传文件'}), 400
+            
+        file = request.files['file']
+        print(f'接收到文件: {file.filename}, 类型: {file.content_type}')
+        
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            print(f'错误：不支持的文件类型: {file.filename}')
+            return jsonify({'error': '只支持Excel文件'}), 400
+
+        # 读取Excel文件
+        try:
+            # 读取数量表，指定日期列的格式
+            df_quantity = pd.read_excel(file, sheet_name='数量', parse_dates=['日期'])
+            print(f'成功读取数量表，共 {len(df_quantity)} 行数据')
+            print('数量表表头:', list(df_quantity.columns))
+            print('日期列数据类型:', df_quantity['日期'].dtype)
+            print('日期列示例值:', df_quantity['日期'].head())
+            
+            # 读取单价表
+            df_price = pd.read_excel(file, sheet_name='单价')
+            print(f'成功读取单价表，共 {len(df_price)} 行数据')
+            print('单价表表头:', list(df_price.columns))
+            
+        except Exception as e:
+            print(f'读取Excel文件失败: {str(e)}')
+            return jsonify({'error': f'读取Excel文件失败: {str(e)}'}), 400
+        
+        # 验证必要的列是否存在
+        quantity_required_columns = ['日期', '客户名称', '商品', '颜色', '商品数量']
+        price_required_columns = ['客户名称', '商品', '单价']
+        
+        for col in quantity_required_columns:
+            if col not in df_quantity.columns:
+                return jsonify({'error': f'数量表缺少必要的列: {col}'}), 400
+                
+        for col in price_required_columns:
+            if col not in df_price.columns:
+                return jsonify({'error': f'单价表缺少必要的列: {col}'}), 400
+        
+        created_orders = 0
+        errors = []
+        # 按日期和客户名称分组处理数据
+        for (delivery_date, customer_name), group in df_quantity.groupby(['日期', '客户名称']):
+            print(f'处理发货单: 日期 {delivery_date}, 客户 {customer_name}')
+            try:
+                delivery_date = str(delivery_date).strip()
+                customer_name = str(customer_name).strip()
+                print(f'处理发货单: 日期 {delivery_date}, 客户 {customer_name}')
+                
+                # 查找用户是否已存在
+                user = User.query.filter_by(nickname=customer_name).first()
+                
+                if not user:
+                    error_msg = f'客户 {customer_name} 不存在，请先创建客户'
+                    print(f'错误: {error_msg}')
+                    errors.append(error_msg)
+                    continue
+                
+                # 将日期字符串转换为datetime对象
+                try:
+                    delivery_date_obj = datetime.strptime(delivery_date, '%Y-%m-%d %H:%M:%S')
+                    print(f'转换后的日期对象: {delivery_date_obj}')
+                except Exception as e:
+                    error_msg = f'日期格式错误: {delivery_date}'
+                    print(f'错误: {error_msg}')
+                    errors.append(error_msg)
+                    continue
+                
+                # 检查是否已存在同一天同一客户的采购单
+                existing_purchase_order = PurchaseOrder.query.filter(
+                    PurchaseOrder.user_id == user.id,
+                    PurchaseOrder.created_at >= delivery_date_obj.replace(hour=0, minute=0, second=0, microsecond=0),
+                    PurchaseOrder.created_at <= delivery_date_obj.replace(hour=23, minute=59, second=59, microsecond=999999)
+                ).first()
+                
+                if existing_purchase_order:
+                    print(f'找到已存在的采购单: {existing_purchase_order.order_number}')
+                    purchase_order = existing_purchase_order
+                else:
+                    # 创建新的采购单
+                    try:
+                        order_number = f"PO{datetime.now().strftime('%Y%m%d%H%M%S')}{random.randint(100, 999)}"
+                        purchase_order = PurchaseOrder(
+                            order_number=order_number,
+                            user_id=user.id,
+                            total_amount=0,  # 初始总金额为0
+                            status=2,  
+                            created_at=delivery_date_obj,  # 使用Excel中的日期
+                            handler_id=user_id  # 使用 handler_id 字段
+                        )
+                        db.session.add(purchase_order)
+                        db.session.flush()
+                        print(f'创建新采购单: {order_number}')
+                    except Exception as e:
+                        error_msg = f'创建采购单失败: {str(e)}'
+                        print(f'错误: {error_msg}')
+                        errors.append(error_msg)
+                        db.session.rollback()
+                        continue
+                
+                # 处理该客户的所有商品
+                purchase_items = []  # 用于计算采购单总金额
+                for _, row in group.iterrows():
+                    product_name = str(row['商品']).strip()
+                    color = str(row['颜色']).strip()
+                    quantity = int(row['商品数量']) if not pd.isna(row['商品数量']) else 0
+                    
+                    # 获取商品单价
+                    price_row = df_price[
+                        (df_price['客户名称'] == customer_name) & 
+                        (df_price['商品'] == product_name)
+                    ]
+                    print(f'客户名称: {customer_name}, 商品名称: {product_name}')
+                    price = float(price_row['单价'].iloc[0]) if not price_row.empty else 0
+                    print(f'获取商品单价: {price}')
+                    # 查找商品
+                    product = Product.query.filter_by(name=product_name).first()
+                    
+                    if not product:
+                        # 商品不存在，创建新商品
+                        try:
+                            # 生成新的商品ID，格式为 TP{number}
+                            all_products = Product.query.filter(
+                                Product.id.like('TP%')
+                            ).all()
+                            
+                            max_number = 0
+                            for p in all_products:
+                                try:
+                                    num = int(p.id[2:])  # 跳过 'TP' 前缀
+                                    if num > max_number:
+                                        max_number = num
+                                except ValueError:
+                                    continue
+                            
+                            new_number = str(max_number + 1)
+                            new_product_id = f'TP{new_number}'
+                            print(f'创建新商品ID: {new_product_id}')
+                            
+                            # 创建默认规格
+                            specs = [{
+                                'color': color,
+                                'image': '',
+                                'stock': 0
+                            }]
+                            
+                            # 创建新商品
+                            new_product = Product(
+                                id=new_product_id,
+                                name=product_name,
+                                description='',
+                                price=price,
+                                price_b=price,
+                                price_c=price,
+                                price_d=price,
+                                specs=json.dumps(specs),
+                                type=5,
+                                created_at=datetime.now(),
+                                is_public=0,
+                                status=0,
+                                size='-',
+                                weight='0',
+                                yarn='-',
+                                composition='-'
+                            )
+                            db.session.add(new_product)
+                            db.session.flush()
+                            product = new_product
+                            print(f'创建新商品 {product_name}，价格: {price}')
+                        except Exception as e:
+                            error_msg = f'创建商品 {product_name} 失败: {str(e)}'
+                            print(f'错误: {error_msg}')
+                            errors.append(error_msg)
+                            db.session.rollback()
+                            continue
+                    
+                    # 检查采购单中是否已存在相同的商品
+                    existing_purchase_item = PurchaseOrderItem.query.filter_by(
+                        order_id=purchase_order.id,
+                        product_id=product.id,
+                        color=color
+                    ).first()
+                    
+                    if existing_purchase_item:
+                        # 更新现有商品的数量
+                        existing_purchase_item.quantity += quantity
+                        print(f'更新采购单商品数量: {product_name}, 颜色: {color}, 新数量: {existing_purchase_item.quantity}')
+                    else:
+                        # 创建采购单商品
+                        try:
+                            purchase_item = PurchaseOrderItem(
+                                order_id=purchase_order.id,
+                                product_id=product.id,
+                                quantity=quantity,
+                                price=price,
+                                color=color,
+                                logo_price=0.0,  # 加标价格
+                                accessory_price=0.0,  # 辅料价格
+                                packaging_price=0.0  # 包装价格
+                            )
+                            db.session.add(purchase_item)
+                            purchase_items.append(purchase_item)
+                            print(f'创建采购单商品: {product_name}, 颜色: {color}, 数量: {quantity}, 价格: {price}')
+                        except Exception as e:
+                            error_msg = f'创建采购单商品失败: {str(e)}'
+                            print(f'错误: {error_msg}')
+                            errors.append(error_msg)
+                            db.session.rollback()
+                            continue
+                
+                # 更新采购单总金额
+                if purchase_items:
+                    total_amount = sum(item.price * item.quantity for item in purchase_items)
+                    purchase_order.total_amount = total_amount
+                    print(f'更新采购单总金额: {total_amount}')
+                
+                # 创建发货单
+                try:
+                    # 生成发货单号
+                    order_number = f"DO{datetime.now().strftime('%Y%m%d%H%M%S')}{random.randint(100, 999)}"
+                    
+                    # 创建发货单
+                    delivery_order = DeliveryOrder(
+                        order_number=order_number,
+                        customer_id=user.id,
+                        customer_name=customer_name,
+                        delivery_date=delivery_date_obj.date(),  # 只保存日期部分
+                        status=1,  # 已完成
+                        created_at=delivery_date_obj,  # 使用与采购单相同的时间
+                        created_by=user_id
+                    )
+                    db.session.add(delivery_order)
+                    db.session.flush()
+                    print(f'创建新发货单: {order_number}')
+                    
+                    # 添加发货单商品
+                    for purchase_item in purchase_items:
+                        delivery_item = DeliveryItem(
+                            delivery_id=delivery_order.id,
+                            order_number=purchase_order.order_number,  # 关联采购单号
+                            product_id=purchase_item.product_id,
+                            quantity=purchase_item.quantity,
+                            color=purchase_item.color
+                        )
+                        db.session.add(delivery_item)
+                        created_orders += 1
+                        print(f'创建发货单商品: {product_name}, 颜色: {color}, 数量: {quantity}')
+                    
+                except Exception as e:
+                    error_msg = f'创建发货单失败: {str(e)}'
+                    print(f'错误: {error_msg}')
+                    errors.append(error_msg)
+                    db.session.rollback()
+                    continue
+                
+                # 提交当前发货单的事务
+                db.session.commit()
+                print(f'成功处理发货单: {delivery_order.order_number}')
+                
+            except Exception as e:
+                error_msg = f'处理发货单时出错: {str(e)}'
+                print(f'错误: {error_msg}')
+                errors.append(error_msg)
+                db.session.rollback()
+        
+        print(f'\n导入完成: 创建/更新 {created_orders} 个发货单商品，失败 {len(errors)} 条')
+            
+        return jsonify({
+            'code': 200,
+            'message': '历史发货单导入成功',
+            'data': {
+                'created_orders': created_orders,
+                'errors': errors if errors else None
+            }
+        })
+        
+    except Exception as e:
+        print(f'导入过程发生错误: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({
+            'code': 500,
+            'message': '导入失败',
+            'error': str(e)
+        }), 500
 

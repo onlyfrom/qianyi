@@ -375,3 +375,31 @@ class Payment(db.Model):
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
             'customer': self.customer.to_dict() if self.customer else None
         } 
+
+class UserProductPrice(db.Model):
+    """用户商品价格表"""
+    __tablename__ = 'user_product_prices'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    product_id = db.Column(db.String(80), db.ForeignKey('products.id'), nullable=False)
+    custom_price = db.Column(db.Float, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+    
+    # 添加唯一约束，确保每个用户对同一商品只能有一个价格
+    __table_args__ = (db.UniqueConstraint('user_id', 'product_id'),)
+    
+    # 关联关系
+    user = db.relationship('User', backref=db.backref('product_prices', lazy=True))
+    product = db.relationship('Product', backref=db.backref('user_prices', lazy=True))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'product_id': self.product_id,
+            'custom_price': float(self.custom_price),
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S')
+        } 
