@@ -96,6 +96,10 @@ const ProductSelector = {
         userType: {
             type: Number,
             default: 0
+        },
+        userId: {
+            type: Number,
+            default: 0
         }
     },
     
@@ -162,10 +166,28 @@ const ProductSelector = {
                         page: this.pagination.currentPage,
                         page_size: this.pagination.pageSize,
                         status: 1 // 只查询上架商品
-
                     }
                 });
                 
+                // 如果有用户类型，获取该用户的所有商品自定义价格
+                let userPrices = {};
+                    try {
+                        const priceResponse = await axios.get('/user-product-prices/all', {
+                            params: {
+                                customer_id: this.userId
+                            }
+                        });
+                        console.log('priceResponse',priceResponse);
+                        if (priceResponse.status === 200 && priceResponse.data.code === 0) {
+                            userPrices = priceResponse.data.prices.reduce((acc, item) => {
+                                acc[item.productId] = item.price;
+                                return acc;
+                            }, {});
+                        }
+                    } catch (error) {
+                        console.error('获取用户自定义价格失败:', error);
+                    }
+                                
                 if (response.status === 200) {
                     // 处理商品数据，确保每个商品都有正确的颜色选项
                     this.products = response.data.products.map(product => {
@@ -174,12 +196,13 @@ const ProductSelector = {
                             ...product,
                             selectedColor: product.color || (specs[0]?.color || '默认'),
                             quantity: product.quantity || 1,
-                            price: product.price || 0,
+                            price: userPrices[product.id] || product.price || 0, // 优先使用用户自定义价格
                             specs: specs,  // 保存规格数据
                             packaging: this.globalPackaging,
                             logo: this.globalLogo,
                             packaging_price: this.globalPackaging ? 0.3 : 0,
-                            logo_price: this.globalLogo ? 0.3 : 0
+                            logo_price: this.globalLogo ? 0.3 : 0,
+                            customPrice: userPrices[product.id] // 保存自定义价格
                         };
                     });
                     this.pagination.total = response.data.total;
@@ -246,20 +269,24 @@ const ProductSelector = {
                 return;
             }
             
-            // 获取对应价格
+            // 优先使用自定义价格，如果没有则根据用户类型获取对应价格
             let price;
-            switch(this.userType) {
-                case 2:
-                    price = product.price_b;
-                    break;
-                case 3:
-                    price = product.price_c;
-                    break;
-                case 4:
-                    price = product.price_d;
-                    break;
-                default:
-                    price = product.price;
+            if (product.customPrice !== undefined && product.customPrice !== null) {
+                price = product.customPrice;
+            } else {
+                switch(this.userType) {
+                    case 2:
+                        price = product.price_b;
+                        break;
+                    case 3:
+                        price = product.price_c;
+                        break;
+                    case 4:
+                        price = product.price_d;
+                        break;
+                    default:
+                        price = product.price;
+                }
             }
             
             // 检查是否已存在相同商品（包括名称、颜色和附加服务）
@@ -287,7 +314,8 @@ const ProductSelector = {
                     packaging: product.packaging,
                     logo: product.logo,
                     packaging_price: product.packaging_price,
-                    logo_price: product.logo_price
+                    logo_price: product.logo_price,
+                    customPrice: product.customPrice // 添加自定义价格字段
                 };           
                 this.$emit('add-product', selectedProduct);
                 ElementPlus.ElMessage.success('商品已添加');

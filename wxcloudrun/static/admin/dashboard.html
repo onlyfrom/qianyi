@@ -3053,9 +3053,6 @@
         v-model:visible="viewDeliveryVisible"
         :order-data="currentDeliveryOrder"
         :is-admin="userInfo.role === 'admin'"
-        @start="handleStart"
-        @complete="handleComplete"
-        @cancel="handleCancel"
         ></delivery-order-detail>
     
     <!-- 新建发货单对话框 -->
@@ -3212,6 +3209,7 @@
         @add-product="addPlaceOrderItem"
         @close="productSelectorVisible = false"
         :user-type="placeOrderForm.userType"
+        :user-id="placeOrderForm.userId"
     >
     </product-selector>
     </div>

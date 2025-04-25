@@ -308,7 +308,8 @@ def get_customer_orders(user_id, customer_id):
         
         # 构建返回数据
         result = []
-        for order, total_quantity, total_amount in orders:
+        total_amount = 0  # 初始化总金额
+        for order, total_quantity, order_amount in orders:
             # 获取创建者信息
             creator = User.query.get(order.created_by)
             
@@ -322,7 +323,8 @@ def get_customer_orders(user_id, customer_id):
             }
             
             # 计算订单总金额（包含附加费用）
-            order_total = float(total_amount or 0) + float(order.additional_fee or 0)
+            order_total = float(order_amount or 0) + float(order.additional_fee or 0)
+            total_amount += order_total  # 累加每个订单的总金额
             
             result.append({
                 'id': order.id,
@@ -1643,5 +1645,51 @@ def submit_user_product_price(user_id):
         return jsonify({
             'code': -1,
             'message': f'提交用户商品价格失败: {str(e)}'
+        })
+
+@billing_bp.route('/user-product-prices/all', methods=['GET'])
+@login_required
+def get_all_user_product_prices(user_id):
+    """获取指定客户的所有商品价格"""
+    try:
+        # 获取查询参数
+        customer_id = request.args.get('customer_id')
+        
+        if not customer_id:
+            return jsonify({
+                'code': -1,
+                'message': '缺少必要参数：customer_id'
+            })
+            
+        # 构建查询
+        prices = db.session.query(
+            UserProductPrice,
+            Product.name.label('product_name'),
+            Product.id.label('product_id')
+        ).join(
+            Product, UserProductPrice.product_id == Product.id
+        ).filter(
+            UserProductPrice.user_id == customer_id
+        ).all()
+        
+        # 构建返回数据
+        result = []
+        for price, product_name, product_id in prices:
+            result.append({
+                'productName': product_name,
+                'productId': product_id,
+                'price': float(price.custom_price) if price.custom_price else 0
+            })
+            
+        return jsonify({
+            'code': 0,
+            'prices': result
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 获取客户商品价格失败: {str(e)}")
+        return jsonify({
+            'code': -1,
+            'message': f'获取客户商品价格失败: {str(e)}'
         })
 
