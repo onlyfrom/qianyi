@@ -41,6 +41,7 @@ def get_billing_list(user_id):
             User.nickname.label('customer_name'),
             db.func.sum(DeliveryItem.quantity).label('total_quantity'),  # 使用发货单数量
             db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_amount'),  # 使用发货单数量计算金额
+            db.func.sum(DeliveryOrder.additional_fee).label('total_additional_fee'),  # 添加附加费用汇总
             db.func.sum(PurchaseOrder.paid_amount).label('paid_amount')
         ).join(
             PurchaseOrder, User.id == PurchaseOrder.user_id
@@ -121,14 +122,26 @@ def get_billing_list(user_id):
         # 构建返回数据
         items = []
         for result in results:
-            customer_id, customer_name, total_quantity, total_amount, paid_amount = result
+            customer_id, customer_name, total_quantity, total_amount, total_additional_fee, paid_amount = result
+            # 重新查询该客户的所有发货单附加费用总和
+            additional_fee_query = db.session.query(
+                db.func.sum(DeliveryOrder.additional_fee)
+            ).filter(
+                DeliveryOrder.customer_id == customer_id,
+                DeliveryOrder.status.in_([1, 2])  # 只统计已发货和已完成的订单
+            ).scalar()
+
+            total_additional_fee = float(additional_fee_query or 0)
+            actual_total = float(total_amount or 0) + total_additional_fee
+
             items.append({
                 'id': customer_id,  # 使用客户ID作为标识
                 'customer_name': customer_name,
                 'total_quantity': total_quantity or 0,
-                'total_amount': float(total_amount or 0),
+                'total_amount': actual_total,  # 包含附加费用的总金额
+                'additional_fee': total_additional_fee,  # 添加附加费用字段
                 'paid_amount': float(paid_amount or 0),
-                'unpaid_amount': float((total_amount or 0) - (paid_amount or 0))
+                'unpaid_amount': float(actual_total - (paid_amount or 0))  # 使用包含附加费用的总金额计算未付金额
             })
 
         print(f"[DEBUG] 成功获取账单列表: 总数={total}, 当前页数量={len(items)}")
@@ -157,7 +170,13 @@ def get_billing_statistics(user_id):
                     (DeliveryOrder.status.in_([1, 2]), PurchaseOrderItem.price * DeliveryItem.quantity),
                     else_=0
                 )
-            ).label('total_amount')
+            ).label('total_amount'),
+            db.func.sum(
+                db.case(
+                    (DeliveryOrder.status.in_([1, 2]), DeliveryOrder.additional_fee),
+                    else_=0
+                )
+            ).label('total_additional_fee')
         ).join(
             DeliveryOrder, DeliveryItem.delivery_id == DeliveryOrder.id
         ).join(
@@ -200,14 +219,17 @@ def get_billing_statistics(user_id):
         
         # 计算统计数据
         total_amount = float(order_result.total_amount or 0)
+        total_additional_fee = float(order_result.total_additional_fee or 0)
+        actual_total = total_amount + total_additional_fee
         paid_amount = float(payment_result)
-        unpaid_amount = total_amount - paid_amount
+        unpaid_amount = actual_total - paid_amount
         
         return jsonify({
-            'totalAmount': total_amount,
+            'totalAmount': actual_total,
             'paidAmount': paid_amount,
             'unpaidAmount': unpaid_amount,
-            'totalCount': order_result.total_count or 0
+            'totalCount': order_result.total_count or 0,
+            'totalAdditionalFee': total_additional_fee
         })
     except Exception as e:
         print(f"[ERROR] 获取账单统计数据失败: {str(e)}")
@@ -223,6 +245,7 @@ def get_customer_orders(user_id, customer_id):
         # 获取查询参数
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
+        keyword = request.args.get('keyword')
         
         # 获取客户的已收款总额
         total_paid = db.session.query(
@@ -230,7 +253,6 @@ def get_customer_orders(user_id, customer_id):
         ).filter(
             Payment.customer_id == customer_id
         ).scalar() or 0
-        print(f"[DEBUG] 获取客户的已收款总额: {total_paid}")
         
         # 构建基础查询
         query = db.session.query(
@@ -248,6 +270,8 @@ def get_customer_orders(user_id, customer_id):
                 PurchaseOrderItem.product_id == DeliveryItem.product_id,
                 PurchaseOrderItem.color == DeliveryItem.color
             )
+        ).join(
+            Product, Product.id == PurchaseOrderItem.product_id
         ).filter(
             DeliveryOrder.customer_id == customer_id
         )
@@ -258,18 +282,29 @@ def get_customer_orders(user_id, customer_id):
         if end_date:
             query = query.filter(db.func.date(DeliveryOrder.created_at) <= end_date)
             
+        # 添加关键词搜索
+        if keyword:
+            query = query.filter(
+                db.or_(
+                    DeliveryOrder.order_number.ilike(f'%{keyword}%'),
+                    Product.name.ilike(f'%{keyword}%'),
+                    DeliveryOrder.remark.ilike(f'%{keyword}%')
+                )
+            )
+            
         # 分组并按创建时间降序排序
         query = query.group_by(DeliveryOrder.id, DeliveryOrder.created_at).order_by(DeliveryOrder.created_at.desc())
         
         # 执行查询
         orders = query.all()
         
-        # 计算总发货金额
+        # 计算总发货金额（包含附加费用）
         total_delivery_amount = sum(float(order[2] or 0) for order in orders)
+        total_additional_fee = sum(float(order[0].additional_fee or 0) for order in orders)
+        total_amount = total_delivery_amount + total_additional_fee
 
         # 计算商品总数
         total_all_quantity = sum(float(order[1] or 0) for order in orders)
-        print(f"[DEBUG] 商品总数: {total_all_quantity}")
         
         # 构建返回数据
         result = []
@@ -286,15 +321,16 @@ def get_customer_orders(user_id, customer_id):
                 4: '异常'
             }
             
-            # 计算未付金额
-            total_amount = float(total_amount or 0)
+            # 计算订单总金额（包含附加费用）
+            order_total = float(total_amount or 0) + float(order.additional_fee or 0)
             
             result.append({
                 'id': order.id,
                 'order_number': order.order_number,
                 'created_at': order.created_at.strftime('%Y-%m-%d'),
                 'total_quantity': total_quantity or 0,
-                'total_amount': total_amount,
+                'total_amount': order_total,
+                'additional_fee': float(order.additional_fee or 0),
                 'status': order.status,
                 'status_text': status_text_map.get(order.status, '未知状态'),
                 'logistics_company': order.logistics_company,
@@ -311,7 +347,8 @@ def get_customer_orders(user_id, customer_id):
             'code': 0,
             'data': result,
             'total_paid': total_paid,
-            'total_amount': total_delivery_amount,
+            'total_amount': total_amount,
+            'total_additional_fee': total_additional_fee,
             'total_quantity': total_all_quantity
         })
         
@@ -385,6 +422,7 @@ def export_billing(user_id):
             User.nickname.label('customer_name'),
             db.func.sum(DeliveryItem.quantity).label('total_quantity'),  # 使用发货单数量
             db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_amount'),  # 使用发货单数量计算金额
+            db.func.sum(DeliveryOrder.additional_fee).label('total_additional_fee'),  # 添加附加费用汇总
             db.func.sum(PurchaseOrder.paid_amount).label('paid_amount')
         ).join(
             PurchaseOrder, User.id == PurchaseOrder.user_id
@@ -433,14 +471,27 @@ def export_billing(user_id):
         # 构建Excel数据
         data = []
         for result in results:
-            customer_id, customer_name, total_quantity, total_amount, paid_amount = result
+            customer_id, customer_name, total_quantity, total_amount, total_additional_fee, paid_amount = result
+            # 重新查询该客户的所有发货单附加费用总和
+            additional_fee_query = db.session.query(
+                db.func.sum(DeliveryOrder.additional_fee)
+            ).filter(
+                DeliveryOrder.customer_id == customer_id,
+                DeliveryOrder.status.in_([1, 2])
+            ).scalar()
+
+            total_additional_fee = float(additional_fee_query or 0)
+            actual_total = float(total_amount or 0) + total_additional_fee
+
             data.append({
                 '客户ID': customer_id,
                 '客户名称': customer_name,
                 '商品总数': total_quantity or 0,
-                '货款总额': float(total_amount or 0),
+                '商品总额': float(total_amount or 0),
+                '附加费用': total_additional_fee,
+                '应付总额': actual_total,
                 '已付金额': float(paid_amount or 0),
-                '未付金额': float((total_amount or 0) - (paid_amount or 0))
+                '未付金额': float(actual_total - (paid_amount or 0))
             })
 
         df = pd.DataFrame(data)
@@ -1368,4 +1419,229 @@ def update_purchase_order_prices(user_id):
         print(f"[ERROR] 更新采购单价格失败: {str(e)}")
         db.session.rollback()
         return jsonify({'error': f'更新失败：{str(e)}'}), 500
+
+@billing_bp.route('/orders/delete_all', methods=['POST'])
+@login_required
+def delete_all_orders(user_id):
+    """删除指定客户的所有订单（采购单和发货单）"""
+    try:
+        print("[DEBUG] 开始删除客户所有订单")
+        data = request.get_json()
+        customer_name = data.get('customer_name')
+        
+        if not customer_name:
+            print("[ERROR] 缺少客户名称参数")
+            return jsonify({'error': '缺少客户名称参数'}), 400
+            
+        # 查询客户信息
+        customer = User.query.filter_by(nickname=customer_name).first()
+        if not customer:
+            print(f"[ERROR] 未找到客户: {customer_name}")
+            return jsonify({'error': f'未找到客户: {customer_name}'}), 404
+            
+        # 开始事务
+        db.session.begin()
+        
+        # 1. 删除发货单相关数据
+        # 先查询所有发货单ID
+        delivery_orders = DeliveryOrder.query.filter_by(customer_id=customer.id).all()
+        delivery_ids = [order.id for order in delivery_orders]
+        
+        if delivery_ids:
+            # 删除发货单商品
+            DeliveryItem.query.filter(DeliveryItem.delivery_id.in_(delivery_ids)).delete()
+            print(f"[DEBUG] 已删除发货单商品记录: {len(delivery_ids)}个发货单")
+            
+            # 删除发货单
+            DeliveryOrder.query.filter(DeliveryOrder.id.in_(delivery_ids)).delete()
+            print(f"[DEBUG] 已删除发货单记录: {len(delivery_ids)}个")
+        
+        # 2. 删除采购单相关数据
+        # 先查询所有采购单ID
+        purchase_orders = PurchaseOrder.query.filter_by(user_id=customer.id).all()
+        purchase_ids = [order.id for order in purchase_orders]
+        
+        if purchase_ids:
+            # 删除采购单商品
+            PurchaseOrderItem.query.filter(PurchaseOrderItem.order_id.in_(purchase_ids)).delete()
+            print(f"[DEBUG] 已删除采购单商品记录: {len(purchase_ids)}个采购单")
+            
+            # 删除采购单
+            PurchaseOrder.query.filter(PurchaseOrder.id.in_(purchase_ids)).delete()
+            print(f"[DEBUG] 已删除采购单记录: {len(purchase_ids)}个")
+        
+        # 3. 删除收款记录
+        Payment.query.filter_by(customer_id=customer.id).delete()
+        print(f"[DEBUG] 已删除收款记录")
+        
+        # 提交事务
+        db.session.commit()
+        
+        return jsonify({
+            'message': '删除成功',
+            'deleted_delivery_orders': len(delivery_ids),
+            'deleted_purchase_orders': len(purchase_ids)
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 删除订单失败: {str(e)}")
+        print(f"错误追踪:\n{traceback.format_exc()}")
+        db.session.rollback()
+        return jsonify({'error': f'删除订单失败: {str(e)}'}), 500
+
+@billing_bp.route('/user-product-prices', methods=['GET'])
+@login_required
+def get_user_product_prices(user_id):
+    """获取用户商品价格列表"""
+    try:
+        # 获取查询参数
+        customer_id = request.args.get('customer_id')
+        product_id = request.args.get('product_id')
+        keyword = request.args.get('keyword')
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 20))
+
+        # 构建基础查询
+        query = db.session.query(
+            UserProductPrice,
+            User.nickname.label('customer_name'),
+            Product.name.label('product_name')
+        ).join(
+            User, UserProductPrice.user_id == User.id
+        ).join(
+            Product, UserProductPrice.product_id == Product.id
+        )
+
+        # 添加筛选条件
+        if customer_id:
+            query = query.filter(UserProductPrice.user_id == customer_id)
+        if product_id:
+            query = query.filter(UserProductPrice.product_id == product_id)
+        if keyword:
+            query = query.filter(
+                db.or_(
+                    User.nickname.ilike(f'%{keyword}%'),
+                    Product.name.ilike(f'%{keyword}%')
+                )
+            )
+
+        # 获取总数
+        total = query.count()
+
+        # 分页
+        query = query.offset((page - 1) * page_size).limit(page_size)
+
+        # 执行查询
+        results = query.all()
+
+        # 构建返回数据
+        items = []
+        for price, customer_name, product_name in results:
+            items.append({
+                'id': price.id,
+                'customer_id': price.user_id,
+                'customer_name': customer_name,
+                'product_id': price.product_id,
+                'product_name': product_name,
+                'price': float(price.custom_price) if price.custom_price else None,
+                'created_at': price.created_at.strftime('%Y-%m-%d %H:%M:%S') if price.created_at else None,
+                'updated_at': price.updated_at.strftime('%Y-%m-%d %H:%M:%S') if price.updated_at else None
+            })
+
+        return jsonify({
+            'code': 0,
+            'data': {
+                'items': items,
+                'total': total,
+                'page': page,
+                'page_size': page_size
+            }
+        })
+
+    except Exception as e:
+        print(f"[ERROR] 获取用户商品价格列表失败: {str(e)}")
+        return jsonify({
+            'code': -1,
+            'message': f'获取用户商品价格列表失败: {str(e)}'
+        })
+
+@billing_bp.route('/user-product-prices', methods=['POST'])
+@login_required
+def submit_user_product_price(user_id):
+    """提交用户商品价格"""
+    try:
+        data = request.get_json()
+        
+        # 验证必要参数
+        required_fields = ['user_id', 'product_id', 'price']
+        if not all(field in data for field in required_fields):
+            return jsonify({
+                'code': -1,
+                'message': '缺少必要参数：user_id, product_id, price'
+            })
+            
+        # 验证价格是否为有效数字
+        try:
+            price = float(data['price'])
+            if price < 0:
+                raise ValueError('价格不能为负数')
+        except ValueError as e:
+            return jsonify({
+                'code': -1,
+                'message': f'价格格式错误：{str(e)}'
+            })
+            
+        # 检查用户和商品是否存在
+        user = User.query.get(data['user_id'])
+        if not user:
+            return jsonify({
+                'code': -1,
+                'message': '用户不存在'
+            })
+            
+        product = Product.query.get(data['product_id'])
+        if not product:
+            return jsonify({
+                'code': -1,
+                'message': '商品不存在'
+            })
+            
+        # 检查是否已存在价格记录
+        existing_price = UserProductPrice.query.filter_by(
+            user_id=data['user_id'],
+            product_id=data['product_id']
+        ).first()
+        
+        if existing_price:
+            # 更新现有价格
+            existing_price.custom_price = price
+            existing_price.updated_at = datetime.now()
+            message = '价格更新成功'
+        else:
+            # 创建新价格记录
+            new_price = UserProductPrice(
+                user_id=data['user_id'],
+                product_id=data['product_id'],
+                custom_price=price,
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            db.session.add(new_price)
+            message = '价格创建成功'
+            
+        # 提交事务
+        db.session.commit()
+        
+        return jsonify({
+            'code': 0,
+            'message': message
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 提交用户商品价格失败: {str(e)}")
+        db.session.rollback()
+        return jsonify({
+            'code': -1,
+            'message': f'提交用户商品价格失败: {str(e)}'
+        })
 

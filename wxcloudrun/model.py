@@ -251,6 +251,7 @@ class DeliveryOrder(db.Model):
     delivery_image = db.Column(db.Text)  # 打包图
     logistics_company = db.Column(db.String(50))  # 物流公司
     tracking_number = db.Column(db.String(50))  # 物流单号
+    additional_fee = db.Column(db.Float, default=0.0)  # 附加费用
 
 # 发货订单商品模型
 class DeliveryItem(db.Model):

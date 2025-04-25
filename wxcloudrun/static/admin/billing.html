@@ -455,6 +455,42 @@
 
                     <div style="margin-top: 20px;">
                         <h4>发货单列表</h4>
+                        <!-- 添加搜索和筛选区域 -->
+                        <div class="filter-container" style="margin-bottom: 20px;">
+                            <el-form :inline="true" :model="deliveryFilterForm" class="filter-form">
+                                <el-form-item label="时间范围">
+                                    <el-date-picker
+                                        v-model="deliveryFilterForm.dateRange"
+                                        type="daterange"
+                                        range-separator="至"
+                                        start-placeholder="开始日期"
+                                        end-placeholder="结束日期"
+                                        :shortcuts="dateShortcuts"
+                                        value-format="YYYY-MM-DD"
+                                        @change="handleDeliveryDateChange"
+                                    />
+                                </el-form-item>
+                                <el-form-item label="搜索">
+                                    <el-input
+                                        v-model="deliveryFilterForm.keyword"
+                                        placeholder="请输入商品名称或发货单号"
+                                        clearable
+                                        @clear="handleDeliverySearch"
+                                        @keyup.enter="handleDeliverySearch"
+                                    >
+                                        <template #append>
+                                            <el-button @click="handleDeliverySearch">
+                                                <el-icon><Search /></el-icon>
+                                            </el-button>
+                                        </template>
+                                    </el-input>
+                                </el-form-item>
+                                <el-form-item>
+                                    <el-button type="primary" @click="handleDeliverySearch">查询</el-button>
+                                    <el-button @click="resetDeliveryFilter">重置</el-button>
+                                </el-form-item>
+                            </el-form>
+                        </div>
                         <el-table :data="currentBilling.orders" border style="margin-top: 10px;">
                             <el-table-column prop="order_number" label="发货单号" width="180"></el-table-column>
                             <el-table-column prop="created_at" label="创建时间" width="180">
@@ -755,9 +791,29 @@
                 destroy-on-close
             >
                 <div v-if="currentDeliveryDetail" class="delivery-detail">
-                    <el-descriptions :column="2" border>
-                        <el-descriptions-item label="物流单号">
-                            {{ currentDeliveryDetail.tracking_number }}
+                    <div style="margin-bottom: 20px; text-align: right;">
+                        <el-switch
+                            v-model="isEditMode"
+                            active-text="编辑模式"
+                            inactive-text="查看模式"
+                            style="margin-right: 20px;"
+                        />
+                    </div>
+                    <el-descriptions 
+                        :column="2" 
+                        border 
+                        :label-width="80"
+                        class="delivery-descriptions"
+                    >
+                        <el-descriptions-item label="发货物流">
+                            <template v-if="isEditMode">
+                                <el-input v-model="currentDeliveryDetail.tracking_number" placeholder="请输入物流单号" />
+                            </template>
+                            <template v-else>
+                                <div style="color: #e6a23c; font-weight: bold;width: 200px;">   
+                                    {{ currentDeliveryDetail.tracking_number || '无'}}
+                                </div>
+                            </template>
                         </el-descriptions-item>
                         <el-descriptions-item label="创建时间">
                             {{ formatDate(currentDeliveryDetail.createdAt) }}
@@ -770,11 +826,36 @@
                                 ¥{{formatMoney(currentDeliveryDetail.customer_unpaid_amount || 0) }}
                             </span>
                         </el-descriptions-item>
-                        <el-descriptions-item label="发包数" >{{ packageCount }}包
-                        </el-descriptions-item>
-                        <el-descriptions-item label="发货物流：" >{{ currentDeliveryDetail.logistics_company || '无' }}
+                        <el-descriptions-item label="附加费用" :span="2">
+                            <template v-if="isEditMode">
+                                <el-input-number 
+                                    v-model="currentDeliveryDetail.additional_fee" 
+                                    :min="0" 
+                                    :precision="2"
+                                    :step="10"
+                                    style="width: 200px;"
+                                    placeholder="请输入附加费用"
+                                />
+                            </template>
+                            <template v-else>
+                                <span style="color: #e6a23c; font-weight: bold;">
+                                    ¥{{ formatMoney(currentDeliveryDetail.additional_fee || 0) }}
+                                </span>
+                            </template>
                         </el-descriptions-item>
                     </el-descriptions>
+
+                    <style>
+                        .delivery-descriptions :deep(.el-descriptions__label) {
+                            width: 120px;
+                            min-width: 120px;
+                            background-color: #fafafa;
+                        }
+                        
+                        .delivery-descriptions :deep(.el-descriptions__content) {
+                            padding-right: 20px;
+                        }
+                    </style>
 
                     <div v-for="(items, packageId) in groupedDeliveryItems" :key="packageId" style="margin-bottom: 20px;">
                         <el-divider>第{{ packageId }}包商品明细</el-divider>
@@ -809,7 +890,11 @@
                                 </template>
                             </el-table-column>
                             <el-table-column prop="color" label="颜色" width="80"></el-table-column>
-                            <el-table-column prop="quantity" label="数量" width="80"></el-table-column>
+                            <el-table-column prop="quantity" label="数量" width="80">
+                                <template #default="scope">
+                                    {{ scope.row.quantity }}
+                                </template>
+                            </el-table-column>
                             <el-table-column label="单价" width="120">
                                 <template #default="scope">
                                     ¥{{ formatMoney(scope.row.price + scope.row.logo_price + scope.row.packaging_price + scope.row.accessory_price) }}
@@ -826,26 +911,28 @@
                     <div class="total-amount" style="margin-top: 20px; text-align: right;">
                         <div style="font-weight: bold;font-size: 18px;">总包数：{{ packageCount }}包</div>
                         <div style="font-weight: bold;font-size: 18px;">商品总数：{{ currentDeliveryDetail.total_quantity || 0 }}件</div>
-                        <div style="font-weight: bold;font-size: 18px;">货款总额：¥{{ formatMoney(currentDeliveryDetail.total_amount || 0) }}</div>
-                    </div>
-
-                    <div v-if="currentDeliveryDetail.remark" style="margin-top: 20px;">
-                        <el-divider>备注</el-divider>
-                        <el-card shadow="never" style="background-color: #f5f7fa;">
-                            {{ currentDeliveryDetail.remark }}
-                        </el-card>
-                    </div>
-
-                    <div v-if="currentDeliveryDetail.deliveryImage && currentDeliveryDetail.deliveryImage.length > 0" style="margin-top: 20px;">
-                        <el-divider>发货单预览</el-divider>
-                        <div style="display: flex; justify-content: center;">
-                            <el-image
-                                style="max-width: 100%; height: auto;"
-                                :src="currentDeliveryDetail.deliveryImage[0]"
-                                :preview-src-list="currentDeliveryDetail.deliveryImage"
-                                fit="contain"
-                            />
+                        <div style="font-weight: bold;font-size: 18px;">商品总额：¥{{ formatMoney(currentDeliveryDetail.total_amount || 0) - formatMoney(currentDeliveryDetail.additional_fee || 0) }}</div>
+                        <div v-if="currentDeliveryDetail.additional_fee > 0" style="font-weight: bold;font-size: 18px;color: #e6a23c;">附加费用：¥{{ formatMoney(currentDeliveryDetail.additional_fee || 0) }}</div>
+                        <div style="font-weight: bold;font-size: 20px;color: #409EFF;margin-top: 10px;">
+                            应付总额：¥{{ formatMoney(currentDeliveryDetail.total_amount || 0) }}
                         </div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <el-divider>备注</el-divider>
+                        <template v-if="isEditMode">
+                            <el-input
+                                v-model="currentDeliveryDetail.remark"
+                                type="textarea"
+                                :rows="3"
+                                placeholder="请输入备注信息"
+                            />
+                        </template>
+                        <template v-else>
+                            <div style="color: #e6a23c; font-weight: bold;">
+                                {{ currentDeliveryDetail.remark || '无' }}
+                            </div>
+                        </template>
                     </div>
 
                     <div style="margin-top: 20px; text-align: right;">
@@ -854,6 +941,14 @@
                             @click="generateDeliveryImage(currentDeliveryDetail)"
                         >
                             <el-icon><Picture /></el-icon>生成发货单
+                        </el-button>
+                        <el-button 
+                            type="success" 
+                            v-if="isEditMode"
+                            @click="saveDeliveryChanges"
+                            :loading="savingDelivery"
+                        >
+                            <el-icon><Check /></el-icon>保存修改
                         </el-button>
                     </div>
                 </div>
@@ -959,6 +1054,71 @@
                 const deliveryDetailDialogVisible = ref(false);
                 const currentDeliveryDetail = ref(null);
                 const deliveryItems = ref([]);
+
+                // 添加发货单筛选相关数据
+                const deliveryFilterForm = reactive({
+                    dateRange: [],
+                    keyword: ''
+                });
+
+                // 处理发货单日期变化
+                const handleDeliveryDateChange = () => {
+                    // 日期变化时自动触发搜索
+                    handleDeliverySearch();
+                };
+
+                // 处理发货单搜索
+                const handleDeliverySearch = async () => {
+                    console.log("处理发货单搜索",currentBilling.value);
+                    if (!currentBilling.value || !currentBilling.value.id) {
+                        ElementPlus.ElMessage.warning('无法获取当前账单信息');
+                        return;
+                    }
+
+                    try {
+                        loadingDeliveries.value = true;
+                        const response = await axios.get(`/billing/${currentBilling.value.id}/orders`, {
+                            params: {
+                                start_date: deliveryFilterForm.dateRange?.[0] || '',
+                                end_date: deliveryFilterForm.dateRange?.[1] || '',
+                                keyword: deliveryFilterForm.keyword || ''
+                            }
+                        });
+                        
+                        if (response.data.code === 0) {
+                            if (!currentBilling.value) {
+                                return;
+                            }
+                            
+                            const orders = response.data.data || [];
+                            currentBilling.value = {
+                                ...currentBilling.value,
+                                orders: orders.map(order => ({
+                                    ...order,
+                                    total_amount: Number(order.total_amount) || 0
+                                })),
+                                total_paid: response.data.total_paid || 0,
+                                total_amount: response.data.total_amount || 0,
+                                total_quantity: response.data.total_quantity || 0
+                            };
+                            currentBilling.value.unpaid_amount = currentBilling.value.total_amount - currentBilling.value.total_paid;
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.message || '获取发货单列表失败');
+                        }
+                    } catch (error) {
+                        console.error('获取发货单列表失败:', error);
+                        ElementPlus.ElMessage.error('获取发货单列表失败');
+                    } finally {
+                        loadingDeliveries.value = false;
+                    }
+                };
+
+                // 重置发货单筛选条件
+                const resetDeliveryFilter = () => {
+                    deliveryFilterForm.dateRange = [];
+                    deliveryFilterForm.keyword = '';
+                    handleDeliverySearch();
+                };
 
                 // 日期快捷选项
                 const dateShortcuts = [
@@ -1087,7 +1247,17 @@
                 };
 
                 const handleRowClick = async (row) => {
-                    currentBilling.value = row;
+                    // 初始化 currentBilling 的完整结构
+                    currentBilling.value = {
+                        id: row.id,
+                        customer_name: row.customer_name,
+                        total_quantity: row.total_quantity || 0,
+                        total_amount: row.total_amount || 0,
+                        total_paid: row.paid_amount || 0,
+                        unpaid_amount: row.unpaid_amount || 0,
+                        orders: []  // 初始化为空数组
+                    };
+                    
                     detailDialogVisible.value = true;
                     await loadCustomerOrders(row.id);
                 };
@@ -1096,20 +1266,27 @@
                     try {
                         const response = await axios.get(`/billing/${customerId}/orders`, {
                             params: {
-                                start_date: filterForm.dateRange[0],
-                                end_date: filterForm.dateRange[1]
+                                start_date: deliveryFilterForm.dateRange?.[0] || '',
+                                end_date: deliveryFilterForm.dateRange?.[1] || '',
+                                keyword: deliveryFilterForm.keyword || ''
                             }
                         });
-                        console.log(response.data);
+                        
                         if (response.data.code === 0) {
-                            currentBilling.value.orders = response.data.data.map(order => ({
-                                ...order,
-                                total_amount: Number(order.total_amount) || 0
-                            }));
-                            currentBilling.value.total_paid = response.data.total_paid;
-                            currentBilling.value.total_amount = response.data.total_amount;
-                            currentBilling.value.total_quantity = response.data.total_quantity;
-                            currentBilling.value.unpaid_amount = currentBilling.value.total_amount - currentBilling.value.total_paid;
+                            if (!currentBilling.value) return;
+                            
+                            const orders = response.data.data || [];
+                            currentBilling.value = {
+                                ...currentBilling.value,
+                                orders: orders.map(order => ({
+                                    ...order,
+                                    total_amount: Number(order.total_amount) || 0
+                                })),
+                                total_paid: response.data.total_paid || 0,
+                                total_amount: response.data.total_amount || 0,
+                                total_quantity: response.data.total_quantity || 0,
+                                unpaid_amount: (response.data.total_amount || 0) - (response.data.total_paid || 0)
+                            };
                         } else {
                             ElementPlus.ElMessage.error(response.data.message || '获取客户订单列表失败');
                         }
@@ -1342,21 +1519,27 @@
                             sums[index] = values.reduce((prev, curr) => {
                                 return prev + curr;
                             }, 0);
-                        } else if (index === 2) {
-                            // 未结清金额合计
-                            const values = data.map(item => Number(item.unpaid_amount) || 0);
+                        } else if (column.property === 'total_amount') {
+                            // 货款总额合计（不含附加费用）
+                            const values = data.map(item => Number(item.total_amount - item.additional_fee) || 0);
                             sums[index] = '¥' + formatMoney(values.reduce((prev, curr) => {
                                 return prev + curr;
                             }, 0));
-                        } else if (index === 3) {
+                        } else if (column.property === 'additional_fee') {
+                            // 附加费用合计
+                            const values = data.map(item => Number(item.additional_fee) || 0);
+                            sums[index] = '¥' + formatMoney(values.reduce((prev, curr) => {
+                                return prev + curr;
+                            }, 0));
+                        } else if (column.property === 'paid_amount') {
                             // 已结清金额合计
                             const values = data.map(item => Number(item.paid_amount) || 0);
                             sums[index] = '¥' + formatMoney(values.reduce((prev, curr) => {
                                 return prev + curr;
                             }, 0));
-                        } else if (index === 4) {
-                            // 货款总额合计
-                            const values = data.map(item => Number(item.total_amount) || 0);
+                        } else if (column.property === 'unpaid_amount') {
+                            // 未结清金额合计
+                            const values = data.map(item => Number(item.unpaid_amount) || 0);
                             sums[index] = '¥' + formatMoney(values.reduce((prev, curr) => {
                                 return prev + curr;
                             }, 0));
@@ -1697,6 +1880,41 @@
                     }
                 };
 
+                // 在 setup 函数中添加相关变量和方法
+                const isEditMode = ref(false);
+                const savingDelivery = ref(false);
+
+                // 修改保存发货单的方法
+                const saveDeliveryChanges = async () => {
+                    if (!currentDeliveryDetail.value) return;
+                    
+                    try {
+                        savingDelivery.value = true;
+                        const response = await axios.put(`/delivery_orders/${currentDeliveryDetail.value.id}`, {
+                            tracking_number: currentDeliveryDetail.value.tracking_number,
+                            logistics_company: currentDeliveryDetail.value.logistics_company,
+                            remark: currentDeliveryDetail.value.remark,
+                            additional_fee: currentDeliveryDetail.value.additional_fee || 0
+                        });
+                        
+                        if (response.data.code === 200) {
+                            ElementPlus.ElMessage.success(response.data.message || '保存成功');
+                            isEditMode.value = false;
+                            // 重新加载发货单详情
+                            await viewDeliveryDetail({
+                                id: currentDeliveryDetail.value.id
+                            });
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.error || '保存失败');
+                        }
+                    } catch (error) {
+                        console.error('保存发货单修改失败:', error);
+                        ElementPlus.ElMessage.error(error.response?.data?.error || '保存失败');
+                    } finally {
+                        savingDelivery.value = false;
+                    }
+                };
+
                 return {
                     statistics,
                     filterForm,
@@ -1722,6 +1940,10 @@
                     deliveryDetailDialogVisible,
                     currentDeliveryDetail,
                     deliveryItems,
+                    deliveryFilterForm,
+                    handleDeliverySearch,
+                    handleDeliveryDateChange,
+                    resetDeliveryFilter,
                     loadBillingList,
                     handleSearch,
                     resetFilter,
@@ -1772,6 +1994,9 @@
                     updatingPrices,
                     showUpdatePriceDialog,
                     updatePurchaseOrderPrices,
+                    isEditMode,
+                    savingDelivery,
+                    saveDeliveryChanges
                 };
             }
         });

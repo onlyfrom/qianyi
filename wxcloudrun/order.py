@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from wxcloudrun.model import db, PurchaseOrder, PurchaseOrderItem, DeliveryOrder, DeliveryItem, User
 from wxcloudrun.views import login_required
 import traceback
+from datetime import datetime
 
 order_bp = Blueprint('order', __name__)
 
@@ -214,3 +215,93 @@ def delete_delivery_order_old(current_user_id, order_id):
         print(f'处理删除配送单请求失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '删除配送单失败'}), 500
+
+@order_bp.route('/delivery_orders/<int:order_id>', methods=['PUT'])
+@login_required
+def update_delivery_order(user_id, order_id):
+    """
+    更新发货单基本信息
+    参数:
+        order_id: 发货单ID
+        data: {
+            logistics_company: 物流公司,
+            tracking_number: 物流单号,
+            remark: 备注,
+            additional_fee: 附加费用
+        }
+    返回:
+        成功: {"code": 200, "message": "更新成功", "order_id": order_id}
+        失败: {"error": "错误信息"}
+    """
+    try:
+        print('='*50)
+        print(f'开始更新发货单 ID: {order_id}')
+        print('='*50)
+        
+        # 获取请求数据
+        data = request.json
+        if not data:
+            print('无效的请求数据')
+            return jsonify({'error': '无效的请求数据'}), 400
+            
+        print(f'请求数据: {data}')
+        
+        # 查找发货单
+        order = DeliveryOrder.query.get(order_id)
+        if not order:
+            print(f'发货单不存在: ID {order_id}')
+            return jsonify({'error': '发货单不存在'}), 404
+            
+        print(f'找到发货单: {order.order_number}')
+        
+        # 检查权限
+        user = User.query.get(user_id)
+        if not user:
+            print(f'用户不存在: ID {user_id}')
+            return jsonify({'error': '用户不存在'}), 404
+            
+        if user.user_type != 1 and order.created_by != user_id:
+            print(f'权限检查失败: 用户 {user_id} 没有权限')
+            return jsonify({'error': '无权限修改此发货单'}), 403
+            
+        # 开始事务
+        db.session.begin_nested()
+        
+        try:
+            # 更新基本信息
+            if 'logistics_company' in data:
+                order.logistics_company = data['logistics_company']
+            if 'tracking_number' in data:
+                order.tracking_number = data['tracking_number']
+            if 'additional_fee' in data:
+                order.additional_fee = data['additional_fee']
+            if 'remark' in data:
+                order.remark = data['remark']
+                
+            # 更新修改时间
+            order.updated_at = datetime.now()
+            
+            # 提交事务
+            print('提交事务')
+            db.session.commit()
+            print('事务提交成功')
+            
+            print('发货单更新完成')
+            return jsonify({
+                'code': 200,
+                'message': '发货单更新成功',
+                'order_id': order.id
+            })
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f'更新发货单失败: {str(e)}')
+            print(f'错误追踪:\n{traceback.format_exc()}')
+            return jsonify({'error': '更新发货单失败'}), 500
+            
+    except Exception as e:
+        print(f'处理更新发货单请求失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '更新发货单失败'}), 500
+    
+    

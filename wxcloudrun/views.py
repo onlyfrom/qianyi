@@ -2737,7 +2737,7 @@ def get_delivery_orders(user_id):
         page = int(request.args.get('page', 1))
         page_size = min(int(request.args.get('pageSize', 10)), 50)
         status = request.args.get('status') 
-        searchKey = request.args.get('keyword', '').strip()
+        searchKey = request.args.get('keyword', '')
         order_number = request.args.get('order_number')  # 添加采购单号参数
         start_date = request.args.get('start_date')  # 添加开始日期参数
         end_date = request.args.get('end_date')  # 添加结束日期参数
@@ -2751,6 +2751,20 @@ def get_delivery_orders(user_id):
             
         # 构建基础查询
         query = DeliveryOrder.query
+        
+        # 如果有关键词搜索，需要JOIN相关表
+        if searchKey:
+            search = f'%{searchKey}%'
+            query = query.join(DeliveryItem, DeliveryOrder.id == DeliveryItem.delivery_id, isouter=True)\
+                        .join(Product, DeliveryItem.product_id == Product.id, isouter=True)\
+                        .filter(db.or_(
+                            DeliveryOrder.order_number.like(search),
+                            DeliveryOrder.customer_name.like(search),
+                            DeliveryOrder.customer_phone.like(search),
+                            DeliveryOrder.delivery_address.like(search),
+                            Product.name.like(search)
+                        ))\
+                        .distinct()  # 添加distinct去重
             
         # 非管理员只能查看自己创建的订单
         if user.role != 'admin' and user.role != 'STAFF' and user.role != 'normalAdmin':
@@ -2764,20 +2778,7 @@ def get_delivery_orders(user_id):
         # 采购单号筛选
         if order_number:
             query = query.filter(DeliveryOrder.order_number == order_number)
-            
         
-        # 关键字搜索
-        if searchKey:
-            search = f'%{searchKey}%'
-            query = query.filter(db.or_(
-                DeliveryOrder.order_number.like(search),
-                DeliveryOrder.customer_name.like(search),
-                DeliveryOrder.customer_phone.like(search),
-                DeliveryOrder.delivery_address.like(search),
-                Product.name.like(search)
-            ))
-        
-        # 日期范围筛选
         # 日期范围筛选
         if start_date and end_date:
             print(f'start_date: {start_date}, end_date: {end_date}')
@@ -2825,7 +2826,7 @@ def get_delivery_orders(user_id):
                 3: '已取消',
                 4: '异常'
             }
-                    
+            print(f'order: {order}')        
             orders.append({
                 'id': order.id,
                 'orderNumber': order.order_number,
@@ -2850,7 +2851,8 @@ def get_delivery_orders(user_id):
                 'tracking_number': order.tracking_number,  # 添加物流单号
                 'items': items,
                 'total_quantity': sum(item['quantity'] for item in items),
-                'total_items': len(items)
+                'total_items': len(items),
+                'additional_fee': order.additional_fee if order.additional_fee else 0
             })
             
         return jsonify({
@@ -2930,6 +2932,7 @@ def get_delivery_order_detail(user_id, order_id):
                     'has_packaging': packaging_price > 0,
                     'has_accessory': accessory_price > 0,
                     'package_id': item.package_id
+                    
                 })
 
         # 获取创建者和配送员信息
@@ -2956,6 +2959,7 @@ def get_delivery_order_detail(user_id, order_id):
             'deliveryTimeSlot': order.delivery_time_slot,
             'logistics_company': order.logistics_company,
             'tracking_number': order.tracking_number,
+            'additional_fee': order.additional_fee,
             'status': order.status,
             'statusText': status_text_map.get(order.status, '未知状态'),
             'remark': order.remark,
@@ -2973,7 +2977,7 @@ def get_delivery_order_detail(user_id, order_id):
             } if delivery_user else None,
             'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else [],
             'total_quantity': sum(item['quantity'] for item in items),
-            'total_amount': total_amount
+            'total_amount': total_amount + (order.additional_fee or 0)
         }
 
         return jsonify({

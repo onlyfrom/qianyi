@@ -16,6 +16,8 @@
     <script src="components/PurchaseOrderDetail.js"></script>
     <script src="components/CreateDeliveryDialog.js"> </script>
     <script src="https://unpkg.com/element-plus/dist/locale/zh-cn.js"></script>
+    <script src="/admin/components/DeliveryOrderDetail.js"></script>
+    <script src="components/CustomerPriceManager.js"></script>
     <style>
         * {
             margin: 0;
@@ -1373,7 +1375,7 @@
                                 
                                 </el-switch>
                                 <!-- 筛选区域 /user-product-prices/import  /delivery-orders/import-history --> 
-                                <el-upload class="excel-uploader" action="/user-product-prices/import" :headers="uploadHeaders"
+                                <el-upload class="excel-uploader" action="/delivery-orders/import-history" :headers="uploadHeaders"
                                     :on-success="handleImportSuccess" :on-error="handleImportError"
                                     :before-upload="beforeImportUpload" accept=".xlsx,.xls" :show-file-list="false">
                                     <el-button type="success">Excel导入</el-button>
@@ -2138,6 +2140,16 @@
                                             <el-button type="primary" @click="showHiddenProducts">管理</el-button>
                                         </el-card>
                                     </el-col>
+                                    <el-col :span="8">
+                                        <el-card shadow="hover" class="settings-card">
+                                            <template #header>
+                                                <div class="card-header">
+                                                    <span>客户价格管理</span>
+                                                </div>
+                                            </template>
+                                            <el-button type="primary" @click="showCustomerPriceManager">管理</el-button>
+                                        </el-card>
+                                    </el-col>
                                 </el-row>
                             </div>
                         </div>
@@ -2464,10 +2476,19 @@
                                                     <el-button-group>
                                                         <!-- 查看按钮对所有状态都显示 -->
                                                         <el-button 
+                                                        size="small"
+                                                        type="primary"
+                                                        plain
+                                                        @click="viewDeliveryDetail(scope.row.id)"
+                                                        v-if="scope.row.status === 1 || scope.row.status === 3">
+                                                        查看
+                                                    </el-button>
+                                                        <el-button 
                                                             size="small"
                                                             type="primary"
                                                             plain
-                                                            @click="viewPurchaseDetail(scope.row)">
+                                                            v-if="scope.row.status === 2"
+                                                            @click="viewPurchaseDetail(scope.row)">                                                            
                                                             查看详情
                                                         </el-button>
                                                         
@@ -2499,7 +2520,8 @@
                                                         <el-button 
                                                             size="small"
                                                             type="danger"
-                                                            @click="handleDeleteDelivery(scope.row)">
+                                                            @click="handleDeleteDelivery(scope.row)"
+                                                            v-if="userInfo.role === 'admin'">
                                                             删除
                                                         </el-button>
                                                     </el-button-group>
@@ -2659,6 +2681,9 @@
                 </el-main>
             </el-container>
         </el-container>
+    
+    <!-- 客户价格管理对话框 -->
+    <customer-price-manager v-model:visible="customerPriceManagerVisible"></customer-price-manager>
 
     <!-- 个人信息编辑对话框 -->
     <el-dialog v-model="profileDialogVisible" title="编辑个人信息" width="50%">
@@ -3021,72 +3046,17 @@
         ></video>
     </el-dialog>
     
+
     <!-- 发货单详情对话框 -->
-    <el-dialog
-        v-model="viewDeliveryVisible" 
-        title="发货单详情"
-        width="800px"
-        destroy-on-close
-    >
-        <div class="delivery-detail-header">            
-            <div class="delivery-detail-content">
-                <div class="detail-section">
-                    <h3 class="section-title">基本信息</h3>
-        <el-descriptions :column="2" border>
-                        <el-descriptions-item label="客户名称">{{ currentDeliveryOrder?.order.customerName }}</el-descriptions-item>
-                        <el-descriptions-item label="联系电话">{{ currentDeliveryOrder?.order.customerPhone }}</el-descriptions-item>
-                        <el-descriptions-item label="发货日期">{{ formatDate(currentDeliveryOrder?.order.deliveryDate) }}</el-descriptions-item>
-                        <el-descriptions-item label="创建时间">{{ formatDate(currentDeliveryOrder?.order.createdAt) }}</el-descriptions-item>
-        </el-descriptions>
-                </div>
-                
-                <div class="detail-section" v-if="currentDeliveryOrder?.remark">
-                    <h3 class="section-title">备注信息</h3>
-                    <div class="remark-content">
-                        {{ currentDeliveryOrder?.remark }}
-                    </div>
-                </div>
-                
-                <div class="detail-section">
-                    <h3 class="section-title">商品清单</h3>
-                    <el-table :data="currentDeliveryOrder?.items || []" border style="width: 100%">
-                        <el-table-column prop="product_id" label="商品ID" width="120" >                          
-                        </el-table-column>
-                        <el-table-column prop="product_name" label="商品名称" min-width="180" >
-                        </el-table-column>
-                        <el-table-column prop="color" label="颜色" width="120" >                         
-                        </el-table-column>
-                        <el-table-column prop="quantity" label="数量" width="100" >                         
-                        </el-table-column>
-                        <!--el-table-column prop="price" label="单价" width="100" v-if = "userInfo.role === 'admin'"-->                         
-                        </el-table-column>
-                    </el-table>
-                    <div class="total-info" style="margin-top: 20px;" >
-                        <div class="section-title">总件数: {{ currentDeliveryOrder?.order.total_quantity }}</div>
-                        <div class="section-title" v-if = "userInfo.role === 'admin'">总价: {{ currentDeliveryOrder?.order.totalPrice }}</div>
-                    </div>
-                </div>
-                
-                <div class="detail-section" v-if="currentDeliveryOrder?.deliveryImage && currentDeliveryOrder.deliveryImage.length > 0">
-                    <h3 class="section-title">打包图片</h3>
-                    <div class="image-gallery">
-                        <el-image 
-                            v-for="(image, index) in currentDeliveryOrder.deliveryImage" 
-                            :key="index"
-                            :src="image"
-                            fit="cover"
-                            class="delivery-image"
-                            :preview-src-list="currentDeliveryOrder.deliveryImage"
-                        />
-                    </div>
-                </div>
-            </div>
-        </div>
 
-        <el-divider />
-
-        
-    </el-dialog>
+    <delivery-order-detail
+        v-model:visible="viewDeliveryVisible"
+        :order-data="currentDeliveryOrder"
+        :is-admin="userInfo.role === 'admin'"
+        @start="handleStart"
+        @complete="handleComplete"
+        @cancel="handleCancel"
+        ></delivery-order-detail>
     
     <!-- 新建发货单对话框 -->
     <create-delivery-dialog
@@ -3518,6 +3488,7 @@
                         contact: '',
                         avatar: ''
                     },
+                    customerPriceManagerVisible: false,
                     profileFormRules: {
                         nickname: [
                             { required: true, message: '请输入昵称', trigger: 'blur' },
@@ -3841,6 +3812,10 @@
                             ElementPlus.ElMessage.error('您没有权限访问此页面');
                         }
                     }
+                },
+
+                showCustomerPriceManager() {
+                    this.customerPriceManagerVisible = true;
                 },
                 
                 calculateTotalPendingQuantity(order) {
@@ -5049,8 +5024,9 @@
 
                 // 查看配送单详情
                 async viewDeliveryDetail(order) {
+                    console.log('查看配送单详情',order);
                     try {
-                        const response = await axios.get(`/purchase_orders/${order.id}`);
+                        const response = await axios.get(`/delivery_orders/${order}`);
                         console.log('获取发货单详情',response);
                         if (response.status === 200) {
                             this.currentDeliveryOrder = response.data;
@@ -7436,6 +7412,8 @@
         // 注册采购单详情组件
         app.component('purchase-order-detail', window.PurchaseOrderDetail);
         app.component('create-delivery-dialog', window.CreateDeliveryDialog);
+        app.component('delivery-order-detail', window.DeliveryOrderDetail);
+        app.component('customer-price-manager', window.CustomerPriceManager);
         app.mount('#app')
 
         
