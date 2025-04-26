@@ -7071,7 +7071,7 @@
                                     const allocatedQty = allocatedQuantities.get(key) || 0;
                                     const pendingQuantity = spec.quantity - (spec.shipped_quantity || 0) - allocatedQty;
                                     
-                                    if (pendingQuantity > 0) {
+                                    
                                         available.push({
                                             product_id: orderItem.product_id,
                                             product_name: orderItem.product_name,
@@ -7083,7 +7083,7 @@
                                             logo_price: spec.logo_price || orderItem.logo_price || 0,
                                             accessory_price: spec.accessory_price || orderItem.accessory_price || 0
                                         });
-                                    }
+                                    
                                 });
                             } else {
                                 // 处理没有规格的商品

@@ -4711,7 +4711,7 @@ def get_user_statistics(user_id):
         if user.role != 'admin' and user.role != 'STAFF' and user.role != 'normalAdmin':
             purchase_query = purchase_query.filter_by(user_id=user_id)
             delivery_query = delivery_query.filter_by(user_id=user_id)
-        
+    
         # 获取今日待办事项数量（未完成的采购单）
         today_tasks = purchase_query.filter(
             PurchaseOrder.status == 0,
@@ -4774,30 +4774,48 @@ def get_user_statistics(user_id):
         today_delivered = sum(item[3] for item in today_delivered_items)  # 计算总数量
         
         # 获取累计发货商品总数（所有发货单中商品的总数量）
-        total_delivered_quantity = db.session.query(
-            func.sum(DeliveryItem.quantity)
+       # 获取累计发货商品总数和金额
+        total_query = db.session.query(
+            func.sum(DeliveryItem.quantity).label('total_count'),
+            func.sum(
+                db.case(
+                    (DeliveryOrder.status.in_([1, 2]), PurchaseOrderItem.price * DeliveryItem.quantity),
+                    else_=0
+                )
+            ).label('total_amount'),
+            func.sum(
+                db.case(
+                    (DeliveryOrder.status.in_([1, 2]), DeliveryOrder.additional_fee),
+                    else_=0
+                )
+            ).label('total_additional_fee')
         ).join(
-            DeliveryOrder,
-            DeliveryOrder.id == DeliveryItem.delivery_id
-        ).scalar() or 0
-        
-        # 获取累计商品金额（使用 DeliveryItem 的数量和 PurchaseOrderItem 的价格）
-        total_delivered_amount = db.session.query(
-            func.sum(DeliveryItem.quantity * PurchaseOrderItem.price)
+            DeliveryOrder, 
+            DeliveryItem.delivery_id == DeliveryOrder.id
         ).join(
-            DeliveryOrder,
-            DeliveryOrder.id == DeliveryItem.delivery_id
-        ).join(
-            PurchaseOrder,
-            PurchaseOrder.order_number == DeliveryOrder.order_number
+            PurchaseOrder, 
+            DeliveryItem.order_number == PurchaseOrder.order_number
         ).join(
             PurchaseOrderItem,
             db.and_(
-                PurchaseOrderItem.order_id == PurchaseOrder.id,
+                PurchaseOrder.id == PurchaseOrderItem.order_id,
                 PurchaseOrderItem.product_id == DeliveryItem.product_id,
                 PurchaseOrderItem.color == DeliveryItem.color
             )
-        ).scalar() or 0
+        )
+
+        # 非管理员只能看到自己的数据
+        if user.role != 'admin' and user.role != 'STAFF' and user.role != 'normalAdmin':
+            total_query = total_query.filter(DeliveryOrder.customer_id == user_id)
+
+        # 执行查询
+        result = total_query.first()
+
+        # 计算总金额（商品金额 + 附加费用）
+        total_delivered_quantity = int(result.total_count or 0)
+        total_amount = float(result.total_amount or 0)
+        total_additional_fee = float(result.total_additional_fee or 0)
+        total_delivered_amount = total_amount + total_additional_fee
         
         return jsonify({
             'today_tasks': today_tasks,

@@ -23,7 +23,7 @@ const CreateDeliveryDialog = {
                                 style="width: 100%">
                             </el-date-picker>
                         </el-form-item>
-                        <el-form-item label="物流公司">
+                        <el-form-item label="物流公司" required>
                             <el-select
                                 v-model="deliveryForm.logistics_company"
                                 placeholder="请选择物流公司"
@@ -73,8 +73,7 @@ const CreateDeliveryDialog = {
                                 <el-table-column label="数量" width="150">
                                     <template #default="scope">
                                         <el-input-number 
-                                            v-model="scope.row.quantity" 
-                                            :min="0" 
+                                            v-model="scope.row.quantity"                                            
                                             :max="scope.row.max_quantity"
                                             size="small">
                                         </el-input-number>
@@ -276,7 +275,7 @@ const CreateDeliveryDialog = {
                     if (item.specs && item.specs.length > 0) {
                         item.specs.forEach(spec => {
                             const pendingQuantity = spec.quantity - (spec.shipped_quantity || 0);
-                            if (pendingQuantity > 0) {
+                            if (pendingQuantity !== 0) {
                                 firstPackage.items.push({
                                     product_id: item.product_id,
                                     product_name: item.product_name,
@@ -521,7 +520,11 @@ const CreateDeliveryDialog = {
                     ElementPlus.ElMessage.warning('请选择发货日期');
                     return;
                 }
-                
+                // 添加物流公司验证
+                if (!this.deliveryForm.logistics_company) {
+                    ElementPlus.ElMessage.warning('请选择物流公司');
+                    return;
+                }
                 // 检查是否有商品
                 let hasItems = false;
                 for (const pkg of this.deliveryForm.packages) {
@@ -577,7 +580,7 @@ const CreateDeliveryDialog = {
                 // 按包裹ID分组商品
                 const packageArrays = this.deliveryForm.packages.map((pkg, index) => {
                     return pkg.items
-                        .filter(item => parseInt(item.quantity) > 0)
+                        .filter(item => parseInt(item.quantity) !== 0)
                         .map(item => ({
                             product_id: item.product_id,
                             quantity: parseInt(item.quantity),
