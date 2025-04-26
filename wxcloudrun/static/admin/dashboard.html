@@ -2326,7 +2326,7 @@
                                                 @click="viewPurchaseDetail(scope.row)">查看</el-button>
                                             <el-button v-if="scope.row.status === 0" size="small" type="success"
                                                 @click="handleAcceptPurchase(scope.row)">接受</el-button>
-                                            <el-button v-if="scope.row.status === 0 || scope.row.status === 1" size="small" type="danger"
+                                            <el-button v-if="(scope.row.status === 0 || scope.row.status === 1) && userInfo.role === 'admin'" size="small" type="danger"
                                                 @click="handleCancelPurchase(scope.row)">取消</el-button>
                                             <el-button size="small" type="primary"
                                                 @click="createFromPurchase(scope.row.id)" v-if = "scope.row.status === 1 ">一键发货</el-button>
