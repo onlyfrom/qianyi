@@ -258,7 +258,8 @@ def get_customer_orders(user_id, customer_id):
         query = db.session.query(
             DeliveryOrder,
             db.func.sum(DeliveryItem.quantity).label('total_quantity'),
-            db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_amount')
+            db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_amount'),
+            DeliveryOrder.additional_fee.label('additional_fee')  # 添加附加费用字段
         ).join(
             DeliveryItem, DeliveryOrder.id == DeliveryItem.delivery_id
         ).join(
@@ -300,7 +301,7 @@ def get_customer_orders(user_id, customer_id):
         
         # 计算总发货金额（包含附加费用）
         total_delivery_amount = sum(float(order[2] or 0) for order in orders)
-        total_additional_fee = sum(float(order[0].additional_fee or 0) for order in orders)
+        total_additional_fee = sum(float(order[3] or 0) for order in orders)
         total_amount = total_delivery_amount + total_additional_fee
 
         # 计算商品总数
@@ -309,7 +310,7 @@ def get_customer_orders(user_id, customer_id):
         # 构建返回数据
         result = []
         total_amount = 0  # 初始化总金额
-        for order, total_quantity, order_amount in orders:
+        for order, total_quantity, order_amount, additional_fee in orders:
             # 获取创建者信息
             creator = User.query.get(order.created_by)
             
@@ -323,7 +324,7 @@ def get_customer_orders(user_id, customer_id):
             }
             
             # 计算订单总金额（包含附加费用）
-            order_total = float(order_amount or 0) + float(order.additional_fee or 0)
+            order_total = float(order_amount or 0) + float(additional_fee or 0)
             total_amount += order_total  # 累加每个订单的总金额
             
             result.append({
@@ -332,7 +333,7 @@ def get_customer_orders(user_id, customer_id):
                 'created_at': order.created_at.strftime('%Y-%m-%d'),
                 'total_quantity': total_quantity or 0,
                 'total_amount': order_total,
-                'additional_fee': float(order.additional_fee or 0),
+                'additional_fee': float(additional_fee or 0),
                 'status': order.status,
                 'status_text': status_text_map.get(order.status, '未知状态'),
                 'logistics_company': order.logistics_company,
@@ -1057,7 +1058,8 @@ def export_delivery_orders(user_id):
             DeliveryOrder,
             User.nickname.label('customer_name'),
             db.func.sum(DeliveryItem.quantity).label('total_quantity'),
-            db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_amount')
+            db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_amount'),
+            DeliveryOrder.additional_fee.label('additional_fee')  # 添加附加费用字段
         ).join(
             DeliveryItem, DeliveryOrder.id == DeliveryItem.delivery_id
         ).join(
@@ -1095,7 +1097,7 @@ def export_delivery_orders(user_id):
         
         # 准备数据
         data = []
-        for order, customer_name, total_quantity, total_amount in orders:
+        for order, customer_name, total_quantity, total_amount, additional_fee in orders:
             # 状态文本映射
             status_text_map = {
                 0: '已开单',
@@ -1105,12 +1107,17 @@ def export_delivery_orders(user_id):
                 4: '异常'
             }
             
+            # 计算实际总金额（商品金额 + 附加费用）
+            actual_total = float(total_amount or 0) + float(additional_fee or 0)
+            
             data.append({
                 '发货单号': order.order_number,
                 '客户名称': customer_name,
                 '发货日期': order.created_at.strftime('%Y-%m-%d'),
                 '商品总数': total_quantity or 0,
-                '货款总额': float(total_amount or 0),
+                '商品金额': float(total_amount or 0),
+                '附加费用': float(additional_fee or 0),
+                '货款总额': actual_total,
                 '状态': status_text_map.get(order.status, '未知状态'),
                 '物流公司': order.logistics_company or '',
                 '物流单号': order.tracking_number or '',
@@ -1126,6 +1133,8 @@ def export_delivery_orders(user_id):
             '客户名称': 15,
             '发货日期': 12,
             '商品总数': 10,
+            '商品金额': 12,
+            '附加费用': 12,
             '货款总额': 12,
             '状态': 10,
             '物流公司': 15,
@@ -1171,8 +1180,8 @@ def export_delivery_orders(user_id):
                         bottom=Side(style='thin')
                     )
                     
-                    # 如果是货款总额列，设置为右对齐
-                    if df.columns[col] == '货款总额':
+                    # 设置金额列的格式
+                    if df.columns[col] in ['商品金额', '附加费用', '货款总额']:
                         cell.alignment = Alignment(horizontal='right', vertical='center')
                         cell.number_format = '¥#,##0.00'
         
