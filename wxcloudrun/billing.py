@@ -1387,6 +1387,12 @@ def update_purchase_order_prices(user_id):
                 order_items = PurchaseOrderItem.query.filter_by(order_id=order.id).all()
                 
                 for item in order_items:
+                    # 如果指定了商品名称，则只更新匹配的商品
+                    if data.get('product_name'):
+                        product = Product.query.get(item.product_id)
+                        if not product or product.name != data.get('product_name'):
+                            continue
+                            
                     if item.product_id in price_map:
                         # 更新商品价格
                         old_price = item.price

@@ -3108,7 +3108,7 @@
         </template>
     </el-dialog>
     
-    <!-- 添加代客下单对话框 -->
+    <!-- 代客下单对话框 -->
     <el-dialog v-model="placeOrderDialogVisible" title="代客下单" width="800px" :class="productSelectorVisible ? 'dialogwangyou' : ''">
         <el-form :model="placeOrderForm" label-width="100px">
             <el-form-item label="选择客户">
@@ -3150,7 +3150,7 @@
                             <template #default="scope">
                                 <el-input-number 
                                     v-model="scope.row.quantity" 
-                                    :min="1" 
+                                     
                                     size="small"
                                     controls-position="right"
                                     style="width: 95px;"

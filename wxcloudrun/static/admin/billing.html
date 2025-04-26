@@ -424,6 +424,27 @@
                         :close-on-click-modal="false"
                     >
                         <el-form :model="updatePriceForm" label-width="120px">
+                            <el-form-item label="商品名称">
+                                <el-select
+                                    v-model="updatePriceForm.product_name"
+                                    placeholder="请选择商品"
+                                    filterable
+                                    clearable
+                                    style="width: 100%"
+                                >
+                                    <el-option
+                                        v-for="item in productOptions"
+                                        :key="item.productId"
+                                        :label="item.productName"
+                                        :value="item.productName"
+                                    >
+                                        <span>{{ item.productName }}</span>
+                                        <span style="float: right; color: #8492a6; font-size: 13px">
+                                            {{ item.productId }} | ¥{{ formatMoney(item.price) }}
+                                        </span>
+                                    </el-option>
+                                </el-select>
+                            </el-form-item>
                             <el-form-item label="开始日期">
                                 <el-date-picker
                                     v-model="updatePriceForm.start_date"
@@ -1833,16 +1854,43 @@
                 const updatePriceDialogVisible = ref(false);
                 const updatePriceForm = reactive({
                     start_date: '',
-                    end_date: ''
+                    end_date: '',
+                    product_name: ''
                 });
                 const updatingPrices = ref(false);
+                const productOptions = ref([]);
+                const loadingProducts = ref(false);
+
+                const loadProductOptions = async () => {
+                    try {
+                        loadingProducts.value = true;
+                        const response = await axios.get('/user-product-prices/all', {
+                            params: {
+                                customer_id: currentBilling.value.id
+                            }
+                        });
+                        console.log("获取商品列表", response.data);
+                        if (response.data.code === 0) {
+                            productOptions.value = response.data.prices || [];
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.message || '获取商品列表失败');
+                        }
+                    } catch (error) {
+                        console.error('获取商品列表失败:', error);
+                        ElementPlus.ElMessage.error('获取商品列表失败');
+                    } finally {
+                        loadingProducts.value = false;
+                    }
+                };
 
                 const showUpdatePriceDialog = () => {
                     const today = new Date().toISOString().split('T')[0];
-                    const defaultStartDate = '2025-04-12';  // 使用标准的日期格式
+                    const defaultStartDate = '2025-04-12';
                     updatePriceForm.start_date = defaultStartDate;
                     updatePriceForm.end_date = today;
+                    updatePriceForm.product_name = '';
                     updatePriceDialogVisible.value = true;
+                    loadProductOptions();
                 };
 
                 const updatePurchaseOrderPrices = async () => {
@@ -1856,7 +1904,8 @@
                         const response = await axios.post('/purchase_orders/update_prices', {
                             customer_id: currentBilling.value.id,
                             start_date: updatePriceForm.start_date,
-                            end_date: updatePriceForm.end_date
+                            end_date: updatePriceForm.end_date,
+                            product_name: updatePriceForm.product_name
                         });
 
                         if (response.data.error) {
@@ -1996,7 +2045,10 @@
                     updatePurchaseOrderPrices,
                     isEditMode,
                     savingDelivery,
-                    saveDeliveryChanges
+                    saveDeliveryChanges,
+                    productOptions,
+                    loadingProducts,
+                    loadProductOptions
                 };
             }
         });
