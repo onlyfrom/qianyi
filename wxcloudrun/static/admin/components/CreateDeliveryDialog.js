@@ -223,15 +223,10 @@ const CreateDeliveryDialog = {
             selectedProducts: [],
             selectedProductMap: new Map(),
             logisticsOptions: [
-                { value: '宇捷物流', label: '宇捷物流' },
-                { value: '鹏腾物流', label: '鹏腾物流' },
-                { value: '顺丰速运', label: '顺丰速运' },
-                { value: '圆通速递', label: '圆通速递' },
-                { value: '中通快递', label: '中通快递' },
-                { value: '韵达快递', label: '韵达快递' },
-                { value: '申通快递', label: '申通快递' },
-                { value: '百世快递', label: '百世快递' },
-                { value: 'EMS', label: 'EMS' }
+                { value: '宇捷物流13362189090', label: '宇捷物流13362189090' },
+                { value: '鹏腾物流18058124088', label: '鹏腾物流18058124088' },
+                { value: '自取', label: '自取' },
+                { value: '送货', label: '送货' }
             ]
         }
     },
