@@ -73,8 +73,7 @@ const CreateDeliveryDialog = {
                                 <el-table-column label="数量" width="150">
                                     <template #default="scope">
                                         <el-input-number 
-                                            v-model="scope.row.quantity"                                            
-                                            :max="scope.row.max_quantity"
+                                            v-model="scope.row.quantity"   
                                             size="small">
                                         </el-input-number>
                                     </template>
