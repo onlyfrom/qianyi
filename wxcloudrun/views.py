@@ -202,8 +202,9 @@ def check_staff_permission(permission):
                     setattr(g, 'admin_user', user)
                     return f(*args, **kwargs)
 
+                print(f'当前用户信息: {user.user_type}, {user.role}')
                 # 验证员工权限
-                if user.user_type != 5 or user.role != 'STAFF':
+                if user.user_type != 5 or user.role != 'STAFF' :
                     return jsonify({
                         'code': 403,
                         'message': '无员工权限'
@@ -4315,20 +4316,21 @@ def create_push_order(user_id):
                     user_id=target_user_id,
                     product_id=product_info['id']
                 ).first()
-                
-                if user_price:
-                    # 更新现有价格记录
-                    user_price.custom_price = product_info['price']
-                    print(f'更新用户商品价格: 用户ID={target_user_id}, 商品ID={product_info["id"]}, 价格={product_info["price"]}')
-                else:
-                    # 创建新的价格记录
-                    new_price = UserProductPrice(
-                        user_id=target_user_id,
-                        product_id=product_info['id'],
-                        custom_price=product_info['price']
-                    )
-                    db.session.add(new_price)
-                    print(f'创建用户商品价格: 用户ID={target_user_id}, 商品ID={product_info["id"]}, 价格={product_info["price"]}')
+
+                if target_user_id != None:                
+                    if user_price :
+                        # 更新现有价格记录
+                        user_price.custom_price = product_info['price']
+                        print(f'更新用户商品价格: 用户ID={target_user_id}, 商品ID={product_info["id"]}, 价格={product_info["price"]}')
+                    else:
+                        # 创建新的价格记录
+                        new_price = UserProductPrice(
+                            user_id=target_user_id,
+                            product_id=product_info['id'],
+                            custom_price=product_info['price']
+                        )
+                        db.session.add(new_price)
+                        print(f'创建用户商品价格: 用户ID={target_user_id}, 商品ID={product_info["id"]}, 价格={product_info["price"]}')
 
                 # 创建推送商品记录
                 push_product = PushOrderProduct(
