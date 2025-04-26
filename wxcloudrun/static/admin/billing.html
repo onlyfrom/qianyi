@@ -431,6 +431,7 @@
                                     filterable
                                     clearable
                                     style="width: 100%"
+                                    @change="handleProductChange"
                                 >
                                     <el-option
                                         v-for="item in productOptions"
@@ -438,12 +439,26 @@
                                         :label="item.productName"
                                         :value="item.productName"
                                     >
-                                        <span>{{ item.productName }}</span>
-                                        <span style="float: right; color: #8492a6; font-size: 13px">
-                                            {{ item.productId }} | ¥{{ formatMoney(item.price) }}
-                                        </span>
+                                        <div style="display: flex; justify-content: space-between; align-items: center">
+                                            <span>{{ item.productName }}</span>
+                                            <span style="color: #8492a6; margin-right: 10px">{{ item.productId }}</span>
+                                        </div>
                                     </el-option>
                                 </el-select>
+                            </el-form-item>
+                            <el-form-item label="商品价格" v-if="selectedProduct">
+                                <div style="display: flex; align-items: center">
+                                    <el-input-number
+                                        v-model="selectedProduct.price"
+                                        :precision="2"
+                                        :step="0.5"
+                                        :min="0"
+                                        style="width: 150px"
+                                        @blur="handlePriceUpdate(selectedProduct)"
+                                        @keyup.enter="handlePriceUpdate(selectedProduct)"
+                                    ></el-input-number>
+                                    <span style="margin-left: 10px; color: #909399">修改后自动保存</span>
+                                </div>
                             </el-form-item>
                             <el-form-item label="开始日期">
                                 <el-date-picker
@@ -1860,6 +1875,18 @@
                 const updatingPrices = ref(false);
                 const productOptions = ref([]);
                 const loadingProducts = ref(false);
+                const selectedProduct = ref(null);
+
+                const handleProductChange = (productName) => {
+                    console.log("选择商品:", productName);
+                    if (productName) {
+                        const product = productOptions.value.find(p => p.productName === productName);
+                        console.log("找到商品:", product);
+                        selectedProduct.value = product;
+                    } else {
+                        selectedProduct.value = null;
+                    }
+                };
 
                 const loadProductOptions = async () => {
                     try {
@@ -1871,7 +1898,12 @@
                         });
                         console.log("获取商品列表", response.data);
                         if (response.data.code === 0) {
-                            productOptions.value = response.data.prices || [];
+                            // 确保每个商品对象包含所需的所有属性
+                            productOptions.value = response.data.prices.map(item => ({
+                                productId: item.productId,
+                                productName: item.productName,
+                                price: item.price
+                            }));
                         } else {
                             ElementPlus.ElMessage.error(response.data.message || '获取商品列表失败');
                         }
@@ -1889,8 +1921,32 @@
                     updatePriceForm.start_date = defaultStartDate;
                     updatePriceForm.end_date = today;
                     updatePriceForm.product_name = '';
+                    selectedProduct.value = null;
                     updatePriceDialogVisible.value = true;
                     loadProductOptions();
+                };
+
+                const handlePriceUpdate = async (item) => {
+                    try {
+                        const response = await axios.post('/user-product-prices', {
+                            user_id: currentBilling.value.id,
+                            product_id: item.productId,
+                            price: item.price
+                        });
+
+                        if (response.data.code === 0) {
+                            ElementPlus.ElMessage.success('价格更新成功');
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.message || '价格更新失败');
+                            // 如果更新失败，重新加载价格列表
+                            await loadProductOptions();
+                        }
+                    } catch (error) {
+                        console.error('更新商品价格失败:', error);
+                        ElementPlus.ElMessage.error('更新商品价格失败');
+                        // 如果发生错误，重新加载价格列表
+                        await loadProductOptions();
+                    }
                 };
 
                 const updatePurchaseOrderPrices = async () => {
@@ -1901,6 +1957,9 @@
 
                     try {
                         updatingPrices.value = true;
+                        // 先等待所有未完成的价格更新完成
+                        await loadProductOptions();
+                        
                         const response = await axios.post('/purchase_orders/update_prices', {
                             customer_id: currentBilling.value.id,
                             start_date: updatePriceForm.start_date,
@@ -2048,7 +2107,10 @@
                     saveDeliveryChanges,
                     productOptions,
                     loadingProducts,
-                    loadProductOptions
+                    loadProductOptions,
+                    handlePriceUpdate,
+                    selectedProduct,
+                    handleProductChange,
                 };
             }
         });
