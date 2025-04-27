@@ -1121,38 +1121,58 @@ def get_product_detail(user_id, product_id):
         specs = json.loads(product.specs) if product.specs else []
         specs_info = json.loads(product.specs_info) if product.specs_info else {}
         
-        # 如果是普通客户，检查推送单中的价格和规格
+        # 如果是普通客户，按优先级获取价格
         if current_user.role == 'customer':
-            # 查找该用户最新的有效推送单中的商品信息
-            latest_push = db.session.query(PushOrderProduct)\
-                .join(PushOrder, PushOrder.id == PushOrderProduct.push_order_id)\
-                .filter(
-                    PushOrderProduct.product_id == product_id,
-                    PushOrder.target_user_id == user_id  
-                )\
-                .order_by(PushOrder.created_at.desc())\
-                .first()
-                
-            if latest_push:
-                # 如果在推送单中找到信息，使用推送单中的价格和规格
-                display_price = float(latest_push.price)
-                if latest_push.specs:
-                    specs = json.loads(latest_push.specs)
+            print(f"[DEBUG] 开始获取商品价格: 商品ID={product_id}, 客户ID={user_id}, 客户类型={current_user.customer_type}")
+            
+            # 1. 首先检查客户对应商品价格表中的价格
+            user_product_price = UserProductPrice.query.filter_by(
+                user_id=user_id,
+                product_id=product_id
+            ).first()
+            
+            if user_product_price and user_product_price.custom_price is not None:
+                display_price = float(user_product_price.custom_price)
+                print(f"[DEBUG] 使用客户商品价格表中的价格: {display_price}")
             else:
-                # 如果不在推送单中，检查是否是公开商品
-                if product.is_public:
-                    # 根据用户类型获取对应价格
-                    if current_user.customer_type == 2:
-                        display_price = float(product.price_b) if product.price_b is not None else base_price
-                    elif current_user.customer_type == 3:
-                        display_price = float(product.price_c) if product.price_c is not None else base_price
-                    elif current_user.customer_type == 4:
-                        display_price = float(product.price_d) if product.price_d is not None else base_price
-                    else:
-                        display_price = base_price
+                print("[DEBUG] 未找到客户商品价格表中的价格，检查推送单价格")
+                # 2. 如果没有客户对应价格，检查推送单中的最新价格
+                latest_push = db.session.query(PushOrderProduct)\
+                    .join(PushOrder, PushOrder.id == PushOrderProduct.push_order_id)\
+                    .filter(
+                        PushOrderProduct.product_id == product_id,
+                        PushOrder.target_user_id == user_id  
+                    )\
+                    .order_by(PushOrder.created_at.desc())\
+                    .first()
+                    
+                if latest_push and latest_push.price is not None:
+                    display_price = float(latest_push.price)
+                    print(f"[DEBUG] 使用最新推送单中的价格: {display_price}")
+                    if latest_push.specs:
+                        specs = json.loads(latest_push.specs)
+                        print(f"[DEBUG] 使用推送单中的规格信息")
                 else:
-                    # 如果不是公开商品，返回错误
-                    return jsonify({'error': '该商品未对您开放'}), 403
+                    print("[DEBUG] 未找到推送单价格，检查默认客户类型价格")
+                    # 3. 如果也没有推送单价格，检查是否是公开商品并使用默认客户类型价格
+                    if product.is_public:
+                        # 根据用户类型获取对应价格
+                        if current_user.user_type == 2:
+                            display_price = float(product.price_b) if product.price_b is not None else base_price
+                            print(f"[DEBUG] 使用客户类型2对应价格: {display_price}")
+                        elif current_user.user_type == 3:
+                            display_price = float(product.price_c) if product.price_c is not None else base_price
+                            print(f"[DEBUG] 使用客户类型3对应价格: {display_price}")
+                        elif current_user.user_type == 4:
+                            display_price = float(product.price_d) if product.price_d is not None else base_price
+                            print(f"[DEBUG] 使用客户类型4对应价格: {display_price}")
+                        else:
+                            display_price = base_price
+                            print(f"[DEBUG] 使用基础价格: {display_price}")
+                    else:
+                        print("[DEBUG] 商品不是公开商品，无法访问")
+                        # 如果不是公开商品，返回错误
+                        return jsonify({'error': '该商品未对您开放'}), 403
         else:
             # 如果不是普通客户，显示基础价格
             display_price = base_price
