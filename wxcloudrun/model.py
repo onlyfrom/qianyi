@@ -403,4 +403,25 @@ class UserProductPrice(db.Model):
             'custom_price': float(self.custom_price),
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+class IgnoredStockWarning(db.Model):
+    """忽略库存预警记录表"""
+    __tablename__ = 'ignored_stock_warnings'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.String(80), db.ForeignKey('products.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    
+    # 关联关系
+    user = db.relationship('User', backref=db.backref('ignored_warnings', lazy=True))
+    product = db.relationship('Product', backref=db.backref('ignored_warnings', lazy=True))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'product_id': self.product_id,
+            'user_id': self.user_id,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
         } 

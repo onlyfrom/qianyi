@@ -1223,7 +1223,8 @@ def get_recent_products():
         # 如果一周内没有新商品，则获取最近的10件商品
         if not recent_products:
             recent_products = Product.query.filter(
-                Product.status == 1
+                Product.status == 1,
+                Product.is_public == 1  # 添加这个条件确保只返回公开商品
             ).order_by(Product.created_at.desc()).limit(10).all()
 
         result = []
@@ -7336,12 +7337,19 @@ def get_low_stock_products(user_id):
         # 设置库存预警阈值
         threshold = 100
         
-        # 查询所有商品
-        products = Product.query.all()
+        # 获取已忽略的商品ID列表
+        ignored_products = [i.product_id for i in IgnoredStockWarning.query.filter_by(user_id=user_id).all()]
+        
+        # 查询所有商品，排除TP开头的商品
+        products = Product.query.filter(~Product.id.like('TP%')).all()
 
         # 过滤和处理结果
         result = []
         for product in products:
+            # 如果商品在忽略列表中，跳过
+            if product.id in ignored_products:
+                continue
+                
             # 获取规格信息
             specs = json.loads(product.specs) if product.specs else []
             low_stock_colors = []
@@ -7387,6 +7395,114 @@ def get_low_stock_products(user_id):
         return jsonify({
             'code': -1,
             'message': '获取库存预警商品失败'
+        }), 500
+
+@app.route('/products/low-stock/ignore', methods=['POST'])
+@login_required
+def ignore_stock_warning(user_id):
+    try:
+        data = request.json
+        product_id = data.get('product_id')
+        
+        if not product_id:
+            return jsonify({
+                'code': -1,
+                'message': '商品ID不能为空'
+            }), 400
+            
+        # 检查商品是否存在
+        product = Product.query.get(product_id)
+        if not product:
+            return jsonify({
+                'code': -1,
+                'message': '商品不存在'
+            }), 404
+            
+        # 检查是否已经忽略
+        existing = IgnoredStockWarning.query.filter_by(
+            product_id=product_id,
+            user_id=user_id
+        ).first()
+        
+        if existing:
+            return jsonify({
+                'code': 0,
+                'message': '该商品已经在忽略列表中'
+            })
+            
+        # 添加忽略记录
+        ignored = IgnoredStockWarning(
+            product_id=product_id,
+            user_id=user_id,
+            created_at=datetime.now()
+        )
+        db.session.add(ignored)
+        db.session.commit()
+        
+        return jsonify({
+            'code': 0,
+            'message': '已忽略该商品的库存预警'
+        })
+        
+    except Exception as e:
+        print(f"忽略库存预警失败: {str(e)}")
+        return jsonify({
+            'code': -1,
+            'message': '忽略库存预警失败'
+        }), 500
+
+@app.route('/products/low-stock/unignore', methods=['POST'])
+@login_required
+def unignore_stock_warning(user_id):
+    try:
+        data = request.json
+        product_id = data.get('product_id')
+        
+        if not product_id:
+            return jsonify({
+                'code': -1,
+                'message': '商品ID不能为空'
+            }), 400
+            
+        # 删除忽略记录
+        IgnoredStockWarning.query.filter_by(
+            product_id=product_id,
+            user_id=user_id
+        ).delete()
+        
+        db.session.commit()
+        
+        return jsonify({
+            'code': 0,
+            'message': '已取消忽略该商品的库存预警'
+        })
+        
+    except Exception as e:
+        print(f"取消忽略库存预警失败: {str(e)}")
+        return jsonify({
+            'code': -1,
+            'message': '取消忽略库存预警失败'
+        }), 500
+
+@app.route('/products/low-stock/ignored', methods=['GET'])
+@login_required
+def get_ignored_stock_warnings(user_id):
+    try:
+        # 获取用户已忽略的商品ID列表
+        ignored_warnings = IgnoredStockWarning.query.filter_by(user_id=user_id).all()
+        ignored_product_ids = [warning.product_id for warning in ignored_warnings]
+        
+        return jsonify({
+            'code': 0,
+            'data': ignored_product_ids,
+            'message': 'success'
+        })
+        
+    except Exception as e:
+        print(f"获取已忽略商品列表失败: {str(e)}")
+        return jsonify({
+            'code': -1,
+            'message': '获取已忽略商品列表失败'
         }), 500
 
 # 获取暗推产品列表
