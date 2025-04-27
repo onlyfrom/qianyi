@@ -356,6 +356,7 @@ def wechat_openid_login():
         
         # 从header中获取openid
         openid = request.headers.get('x-wx-openid')
+        nickname = request.get('x-wx-nickname')
         if not openid:
             print('错误: 未获取到openid')
             return jsonify({'error': '未获取到openid'}), 401
@@ -427,6 +428,85 @@ def wechat_openid_login():
                 'token': token
             }
         })
+        
+    except Exception as e:
+        print('\n处理微信openid登录请求时发生错误:')
+        print(f'- 错误类型: {type(e).__name__}')
+        print(f'- 错误信息: {str(e)}')
+        print(f'- 错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '登录失败'}), 500
+
+@app.route('/wx/openid/logintype', methods=['POST'])
+def wechat_openid_logintype():
+    try:
+        print('='*50)
+        print('开始处理微信openid登录请求')
+        print('='*50)
+        
+        # 从header中获取openid和请求数据
+        data = request.get_json()
+        openid = request.headers.get('x-wx-openid')
+        nickname = data.get('nickname') if data else None
+        
+        if not openid:
+            print('错误: 未获取到openid')
+            return jsonify({'error': '未获取到openid'}), 401
+            
+        print('从header获取到的openid:', openid)
+        print('获取到的nickname:', nickname)
+        
+        # 先通过openid查询用户
+        user = User.query.filter_by(openid=openid).first()
+        
+        if not user and nickname:
+            # 如果openid没找到用户，且提供了nickname，尝试通过nickname查找
+            print(f'通过nickname查找用户: {nickname}')
+            user = User.query.filter_by(nickname=nickname).first()
+            
+            if user and not user.openid:
+                # 如果找到用户且该用户没有openid，则更新用户的openid
+                print(f'找到现有用户(ID={user.id})，更新openid')
+                user.openid = openid
+                user.last_login = datetime.now()
+                db.session.commit()
+        
+        if user:
+            print(f'找到用户: ID={user.id}, nickname={user.nickname}')
+            # 更新最后登录时间
+            user.last_login = datetime.now()
+            db.session.commit()
+            
+            # 生成token并返回用户信息
+            token = generate_token(user.id)
+            return jsonify({
+                'code': 200,
+                'data': {
+                'is_registered': True,
+                'token': token,
+                'userInfo': {
+                    'id': user.id,
+                    'username': user.username,
+                    'nickname': user.nickname,
+                    'avatar': user.avatar,
+                    'phone': user.phone,
+                    'address': user.address,
+                    'contact': user.contact,
+                    'user_type': user.user_type,
+                    'status': user.status,
+                    'created_at': user.created_at,
+                    'last_login': user.last_login,
+                    'role': user.role,                    
+
+                }
+            }
+            })
+        
+        # 如果没有找到用户，返回非邀请客户错误
+        print('未找到用户，返回非邀请客户错误')
+        return jsonify({
+            'code': 403,
+            'message': '非邀请客户'
+        }), 403
         
     except Exception as e:
         print('\n处理微信openid登录请求时发生错误:')
@@ -658,7 +738,8 @@ def register():
         
         data = request.json
         print('收到的注册数据:', json.dumps(data, ensure_ascii=False, indent=2))
-        
+        user_type = data.get('user_type', 0)
+        role = data.get('role', 'customer')
         # 验证必要字段
         required_fields = ['username', 'password', 'nickname']
         print('\n检查必要字段:')
@@ -685,7 +766,8 @@ def register():
             phone=data.get('phone', ''),
             address=data.get('address', ''),
             contact=data.get('contact', ''),
-            user_type=0,  # 普通用户
+            user_type=user_type,  # 普通用户
+            role=role,
             status=1,  # 启用状态
             created_at=datetime.now()
         )

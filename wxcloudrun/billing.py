@@ -40,9 +40,8 @@ def get_billing_list(user_id):
             User.id.label('customer_id'),
             User.nickname.label('customer_name'),
             db.func.sum(DeliveryItem.quantity).label('total_quantity'),  # 使用发货单数量
-            db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_amount'),  # 使用发货单数量计算金额
-            db.func.sum(DeliveryOrder.additional_fee).label('total_additional_fee'),  # 添加附加费用汇总
-            db.func.sum(PurchaseOrder.paid_amount).label('paid_amount')
+            db.func.sum(db.cast(PurchaseOrderItem.price * DeliveryItem.quantity, db.Float)).label('total_amount'),  # 使用发货单数量计算金额并转换为float
+            db.func.sum(db.cast(DeliveryOrder.additional_fee, db.Float)).label('total_additional_fee')  # 添加附加费用汇总并转换为float
         ).join(
             PurchaseOrder, User.id == PurchaseOrder.user_id
         ).join(
@@ -97,11 +96,12 @@ def get_billing_list(user_id):
         elif sort_by == 'total_quantity':
             sort_column = db.func.sum(DeliveryItem.quantity)
         elif sort_by == 'total_amount':
-            sort_column = db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity)
+            sort_column = db.func.sum(db.cast(PurchaseOrderItem.price * DeliveryItem.quantity, db.Float))
         elif sort_by == 'paid_amount':
-            sort_column = db.func.sum(PurchaseOrder.paid_amount)
+            # 对于收款金额排序，需要单独处理
+            sort_column = db.func.sum(db.cast(PurchaseOrderItem.price * DeliveryItem.quantity, db.Float))
         elif sort_by == 'unpaid_amount':
-            sort_column = db.func.sum(PurchaseOrderItem.price * PurchaseOrderItem.quantity) - db.func.sum(PurchaseOrder.paid_amount)
+            sort_column = db.func.sum(db.cast(PurchaseOrderItem.price * PurchaseOrderItem.quantity, db.Float))
         
         # 应用排序
         if sort_column is not None:
@@ -111,7 +111,7 @@ def get_billing_list(user_id):
                 base_query = base_query.order_by(sort_column)
         else:
             # 默认排序
-            base_query = base_query.order_by(db.desc(db.func.sum(PurchaseOrderItem.price * PurchaseOrderItem.quantity)))
+            base_query = base_query.order_by(db.desc(db.func.sum(db.cast(PurchaseOrderItem.price * PurchaseOrderItem.quantity, db.Float))))
         
         # 分页
         base_query = base_query.offset((page - 1) * page_size).limit(page_size)
@@ -122,10 +122,25 @@ def get_billing_list(user_id):
         # 构建返回数据
         items = []
         for result in results:
-            customer_id, customer_name, total_quantity, total_amount, total_additional_fee, paid_amount = result
+            customer_id, customer_name, total_quantity, total_amount, total_additional_fee = result
+            
+            # 单独查询该客户的收款总额
+            paid_amount_query = db.session.query(
+                db.func.sum(db.cast(Payment.amount, db.Float))
+            ).filter(
+                Payment.customer_id == customer_id
+            )
+            
+            if start_date:
+                paid_amount_query = paid_amount_query.filter(Payment.payment_date >= start_datetime)
+            if end_date:
+                paid_amount_query = paid_amount_query.filter(Payment.payment_date <= end_datetime)
+                
+            paid_amount = paid_amount_query.scalar() or 0
+            
             # 重新查询该客户的所有发货单附加费用总和
             additional_fee_query = db.session.query(
-                db.func.sum(DeliveryOrder.additional_fee)
+                db.func.sum(db.cast(DeliveryOrder.additional_fee, db.Float))
             ).filter(
                 DeliveryOrder.customer_id == customer_id,
                 DeliveryOrder.status.in_([1, 2])  # 只统计已发货和已完成的订单
@@ -140,9 +155,15 @@ def get_billing_list(user_id):
                 'total_quantity': total_quantity or 0,
                 'total_amount': actual_total,  # 包含附加费用的总金额
                 'additional_fee': total_additional_fee,  # 添加附加费用字段
-                'paid_amount': float(paid_amount or 0),
-                'unpaid_amount': float(actual_total - (paid_amount or 0))  # 使用包含附加费用的总金额计算未付金额
+                'paid_amount': float(paid_amount),
+                'unpaid_amount': float(actual_total - paid_amount)  # 使用包含附加费用的总金额计算未付金额
             })
+            
+            # 如果是按收款金额排序，需要重新排序
+            if sort_by == 'paid_amount':
+                items.sort(key=lambda x: x['paid_amount'], reverse=(sort_order == 'desc'))
+            elif sort_by == 'unpaid_amount':
+                items.sort(key=lambda x: x['unpaid_amount'], reverse=(sort_order == 'desc'))
 
         print(f"[DEBUG] 成功获取账单列表: 总数={total}, 当前页数量={len(items)}")
         return jsonify({
@@ -190,7 +211,7 @@ def get_billing_statistics(user_id):
             )
         )
         
-        # 构建收款金额查询
+        # 构建收款金额查询 - 统计所有收款记录
         payment_query = db.session.query(
             db.func.sum(Payment.amount).label('paid_amount')
         )
@@ -426,7 +447,7 @@ def export_billing(user_id):
             db.func.sum(DeliveryItem.quantity).label('total_quantity'),  # 使用发货单数量
             db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_amount'),  # 使用发货单数量计算金额
             db.func.sum(DeliveryOrder.additional_fee).label('total_additional_fee'),  # 添加附加费用汇总
-            db.func.sum(PurchaseOrder.paid_amount).label('paid_amount')
+            db.func.sum(Payment.amount).label('paid_amount')
         ).join(
             PurchaseOrder, User.id == PurchaseOrder.user_id
         ).join(
