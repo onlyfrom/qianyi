@@ -1918,7 +1918,7 @@
                 const showUpdatePriceDialog = () => {
                     const today = new Date().toISOString().split('T')[0];
                     const defaultStartDate = '2025-04-12';
-                    updatePriceForm.start_date = defaultStartDate;
+                    updatePriceForm.start_date = today;
                     updatePriceForm.end_date = today;
                     updatePriceForm.product_name = '';
                     selectedProduct.value = null;

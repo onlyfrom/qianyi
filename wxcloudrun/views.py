@@ -2929,8 +2929,7 @@ def get_delivery_orders(user_id):
                 2: '已完成',
                 3: '已取消',
                 4: '异常'
-            }
-            print(f'order: {order}')        
+            }       
             orders.append({
                 'id': order.id,
                 'orderNumber': order.order_number,
@@ -3538,7 +3537,6 @@ def get_purchase_order(user_id, order_id):
                 PurchaseOrder.order_number == order_id
             )
         ).first()
-# ... existing code ...
         
         if not order:
             print(f'采购单不存在: order_id={order_id}')
@@ -3624,6 +3622,32 @@ def get_purchase_order(user_id, order_id):
         # 将合并后的商品数据转换为列表
         items = list(merged_products.values())
         
+        # 获取相关的发货单列表
+        delivery_orders = []
+        try:
+            delivery_records = db.session.query(
+                DeliveryOrder.id,
+                DeliveryOrder.logistics_company,
+                func.sum(DeliveryItem.quantity).label('total_quantity')
+            ).join(
+                DeliveryItem,
+                DeliveryOrder.id == DeliveryItem.delivery_id
+            ).filter(
+                DeliveryItem.order_number == order.order_number
+            ).group_by(
+                DeliveryOrder.id,
+                DeliveryOrder.logistics_company
+            ).all()
+            
+            for record in delivery_records:
+                delivery_orders.append({
+                    'id': record.id,
+                    'logistics_company': record.logistics_company or '未指定',
+                    'total_quantity': int(record.total_quantity)
+                })
+        except Exception as e:
+            print(f"获取发货单列表失败: {str(e)}")
+        
         # 格式化返回数据
         order_detail = {
             'id': order.id,
@@ -3642,7 +3666,8 @@ def get_purchase_order(user_id, order_id):
                 'nickname': order_user.nickname,
                 'avatar': order_user.avatar,
                 'phone': order_user.phone
-            }
+            },
+            'delivery_orders': delivery_orders  # 添加发货单列表
         }
         
         print(f'成功获取采购单详情: order_id={order_id}, 商品数量={len(items)}')
@@ -4731,6 +4756,43 @@ def get_push_order(user_id, order_id):
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '获取推送单详情失败'}), 500
 
+#添加系统设置
+@app.route('/system/settings', methods=['POST'])
+@admin_required
+def add_system_settings(user_id):
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': '无效的请求数据'}), 400
+            
+        # 获取或创建设置记录
+        setting = SystemSettings.query.filter_by(setting_key=data['setting_key']).first()
+        if not setting:
+            setting = SystemSettings(setting_key=data['setting_key'])   
+
+        # 根据值的类型设置类型字段
+        if isinstance(data['setting_value'], (dict, list)):
+            setting.setting_type = 'json'
+            setting.setting_value = json.dumps(data['setting_value'])
+        else:
+            setting.setting_type = 'string'
+            setting.setting_value = str(data['setting_value'])  
+            
+        try:
+            db.session.add(setting)
+            db.session.commit()
+            return jsonify({'message': '系统设置添加成功'}), 200
+        except Exception as e:
+            db.session.rollback()
+            print(f'保存系统设置失败: {str(e)}')    
+            return jsonify({'error': '保存系统设置失败'}), 500
+            
+    except Exception as e:
+        print(f'添加系统设置失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '添加系统设置失败'}), 500
+
+
 # 获取系统设置
 @app.route('/system/settings', methods=['GET'])
 def get_system_settings():
@@ -4842,23 +4904,48 @@ def get_user_statistics(user_id):
             func.date(PurchaseOrder.created_at) == func.curdate()
         ).distinct().all()
         
-        # 获取所有待发货商品数（所有已确认但未发货的采购单中的商品总数量）
+        # 获取所有待发货商品数（所有已确认但未发货的采购单中的商品总数量，减去已发货数量）
         today_to_deliver_items = db.session.query(
             PurchaseOrderItem.product_id,
             Product.name.label('product_name'),
             PurchaseOrderItem.color,
-            func.sum(PurchaseOrderItem.quantity)
+            (func.sum(PurchaseOrderItem.quantity) - 
+             func.coalesce(func.sum(
+                 db.case(
+                     (DeliveryItem.quantity != None, DeliveryItem.quantity),
+                     else_=0
+                 )
+             ), 0)
+            ).label('remaining_quantity')
         ).join(
             PurchaseOrder,
             PurchaseOrder.id == PurchaseOrderItem.order_id
         ).join(
             Product,
             Product.id == PurchaseOrderItem.product_id
+        ).outerjoin(  # 左连接发货单项
+            DeliveryItem,
+            db.and_(
+                DeliveryItem.order_number == PurchaseOrder.order_number,
+                DeliveryItem.product_id == PurchaseOrderItem.product_id,
+                DeliveryItem.color == PurchaseOrderItem.color
+            )
         ).filter(
             PurchaseOrder.status == 1  # 状态为已确认
-        ).group_by(PurchaseOrderItem.product_id, PurchaseOrderItem.color).all()
+        ).group_by(
+            PurchaseOrderItem.product_id, 
+            PurchaseOrderItem.color
+        ).having(  # 只显示还有剩余数量的商品
+            (func.sum(PurchaseOrderItem.quantity) - 
+             func.coalesce(func.sum(
+                 db.case(
+                     (DeliveryItem.quantity != None, DeliveryItem.quantity),
+                     else_=0
+                 )
+             ), 0)) > 0
+        ).all()
         
-        today_to_deliver = sum(item[3] for item in today_to_deliver_items)  # 计算总数量
+        today_to_deliver = sum(item.remaining_quantity for item in today_to_deliver_items)  # 计算总数量
         
         # 获取今日实发货商品数（今日创建的发货单中的商品总数量）
         today_delivered_items = db.session.query(
@@ -4927,9 +5014,9 @@ def get_user_statistics(user_id):
             'unconfirmed_orders': unconfirmed_orders,
             'today_orders': today_orders,
             'today_customers': [{'user_id': customer.user_id, 'nickname': customer.nickname, 'phone': customer.phone} for customer in today_customers],
-            'today_to_deliver': [{'product_id': item.product_id, 'product_name': item.product_name, 'color': item.color, 'quantity': item[3]} for item in today_to_deliver_items],
+            'today_to_deliver': [{'product_id': item.product_id, 'product_name': item.product_name, 'color': item.color, 'quantity': item.remaining_quantity} for item in today_to_deliver_items],
             'today_delivered': [{'product_id': item.product_id, 'product_name': item.product_name, 'color': item.color, 'quantity': item[3]} for item in today_delivered_items],
-            'today_to_deliver_count': today_to_deliver,  # 今日应发货商品总数
+            'today_to_deliver_count': today_to_deliver,  # 今日应发货商品总数（已减去已发货数量）
             'today_delivered_count': today_delivered,      # 今日实发货商品总数
             'total_delivered_quantity': int(total_delivered_quantity),
             'total_delivered_amount': float(total_delivered_amount),
