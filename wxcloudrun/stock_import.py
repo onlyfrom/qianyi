@@ -6,7 +6,8 @@ import string
 from datetime import datetime
 from flask import jsonify, request
 from wxcloudrun.views import login_required, db, app
-from wxcloudrun.model import Product, StockRecord, User, PushOrder, PushOrderProduct, UserRole, DeliveryOrder, DeliveryItem, PurchaseOrder, PurchaseOrderItem
+from wxcloudrun.model import Product, StockRecord, User, PushOrder, PushOrderProduct, UserRole, DeliveryOrder, DeliveryItem, PurchaseOrder, PurchaseOrderItem, Payment
+from sqlalchemy import func
 
 @app.route('/products/import-stock', methods=['POST'])
 @login_required
@@ -772,6 +773,191 @@ def import_history_delivery_orders(user_id):
         return jsonify({
             'code': 500,
             'message': '导入失败',
+            'error': str(e)
+        }), 500
+
+@app.route('/customer/daily-stats', methods=['GET'])
+@login_required
+def get_customer_daily_stats(user_id):
+    """
+    获取客户每日统计数据
+    返回数据包括：
+    - 今日下单数量
+    - 今日实发数量
+    - 今日实发金额
+    - 累计发货总量
+    - 累计货款总额
+    - 已付金额
+    """
+    try:
+        # 获取今日的采购单统计
+        today_purchase_stats = db.session.query(
+            func.count(PurchaseOrder.id).label('order_count'),
+            func.sum(PurchaseOrderItem.quantity).label('total_quantity'),
+            func.sum(PurchaseOrder.total_amount).label('total_amount')
+        ).join(
+            PurchaseOrderItem, 
+            PurchaseOrder.id == PurchaseOrderItem.order_id
+        ).filter(
+            PurchaseOrder.user_id == user_id,
+            func.date(PurchaseOrder.created_at) == func.current_date()
+        ).first()
+
+        # 获取今日的发货单统计
+        today_delivery_stats = db.session.query(
+            func.sum(DeliveryItem.quantity).label('delivered_quantity'),
+            func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('delivered_amount')
+        ).join(
+            DeliveryOrder, 
+            DeliveryItem.delivery_id == DeliveryOrder.id
+        ).join(
+            PurchaseOrder,
+            DeliveryItem.order_number == PurchaseOrder.order_number
+        ).join(
+            PurchaseOrderItem,
+            db.and_(
+                PurchaseOrder.id == PurchaseOrderItem.order_id,
+                PurchaseOrderItem.product_id == DeliveryItem.product_id,
+                PurchaseOrderItem.color == DeliveryItem.color
+            )
+        ).filter(
+            PurchaseOrder.user_id == user_id,
+            func.date(DeliveryOrder.created_at) == func.current_date(),
+            DeliveryOrder.status.in_([1, 2])  # 已发货或已完成
+        ).first()
+
+        # 获取累计统计数据
+        total_stats = db.session.query(
+            func.sum(DeliveryItem.quantity).label('total_delivered_quantity'),
+            func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_delivered_amount'),
+            func.sum(Payment.amount).label('paid_amount')
+        ).join(
+            DeliveryOrder, 
+            DeliveryItem.delivery_id == DeliveryOrder.id
+        ).join(
+            PurchaseOrder,
+            DeliveryItem.order_number == PurchaseOrder.order_number
+        ).join(
+            PurchaseOrderItem,
+            db.and_(
+                PurchaseOrder.id == PurchaseOrderItem.order_id,
+                PurchaseOrderItem.product_id == DeliveryItem.product_id,
+                PurchaseOrderItem.color == DeliveryItem.color
+            )
+        ).outerjoin(
+            Payment,
+            Payment.customer_id == PurchaseOrder.user_id
+        ).filter(
+            PurchaseOrder.user_id == user_id,
+            DeliveryOrder.status.in_([1, 2])  # 已发货或已完成
+        ).first()
+
+        return jsonify({
+            'code': 0,
+            'data': {
+                'day_total_count': today_purchase_stats.order_count or 0,  # 今日下单数量
+                'day_total_quantity': today_delivery_stats.delivered_quantity or 0,  # 今日实发数量
+                'day_total_amount': today_delivery_stats.delivered_amount or 0,  # 今日实发金额
+                'total_delivered_quantity': total_stats.total_delivered_quantity or 0,  # 累计发货总量
+                'total_delivered_amount': total_stats.total_delivered_amount or 0,  # 累计货款总额
+                'paid_amount': total_stats.paid_amount or 0,  # 已付金额
+                'pending_payment': float(total_stats.total_delivered_amount) - float(total_stats.paid_amount) or 0  # 剩余应付金额
+            }
+        })
+
+    except Exception as e:
+        print(f'获取客户每日统计数据失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({
+            'code': 500,
+            'message': '获取统计数据失败',
+            'error': str(e)
+        }), 500
+
+@app.route('/customer/daily-details', methods=['GET'])
+@login_required
+def get_customer_daily_details(user_id):
+    """
+    获取客户每日详细数据
+    参数：
+    - type: 查询类型
+        - day_total_count: 今日下单明细
+        - day_total_quantity: 今日实发明细
+        - day_total_amount: 今日实发金额明细
+    """
+    try:
+        query_type = request.args.get('type')
+        if not query_type:
+            return jsonify({'code': 400, 'message': '缺少查询类型参数'}), 400
+
+        if query_type == 'day_total_count':
+            # 获取今日下单明细
+            details = db.session.query(
+                Product.id.label('product_id'),
+                Product.name.label('product_name'),
+                PurchaseOrderItem.color,
+                PurchaseOrderItem.quantity,
+                PurchaseOrderItem.price
+            ).join(
+                PurchaseOrderItem,
+                Product.id == PurchaseOrderItem.product_id
+            ).join(
+                PurchaseOrder,
+                PurchaseOrderItem.order_id == PurchaseOrder.id
+            ).filter(
+                PurchaseOrder.user_id == user_id,
+                func.date(PurchaseOrder.created_at) == func.current_date()
+            ).all()
+        else:
+            # 获取今日实发明细
+            details = db.session.query(
+                Product.id.label('product_id'),
+                Product.name.label('product_name'),
+                DeliveryItem.color,
+                DeliveryItem.quantity,
+                PurchaseOrderItem.price
+            ).join(
+                DeliveryOrder,
+                DeliveryItem.delivery_id == DeliveryOrder.id
+            ).join(
+                PurchaseOrder,
+                DeliveryItem.order_number == PurchaseOrder.order_number
+            ).join(
+                PurchaseOrderItem,
+                db.and_(
+                    PurchaseOrder.id == PurchaseOrderItem.order_id,
+                    PurchaseOrderItem.product_id == DeliveryItem.product_id,
+                    PurchaseOrderItem.color == DeliveryItem.color
+                )
+            ).join(
+                Product,
+                Product.id == DeliveryItem.product_id
+            ).filter(
+                PurchaseOrder.user_id == user_id,
+                func.date(DeliveryOrder.created_at) == func.current_date(),
+                DeliveryOrder.status.in_([1, 2])  # 已发货或已完成
+            ).all()
+
+        # 转换查询结果为字典列表
+        result = [{
+            'product_id': item.product_id,
+            'product_name': item.product_name,
+            'color': item.color,
+            'quantity': item.quantity,
+            'price': float(item.price) if item.price else 0
+        } for item in details]
+
+        return jsonify({
+            'code': 0,
+            'data': result
+        })
+
+    except Exception as e:
+        print(f'获取客户每日详细数据失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({
+            'code': 500,
+            'message': '获取详细数据失败',
             'error': str(e)
         }), 500
 
