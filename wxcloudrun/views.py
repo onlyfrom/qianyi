@@ -3447,7 +3447,7 @@ def accept_purchase_order(user_id, order_id):
 
 # 取消采购单
 @app.route('/purchase_orders/<int:order_id>/cancel', methods=['PUT'])
-@check_staff_permission('purchase_order.cancel')
+@login_required
 def cancel_purchase_order(user_id, order_id):
     try:
         # 检查采购单是否存在和状态
