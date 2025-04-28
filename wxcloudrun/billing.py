@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, send_file, send_from_directory
 from decimal import Decimal
-from .model import PurchaseOrder, PurchaseOrderItem, User, db, DeliveryOrder, DeliveryItem, Payment, Product, UserProductPrice
+from .model import PurchaseOrder, PurchaseOrderItem, User, db, DeliveryOrder, DeliveryItem, Payment, Product, UserProductPrice, PushOrder ,PushOrderProduct
 from .views import login_required, app
 import pandas as pd
 from io import BytesIO
@@ -1727,5 +1727,71 @@ def get_all_user_product_prices(user_id):
         return jsonify({
             'code': -1,
             'message': f'获取客户商品价格失败: {str(e)}'
+        })
+
+@billing_bp.route('/billing/<int:customer_id>/missing-products', methods=['GET'])
+@login_required
+def get_missing_products(user_id, customer_id):
+    """获取用户采购单中存在但在推送单中找不到的商品列表"""
+    try:
+        print(f"[DEBUG] 开始查询缺失商品: customer_id={customer_id}")
+        
+        # 查询该客户所有采购单中的商品（按商品ID分组）
+        purchase_items = db.session.query(
+            PurchaseOrderItem.product_id,
+            Product.name.label('product_name'),
+            db.func.sum(PurchaseOrderItem.quantity).label('total_quantity'),
+            PurchaseOrderItem.price,
+            db.func.max(PurchaseOrder.created_at).label('last_created_at')
+        ).join(
+            PurchaseOrder, PurchaseOrderItem.order_id == PurchaseOrder.id
+        ).join(
+            Product, PurchaseOrderItem.product_id == Product.id
+        ).filter(
+            PurchaseOrder.user_id == customer_id
+        ).group_by(
+            PurchaseOrderItem.product_id,
+            Product.name,
+            PurchaseOrderItem.price
+        ).all()
+
+        # 查询该客户所有推送单中的商品ID列表
+        pushed_product_ids = db.session.query(
+            PushOrderProduct.product_id
+        ).join(
+            PushOrder, PushOrderProduct.push_order_id == PushOrder.id
+        ).filter(
+            PushOrder.target_user_id == customer_id
+        ).distinct().all()
+
+        # 转换为集合，方便查找
+        pushed_products = set(item.product_id for item in pushed_product_ids)
+
+        # 找出在采购单中存在但在推送单中不存在的商品
+        missing_products = []
+        for item in purchase_items:
+            if item.product_id not in pushed_products:
+                missing_products.append({
+                    'product_name': item.product_name,
+                    'product_id': item.product_id,
+                    'quantity': item.total_quantity,
+                    'price': float(item.price),
+                    'created_at': item.last_created_at.strftime('%Y-%m-%d %H:%M:%S') if item.last_created_at else None
+                })
+
+        # 按采购时间降序排序
+        missing_products.sort(key=lambda x: x['created_at'] or '', reverse=True)
+
+        print(f"[DEBUG] 查询完成: 找到{len(missing_products)}个缺失商品")
+        return jsonify({
+            'code': 0,
+            'data': missing_products
+        })
+
+    except Exception as e:
+        print(f"[ERROR] 查询缺失商品失败: {str(e)}")
+        return jsonify({
+            'code': -1,
+            'message': f'查询缺失商品失败: {str(e)}'
         })
 

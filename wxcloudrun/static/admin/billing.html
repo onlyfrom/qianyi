@@ -487,6 +487,45 @@
                                 </el-button>
                             </span>
                         </template>
+
+                        <!-- 添加缺失商品列表 -->
+                        <el-divider>缺失商品列表</el-divider>
+                        <el-table
+                            :data="missingProducts"
+                            border
+                            style="width: 100%"
+                            v-loading="loadingMissingProducts"
+                            @selection-change="handleMissingProductSelection"
+                        >
+                            <el-table-column type="selection" width="55"></el-table-column>
+                            <el-table-column prop="product_name" label="商品名称" width="180"></el-table-column>
+                            <el-table-column prop="product_id" label="款号" width="120"></el-table-column>
+                            <el-table-column prop="quantity" label="采购数量" width="100"></el-table-column>
+                            <el-table-column label="采购价格" width="150">
+                                <template #default="scope">
+                                    <el-input-number
+                                        v-model="scope.row.price"
+                                        :precision="2"
+                                        :step="0.5"
+                                        :min="0"
+                                        size="small"
+                                        @change="handleMissingProductPriceChange(scope.row)"
+                                    ></el-input-number>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="created_at" label="采购时间" width="180">
+                                <template #default="scope">
+                                    {{ formatDate(scope.row.created_at) }}
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <div style="margin-top: 20px; text-align: right;">
+                            <el-button 
+                                type="primary" 
+                                @click="createPushOrder"
+                                :disabled="selectedMissingProducts.length === 0"
+                            >创建推送单</el-button>
+                        </div>
                     </el-dialog>
 
                     <div style="margin-top: 20px;">
@@ -1924,6 +1963,7 @@
                     selectedProduct.value = null;
                     updatePriceDialogVisible.value = true;
                     loadProductOptions();
+                    loadMissingProducts(); // 加载缺失商品列表
                 };
 
                 const handlePriceUpdate = async (item) => {
@@ -2023,6 +2063,88 @@
                     }
                 };
 
+                // 在 setup 函数中添加相关变量和方法
+                const missingProducts = ref([]);
+                const loadingMissingProducts = ref(false);
+
+                const loadMissingProducts = async () => {
+                    if (!currentBilling.value || !currentBilling.value.id) return;
+                    
+                    try {
+                        loadingMissingProducts.value = true;
+                        const response = await axios.get(`/billing/${currentBilling.value.id}/missing-products`);
+                        if (response.data.code === 0) {
+                            missingProducts.value = response.data.data || [];
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.message || '获取缺失商品列表失败');
+                        }
+                    } catch (error) {
+                        console.error('获取缺失商品列表失败:', error);
+                        ElementPlus.ElMessage.error('获取缺失商品列表失败');
+                    } finally {
+                        loadingMissingProducts.value = false;
+                    }
+                };
+
+                // 处理缺失商品选择变化
+                const selectedMissingProducts = ref([]);
+                const handleMissingProductSelection = (selection) => {
+                    selectedMissingProducts.value = selection;
+                };
+
+                // 处理缺失商品价格修改
+                const handleMissingProductPriceChange = async (product) => {
+                    try {
+                        const response = await axios.post('/user-product-prices', {
+                            user_id: currentBilling.value.id,
+                            product_id: product.product_id,
+                            price: product.price
+                        });
+
+                        if (response.data.code === 0) {
+                            ElementPlus.ElMessage.success('价格更新成功');
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.message || '价格更新失败');
+                        }
+                    } catch (error) {
+                        console.error('更新商品价格失败:', error);
+                        ElementPlus.ElMessage.error('更新商品价格失败');
+                    }
+                };
+
+                // 创建推送单
+                const createPushOrder = async () => {
+                    if (selectedMissingProducts.value.length === 0) {
+                        ElementPlus.ElMessage.warning('请选择要推送的商品');
+                        return;
+                    }
+
+                    try {
+                        const response = await axios.post('/billing/push-order', {
+                            customer_id: currentBilling.value.id,
+                            products: selectedMissingProducts.value.map(product => ({
+                                id: product.product_id,
+                                name: product.product_name,
+                                price: product.price,
+                                quantity: product.quantity
+                            }))
+                        });
+
+                        if (response.data.code === 0) {
+                            ElementPlus.ElMessage.success('推送单创建成功');
+                            // 重新加载缺失商品列表
+                            await loadMissingProducts();
+                            // 清空选择
+                            selectedMissingProducts.value = [];
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.message || '创建推送单失败');
+                        }
+                    } catch (error) {
+                        console.error('创建推送单失败:', error);
+                        ElementPlus.ElMessage.error('创建推送单失败');
+                    }
+                };
+
                 return {
                     statistics,
                     filterForm,
@@ -2111,6 +2233,13 @@
                     handlePriceUpdate,
                     selectedProduct,
                     handleProductChange,
+                    missingProducts,
+                    loadingMissingProducts,
+                    loadMissingProducts,
+                    handleMissingProductPriceChange,
+                    selectedMissingProducts,
+                    handleMissingProductSelection,
+                    createPushOrder,
                 };
             }
         });

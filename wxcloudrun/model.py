@@ -425,3 +425,16 @@ class IgnoredStockWarning(db.Model):
             'user_id': self.user_id,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
         } 
+    
+class UserWechatBinding(db.Model):
+    __tablename__ = 'user_wechat_bindings'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    openid = db.Column(db.String(100), unique=True, nullable=False)
+    contact_name = db.Column(db.String(100))  # 该微信绑定的联系人名称
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    last_login = db.Column(db.DateTime)
+    
+    # 建立与User模型的关系
+    user = db.relationship('User', backref=db.backref('wechat_bindings', lazy=True)) 

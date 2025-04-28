@@ -501,6 +501,41 @@ const PurchaseOrderDetail = {
                         colorSet.add(item.currentSpec.color);
                     }
 
+                    // 更新每个商品的总金额
+                    this.orderData.order.items.forEach(item => {
+                        let totalAmount = 0;
+                        let totalAmountExtra = 0;
+                        let totalQuantity = 0;
+                        
+                        item.specs.forEach(spec => {
+                            const quantity = spec.quantity || 0;
+                            const price = spec.price || 0;
+                            const extra = spec.extra || 0;
+                            
+                            totalAmount += quantity * price;
+                            totalAmountExtra += extra;
+                            totalQuantity += quantity;
+                        });
+                        
+                        item.total_amount = totalAmount;
+                        item.total_amount_extra = totalAmountExtra;
+                        item.total_quantity = totalQuantity;
+                    });
+
+                    // 更新订单总金额
+                    this.orderData.order.total_amount = this.orderData.order.items.reduce(
+                        (sum, item) => sum + (item.total_amount || 0), 
+                        0
+                    );
+                    this.orderData.order.total_amount_extra = this.orderData.order.items.reduce(
+                        (sum, item) => sum + (item.total_amount_extra || 0), 
+                        0
+                    );
+                    this.orderData.order.total_quantity = this.orderData.order.items.reduce(
+                        (sum, item) => sum + (item.total_quantity || 0), 
+                        0
+                    );
+
                     // 保存编辑
                     await this.$emit('save', this.orderData.order);
                     ElementPlus.ElMessage.success('保存成功');

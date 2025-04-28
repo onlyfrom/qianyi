@@ -447,6 +447,7 @@ def wechat_openid_logintype():
         data = request.get_json()
         openid = request.headers.get('x-wx-openid')
         nickname = data.get('nickname') if data else None
+        contact_name = data.get('contact_name') if data else None  # 新增：获取联系人名称
         
         if not openid:
             print('错误: 未获取到openid')
@@ -454,51 +455,74 @@ def wechat_openid_logintype():
             
         print('从header获取到的openid:', openid)
         print('获取到的nickname:', nickname)
+        print('获取到的contact_name:', contact_name)
         
-        # 先通过openid查询用户
-        user = User.query.filter_by(openid=openid).first()
+        # 先查找是否有已存在的微信绑定
+        binding = UserWechatBinding.query.filter_by(openid=openid).first()
         
-        if not user and nickname:
-            # 如果openid没找到用户，且提供了nickname，尝试通过nickname查找
+        if binding:
+            # 如果找到绑定记录，直接使用关联的用户
+            user = binding.user
+            # 更新最后登录时间
+            binding.last_login = datetime.now()
+            if contact_name:  # 如果提供了新的联系人名称，更新它
+                binding.contact_name = contact_name
+            db.session.commit()
+        elif nickname:
+            # 如果openid没找到绑定，且提供了nickname，尝试通过nickname查找用户
             print(f'通过nickname查找用户: {nickname}')
             user = User.query.filter_by(nickname=nickname).first()
             
-            if user and not user.openid:
-                # 如果找到用户且该用户没有openid，则更新用户的openid
-                print(f'找到现有用户(ID={user.id})，更新openid')
-                user.openid = openid
-                user.last_login = datetime.now()
+            if user:
+                # 检查用户是否已有openid
+                if user.openid:
+                    return jsonify({'error': '该用户已绑定其他微信账号'}), 400
+                
+                # 创建新的绑定关系
+                binding = UserWechatBinding(
+                    user_id=user.id,
+                    openid=openid,
+                    contact_name=contact_name or nickname,
+                    last_login=datetime.now()
+                )
+                db.session.add(binding)
                 db.session.commit()
+                print(f'为用户(ID={user.id})创建了新的微信绑定')
+        else:
+            user = None
         
         if user:
             print(f'找到用户: ID={user.id}, nickname={user.nickname}')
-            # 更新最后登录时间
-            user.last_login = datetime.now()
-            db.session.commit()
-            
             # 生成token并返回用户信息
             token = generate_token(user.id)
+            
+            # 获取所有绑定的微信账号信息
+            bindings_info = [{
+                'openid': b.openid,
+                'contact_name': b.contact_name,
+                'last_login': b.last_login
+            } for b in user.wechat_bindings]
+            
             return jsonify({
                 'code': 200,
                 'data': {
-                'is_registered': True,
-                'token': token,
-                'userInfo': {
-                    'id': user.id,
-                    'username': user.username,
-                    'nickname': user.nickname,
-                    'avatar': user.avatar,
-                    'phone': user.phone,
-                    'address': user.address,
-                    'contact': user.contact,
-                    'user_type': user.user_type,
-                    'status': user.status,
-                    'created_at': user.created_at,
-                    'last_login': user.last_login,
-                    'role': user.role,                    
-
+                    'is_registered': True,
+                    'token': token,
+                    'userInfo': {
+                        'id': user.id,
+                        'username': user.username,
+                        'nickname': user.nickname,
+                        'avatar': user.avatar,
+                        'phone': user.phone,
+                        'address': user.address,
+                        'contact': user.contact,
+                        'user_type': user.user_type,
+                        'status': user.status,
+                        'created_at': user.created_at,
+                        'role': user.role,
+                        'wechat_bindings': bindings_info  # 新增：返回所有绑定的微信账号信息
+                    }
                 }
-            }
             })
         
         # 如果没有找到用户，返回非邀请客户错误
@@ -4614,6 +4638,100 @@ def get_push_orders(user_id):
         print(f'获取推送单列表失败: {str(e)}')
         return jsonify({'error': '获取推送单列表失败'}), 500
 
+
+@app.route('/billing/push-order', methods=['POST'])
+@admin_required
+def create_billing_push_order(user_id):
+    try:
+        data = request.json
+        customer_id = data.get('customer_id')
+        products = data.get('products', [])
+
+        if not customer_id or not products:
+            return jsonify({'code': 1, 'message': '无效的请求数据'}), 400
+
+        # 获取客户信息
+        customer = User.query.filter_by(id=customer_id).first()
+        if not customer:
+            return jsonify({'code': 1, 'message': '客户不存在'}), 404
+
+        # 生成推送单号
+        order_number = f"PUSH{datetime.now().strftime('%Y%m%d%H%M%S')}{random.randint(100,999)}"
+
+        # 创建推送单
+        push_order = PushOrder(
+            user_id=user_id,
+            order_number=order_number,
+            target_name=customer.nickname or customer.username,
+            target_user_id=customer_id,
+            openid=customer.openid,
+            created_at=datetime.now()
+        )
+
+        db.session.add(push_order)
+        db.session.flush()  # 获取 push_order.id
+
+        # 添加推送商品
+        products_data = []
+        for product_info in products:
+            product = Product.query.filter_by(id=product_info['id']).first()
+            if product:
+                # 创建或更新用户商品价格记录
+                user_price = UserProductPrice.query.filter_by(
+                    user_id=customer_id,
+                    product_id=product_info['id']
+                ).first()
+
+                if user_price:
+                    # 更新现有价格记录
+                    user_price.custom_price = product_info['price']
+                else:
+                    # 创建新的价格记录
+                    new_price = UserProductPrice(
+                        user_id=customer_id,
+                        product_id=product_info['id'],
+                        custom_price=product_info['price']
+                    )
+                    db.session.add(new_price)
+
+                # 创建推送商品记录
+                push_product = PushOrderProduct(
+                    push_order_id=push_order.id,
+                    product_id=product_info['id'],
+                    price=product_info['price'],
+                    specs=json.dumps([]),  # 空规格
+                    specs_info=json.dumps({}),  # 空规格信息
+                    created_at=datetime.now()
+                )
+                db.session.add(push_product)
+                products_data.append({'name': product.name})
+
+        try:
+            db.session.commit()
+
+            # 发送微信通知
+            if customer.openid:
+                send_push_notification(customer.openid, order_number, products_data)
+
+            return jsonify({
+                'code': 0,
+                'message': '推送单创建成功',
+                'data': {
+                    'order_id': push_order.id,
+                    'order_number': order_number
+                }
+            })
+
+        except Exception as e:
+            db.session.rollback()
+            print(f'保存推送单失败: {str(e)}')
+            print(f'错误追踪:\n{traceback.format_exc()}')
+            return jsonify({'code': 1, 'message': '创建推送单失败'}), 500
+
+    except Exception as e:
+        print(f'创建推送单失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'code': 1, 'message': '创建推送单失败'}), 500
 
 # 在编辑和删除接口中使用权限检查
 @app.route('/push_orders/<int:order_id>', methods=['PUT'])
