@@ -59,6 +59,7 @@ class User(db.Model):
     login_attempts = db.Column(db.Integer, default=0)
     last_login_attempt = db.Column(db.DateTime)
     last_login = db.Column(db.DateTime)
+    invite_code = db.Column(db.String(20))
     
     # 新增字段
     role = db.Column(db.String(20), nullable=False, default=UserRole.CUSTOMER)  # 用户角色

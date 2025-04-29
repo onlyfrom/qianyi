@@ -508,3 +508,171 @@ def send_push_notification(openid, order_number, products):
         print(f"发送订阅消息异常: {str(e)}")
         return False
 
+def generate_invite_code_api(user_id):
+    """生成邀请码"""
+    try:
+        print('='*50)
+        print('开始处理生成邀请码请求')
+        print('='*50)
+        
+        # 获取当前用户
+        user = User.query.get(user_id)
+        if not user:
+            print(f'错误: 用户不存在 - ID: {user_id}')
+            return jsonify({
+                'code': 404,
+                'message': '用户不存在'
+            }), 404
+            
+        # 检查用户是否已经有邀请码
+        if user.invite_code:
+            print(f'用户已有邀请码: {user.invite_code}')
+            return jsonify({
+                'code': 200,
+                'data': {
+                    'invite_code': user.invite_code,
+                    'user_id': user.id,
+                    'nickname': user.nickname
+                }
+            })
+            
+        # 生成唯一的邀请码
+        max_attempts = 10  # 最大尝试次数
+        attempt = 0
+        while attempt < max_attempts:
+            invite_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+            # 检查邀请码是否已存在
+            existing_user = User.query.filter_by(invite_code=invite_code).first()
+            if not existing_user:
+                break
+            attempt += 1
+            
+        if attempt >= max_attempts:
+            print('错误: 无法生成唯一的邀请码')
+            return jsonify({
+                'code': 500,
+                'message': '无法生成邀请码，请稍后重试'
+            }), 500
+            
+        # 更新用户的邀请码
+        user.invite_code = invite_code
+        db.session.commit()
+        
+        print(f'邀请码生成成功: {invite_code}')
+        
+        # 返回邀请码和用户信息
+        return jsonify({
+            'code': 200,
+            'data': {
+                'invite_code': invite_code,
+                'user_id': user.id,
+                'nickname': user.nickname
+            }
+        })
+        
+    except Exception as e:
+        print('\n处理生成邀请码请求时发生错误:')
+        print(f'- 错误类型: {type(e).__name__}')
+        print(f'- 错误信息: {str(e)}')
+        print(f'- 错误追踪:\n{traceback.format_exc()}')
+        return jsonify({
+            'code': 500,
+            'message': '生成邀请码失败'
+        }), 500
+
+def register_subaccount_api(data):
+    """通过邀请码注册子账号（绑定到父账号）"""
+    try:
+        print('='*50)
+        print('开始处理微信附属账号绑定请求')
+        print('='*50)
+        
+        print('收到的请求数据:', json.dumps(data, ensure_ascii=False, indent=2))
+        
+        # 验证必要参数
+        required_fields = ['openid', 'invite_code', 'nickname']
+        for field in required_fields:
+            if not data.get(field):
+                print(f'错误: 缺少必要参数 {field}')
+                return jsonify({'error': f'缺少必要参数: {field}'}), 400
+                
+        openid = data['openid']
+        invite_code = data['invite_code']
+        nickname = data['nickname']
+        
+        # 通过nickname查找父账号
+        parent_user = User.query.filter_by(nickname=nickname).first()
+        if not parent_user:
+            print(f'错误: 未找到用户 - nickname: {nickname}')
+            return jsonify({'error': '未找到用户'}), 404
+            
+        # 验证邀请码是否有效
+        if parent_user.invite_code != invite_code:
+            print(f'错误: 邀请码无效 - 提供的邀请码: {invite_code}')
+            return jsonify({'error': '邀请码无效'}), 400
+            
+        # 检查openid是否已被绑定
+        existing_binding = UserWechatBinding.query.filter_by(openid=openid).first()
+        if existing_binding:
+            print(f'错误: 该微信账号已被绑定 - 用户ID: {existing_binding.user_id}')
+            return jsonify({'error': '该微信账号已被绑定'}), 400
+            
+        # 创建微信绑定关系
+        binding = UserWechatBinding(
+            user_id=parent_user.id,
+            openid=openid,
+            contact_name=parent_user.nickname + '附属',
+            created_at=datetime.now(),
+            last_login=datetime.now()
+        )
+        
+        # 清除邀请码
+        parent_user.invite_code = None
+        
+        db.session.add(binding)
+        db.session.commit()
+        
+        print(f'微信附属账号绑定成功: 父账号ID={parent_user.id}')
+        
+        # 生成token
+        token = jwt.encode(
+            {
+                'user_id': parent_user.id,
+                'exp': datetime.utcnow() + timedelta(days=30)
+            },
+            config.SECRET_KEY,
+            algorithm='HS256'
+        )
+        
+        # 获取所有绑定的微信账号信息
+        bindings_info = [{
+            'openid': b.openid,
+            'contact_name': b.contact_name,
+            'last_login': b.last_login.strftime('%Y-%m-%d %H:%M:%S') if b.last_login else None
+        } for b in parent_user.wechat_bindings]
+        
+        return jsonify({
+            'code': 200,
+            'message': '微信附属账号绑定成功',
+            'data': {
+                'userInfo': {
+                    'id': parent_user.id,
+                    'username': parent_user.username,
+                    'nickname': parent_user.nickname,
+                    'avatar': parent_user.avatar,
+                    'user_type': parent_user.user_type,
+                    'role': parent_user.role,
+                    'wechat_bindings': bindings_info
+                },
+                'token': token
+            }
+        })
+        
+    except Exception as e:
+        print('\n处理微信附属账号绑定请求时发生错误:')
+        print(f'- 错误类型: {type(e).__name__}')
+        print(f'- 错误信息: {str(e)}')
+        print(f'- 错误追踪:\n{traceback.format_exc()}')
+        db.session.rollback()
+        return jsonify({'error': '绑定失败'}), 500
+

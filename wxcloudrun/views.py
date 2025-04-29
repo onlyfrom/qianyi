@@ -7868,3 +7868,22 @@ def get_users_list(user_id):
             'code': -1,
             'message': f'获取用户列表失败: {str(e)}'
         }), 500
+    
+@app.route('/wx/invite/code', methods=['GET'])
+@admin_required
+def generate_invite_code_route(user_id):
+    """生成邀请码路由"""
+    return generate_invite_code_api(user_id)
+
+@app.route('/wx/register/subaccount', methods=['POST'])
+def register_subaccount_route():
+    """注册子账号路由"""
+    return register_subaccount_api(request.json)
+
+#创建邀请码QRCODE
+@app.route('/wx/binddingQrcode', methods = ['POST'])
+def binddingQrcode_creat():
+    data = request.get_json()
+    page = data.get('page')
+    scene = data.get('scene')    
+    return generate_qrcode(page,scene)
