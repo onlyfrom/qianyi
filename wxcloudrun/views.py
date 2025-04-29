@@ -4047,19 +4047,19 @@ def generate_qrcode_api():
                 'message': '无法生成唯一的分享码'
             }), 500
         
-        print(f'开始生成分享码')
+        app.logger.info('开始生成分享码')
         # 使用分享码生成二维码
         # 检查请求头中是否有openid
         openid = request.headers.get('X-WX-OPENID')
-
+        version = data.get('version',"release")
         # 构建scene参数
         scene = f'{share_code}&1'
         
         if openid:
-            print('使用微信云托管方式生成二维码')
-            qrcode_path = generate_qrcode_wx(page, scene)
+            app.logger.info('使用微信云托管方式生成二维码')
+            qrcode_path = generate_qrcode_wx(page, scene,version)
         else:
-            print('使用普通方式生成二维码') 
+            app.logger.info('使用普通方式生成二维码') 
             qrcode_path = generate_qrcode(page, scene)
 
         if qrcode_path:
@@ -4075,7 +4075,7 @@ def generate_qrcode_api():
                 'message': 'QR code generation failed'
             }), 401
     except Exception as e:
-        print(f"生成二维码出错: {str(e)}")
+        app.logger.error(f"生成二维码出错: {str(e)}")
         return jsonify({
             'code': 500,
             'message': str(e)
@@ -4099,7 +4099,7 @@ def generate_qrcode(page, scene):
         params = {
             "scene": scene,
             "page": page,
-            "env_version": "release",  #体验版
+            "env_version": "trial",  #体验版
             "check_path": False
         }
         
@@ -4200,7 +4200,7 @@ def generate_qrcode(page, scene):
             }
         }), 500
     
-def generate_qrcode_wx(page, scene):
+def generate_qrcode_wx(page, scene,version = 'trial'):
     try:
         
         qrcode_dir = os.path.join(app.static_folder, 'qrcodes')
@@ -4215,7 +4215,7 @@ def generate_qrcode_wx(page, scene):
         params = {
             "scene": scene,
             "page": page,
-            "env_version": "release",  #体验版  trial 正式 release 
+            "env_version": version,  #体验版  trial 正式 release 
             "check_path": False
         }
         
