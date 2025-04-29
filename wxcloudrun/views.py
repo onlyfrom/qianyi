@@ -3042,7 +3042,7 @@ def get_delivery_order_detail(user_id, order_id):
         if not user:
             return jsonify({'error': '用户不存在'}), 404
 
-        if user.user_type != 1 and order.created_by != user_id:
+        if user.role != 'admin' and user.role != 'STAFF' and user.role != 'normalAdmin' and order.created_by != user_id:
             return jsonify({'error': '无权限查看此配送单'}), 403
 
         # 获取配送商品列表

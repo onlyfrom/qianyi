@@ -26,7 +26,7 @@ const DeliveryOrderDetail = {
                             {{ orderData.order.tracking_number }}
                         </div>
                     </el-descriptions-item>
-                    <el-descriptions-item label="附加费用" :span="2">
+                    <el-descriptions-item label="附加费用" :span="2" v-if="isAdmin">
                         <template v-if="isEditing">
                             <el-input-number
                                 v-model="orderData.order.additional_fee"

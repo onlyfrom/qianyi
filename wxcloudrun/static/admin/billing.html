@@ -1402,6 +1402,12 @@
                         if (response.status === 201 || response.status === 200) {
                             ElementPlus.ElMessage.success('收款记录已创建成功');
                             paymentDialogVisible.value = false;
+                            paymentForm.amount = 0;
+                            paymentForm.remark = '';
+                            paymentForm.delivery_orders = [];
+                            selectedDeliveryOrders.value = [];
+                            currentPayment.value = null;
+                            
                             loadBillingList(); // 刷新列表
                         }
                     } catch (error) {
