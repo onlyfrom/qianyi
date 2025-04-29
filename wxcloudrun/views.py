@@ -459,45 +459,24 @@ def wechat_openid_logintype():
             print('错误: 未提供nickname')
             return jsonify({'error': '未提供nickname'}), 400
 
-        # 1. 先通过nickname查找用户
+        # 通过nickname查找用户
         user = User.query.filter_by(nickname=nickname).first()
         
         if user:
             print(f'找到用户: ID={user.id}, nickname={user.nickname}')
             
-            # 2. 检查用户的openid是否为空
-            if not user.openid:
-                # openid为空，直接更新用户的openid
-                user.openid = openid
-                db.session.commit()
-                print(f'更新用户openid: {openid}')
-            else:
-                # 3. 检查UserWechatBinding表是否存在该openid的绑定
-                existing_binding = UserWechatBinding.query.filter_by(openid=openid).first()
-                if existing_binding:
-                    print('该微信账号已绑定其他用户')
-                    return jsonify({'error': '该微信账号已绑定其他用户'}), 400
-                
-                # 创建新的绑定记录
-                binding = UserWechatBinding(
-                    user_id=user.id,
-                    openid=openid,
-                    contact_name= nickname,
-                    last_login=datetime.now()
-                )
-                db.session.add(binding)
-                db.session.commit()
-                print(f'为用户(ID={user.id})创建了新的微信绑定')
+            # 检查用户是否已绑定微信
+            if user.openid:
+                print('该用户已绑定其他微信账号')
+                return jsonify({'error': '该用户已绑定其他微信账号'}), 400
+            
+            # 直接更新用户的openid
+            user.openid = openid
+            db.session.commit()
+            print(f'更新用户openid: {openid}')
 
             # 生成token并返回用户信息
             token = generate_token(user.id)
-            
-            # 获取所有绑定的微信账号信息
-            bindings_info = [{
-                'openid': b.openid,
-                'contact_name': b.contact_name,
-                'last_login': b.last_login
-            } for b in user.wechat_bindings]
             
             return jsonify({
                 'code': 200,
@@ -515,8 +494,7 @@ def wechat_openid_logintype():
                         'user_type': user.user_type,
                         'status': user.status,
                         'created_at': user.created_at,
-                        'role': user.role,
-                        'wechat_bindings': bindings_info
+                        'role': user.role
                     }
                 }
             })
