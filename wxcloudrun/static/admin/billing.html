@@ -1336,6 +1336,7 @@
                     
                     detailDialogVisible.value = true;
                     await loadCustomerOrders(row.id);
+                    await loadMissingProducts();
                 };
 
                 const loadCustomerOrders = async (customerId) => {
@@ -1407,7 +1408,7 @@
                             paymentForm.delivery_orders = [];
                             selectedDeliveryOrders.value = [];
                             currentPayment.value = null;
-                            
+
                             loadBillingList(); // 刷新列表
                         }
                     } catch (error) {
@@ -2075,6 +2076,7 @@
                 const loadingMissingProducts = ref(false);
 
                 const loadMissingProducts = async () => {
+                    console.log("loadMissingProducts", currentBilling.value);
                     if (!currentBilling.value || !currentBilling.value.id) return;
                     
                     try {
