@@ -861,7 +861,7 @@ def get_customer_daily_stats(user_id):
                 'total_delivered_quantity': total_stats.total_delivered_quantity or 0,  # 累计发货总量
                 'total_delivered_amount': total_stats.total_delivered_amount or 0,  # 累计货款总额
                 'paid_amount': total_stats.paid_amount or 0,  # 已付金额
-                'pending_payment': float(total_stats.total_delivered_amount) - float(total_stats.paid_amount) or 0  # 剩余应付金额
+                'pending_payment': float(total_stats.total_delivered_amount or 0) - float(total_stats.paid_amount or 0) or 0  # 剩余应付金额
             }
         })
 

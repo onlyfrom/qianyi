@@ -407,6 +407,7 @@
                     </el-descriptions>
 
                     <div style="margin-top: 20px; text-align: right;">
+                        <el-tag type="warning" style="margin-right: 10px;" v-if = "missingProducts.length > 0">有未推送商品，请核对</el-tag>
                         <el-button type="primary" @click="showUpdatePriceDialog">批量核对采购单价格</el-button>
                         <el-button type="primary" @click="exportDeliverylist">导出发货单</el-button>
                         <el-button 
@@ -420,7 +421,7 @@
                     <el-dialog
                         title="批量核对采购单价格"
                         v-model="updatePriceDialogVisible"
-                        width="500px"
+                        width="550px"
                         :close-on-click-modal="false"
                     >
                         <el-form :model="updatePriceForm" label-width="120px">
@@ -499,8 +500,8 @@
                         >
                             <el-table-column type="selection" width="55"></el-table-column>
                             <el-table-column prop="product_name" label="商品名称" width="180"></el-table-column>
-                            <el-table-column prop="product_id" label="款号" width="120"></el-table-column>
-                            <el-table-column prop="quantity" label="采购数量" width="100"></el-table-column>
+                            <el-table-column prop="product_id" label="款号" width="120" v-if="false"></el-table-column>
+                            <el-table-column prop="quantity" label="采购数量" width="100" v-if="false"></el-table-column>
                             <el-table-column label="采购价格" width="150">
                                 <template #default="scope">
                                     <el-input-number
