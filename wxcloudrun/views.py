@@ -447,7 +447,6 @@ def wechat_openid_logintype():
         data = request.get_json()
         openid = request.headers.get('x-wx-openid')
         nickname = data.get('nickname') if data else None
-        contact_name = data.get('contact_name') if data else None  # 新增：获取联系人名称
         
         if not openid:
             print('错误: 未获取到openid')
@@ -455,44 +454,41 @@ def wechat_openid_logintype():
             
         print('从header获取到的openid:', openid)
         print('获取到的nickname:', nickname)
-        print('获取到的contact_name:', contact_name)
+
+        if not nickname:
+            print('错误: 未提供nickname')
+            return jsonify({'error': '未提供nickname'}), 400
+
+        # 1. 先通过nickname查找用户
+        user = User.query.filter_by(nickname=nickname).first()
         
-        # 先查找是否有已存在的微信绑定
-        binding = UserWechatBinding.query.filter_by(openid=openid).first()
-        
-        if binding:
-            # 如果找到绑定记录，直接使用关联的用户
-            user = binding.user
-            # 更新最后登录时间
-            binding.last_login = datetime.now()
-            if contact_name:  # 如果提供了新的联系人名称，更新它
-                binding.contact_name = contact_name
-            db.session.commit()
-        elif nickname:
-            # 如果openid没找到绑定，且提供了nickname，尝试通过nickname查找用户
-            print(f'通过nickname查找用户: {nickname}')
-            user = User.query.filter_by(nickname=nickname).first()
+        if user:
+            print(f'找到用户: ID={user.id}, nickname={user.nickname}')
             
-            if user:
-                # 检查用户是否已有openid
-                if user.openid:
-                    return jsonify({'error': '该用户已绑定其他微信账号'}), 400
+            # 2. 检查用户的openid是否为空
+            if not user.openid:
+                # openid为空，直接更新用户的openid
+                user.openid = openid
+                db.session.commit()
+                print(f'更新用户openid: {openid}')
+            else:
+                # 3. 检查UserWechatBinding表是否存在该openid的绑定
+                existing_binding = UserWechatBinding.query.filter_by(openid=openid).first()
+                if existing_binding:
+                    print('该微信账号已绑定其他用户')
+                    return jsonify({'error': '该微信账号已绑定其他用户'}), 400
                 
-                # 创建新的绑定关系
+                # 创建新的绑定记录
                 binding = UserWechatBinding(
                     user_id=user.id,
                     openid=openid,
-                    contact_name=contact_name or nickname,
+                    contact_name= nickname,
                     last_login=datetime.now()
                 )
                 db.session.add(binding)
                 db.session.commit()
                 print(f'为用户(ID={user.id})创建了新的微信绑定')
-        else:
-            user = None
-        
-        if user:
-            print(f'找到用户: ID={user.id}, nickname={user.nickname}')
+
             # 生成token并返回用户信息
             token = generate_token(user.id)
             
@@ -520,7 +516,7 @@ def wechat_openid_logintype():
                         'status': user.status,
                         'created_at': user.created_at,
                         'role': user.role,
-                        'wechat_bindings': bindings_info  # 新增：返回所有绑定的微信账号信息
+                        'wechat_bindings': bindings_info
                     }
                 }
             })
@@ -613,10 +609,16 @@ def wechat_login():
             
         print('从header获取到的openid:', openid)
             
-        # 查找用户
+        # 查找用户 - 先查User表
         user = User.query.filter_by(openid=openid).first()
         
-        # 用户不存在
+        # 如果User表没找到，查找UserWechatBinding表
+        if not user:
+            binding = UserWechatBinding.query.filter_by(openid=openid).first()
+            if binding:
+                user = binding.user  # 通过关联获取用户
+                
+        # 如果两个表都没找到用户
         if not user:
             print('用户不存在,询问是否注册')
             return jsonify({
@@ -624,7 +626,7 @@ def wechat_login():
                 'data': {
                     'is_registered': False
                 }
-            }),400
+            }), 400
             
         # 用户被禁用
         if user.status == 0:
@@ -655,8 +657,7 @@ def wechat_login():
                     'status': user.status,
                     'created_at': user.created_at,
                     'last_login': user.last_login,
-                    'role': user.role,                    
-
+                    'role': user.role
                 }
             }
         })
@@ -2220,11 +2221,23 @@ def get_purchase_orders(user_id):
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
+        # 打印请求参数
+        print("请求参数信息:")
+        print(f"页码: {page}")
+        print(f"每页数量: {page_size}")
+        print(f"状态筛选: {status}")
+        print(f"日期范围: {date_range}")
+        print(f"关键词: {keyword}")
+        print(f"开始日期: {start_date}")
+        print(f"结束日期: {end_date}")
+        
         # 获取当前用户信息
         current_user = User.query.get(user_id)
         if not current_user:
             return jsonify({'error': '用户不存在'}), 404
             
+        print(f"当前用户信息: ID={current_user.id}, 角色={current_user.role}, 用户名={current_user.username}")
+        
         # 构建查询，加入用户信息
         query = db.session.query(PurchaseOrder, User).join(
             User, PurchaseOrder.user_id == User.id
@@ -2360,6 +2373,22 @@ def get_purchase_orders(user_id):
             except Exception as e:
                 print(f"处理订单 {order.id} 时出错: {str(e)}")
                 continue
+        
+        # 在返回数据之前打印统计信息
+        print("\n返回数据统计:")
+        print(f"总订单数: {pagination.total}")
+        print(f"总页数: {pagination.pages}")
+        print(f"当前页: {page}")
+        print(f"本页订单数量: {len(orders)}")
+        
+        # 打印每个订单的基本信息
+        print("\n本页订单概要:")
+        for order_data in orders:
+            print(f"订单号: {order_data['order_number']}")
+            print(f"总金额: {order_data['total_amount']}")
+            print(f"总数量: {order_data['total_quantity']}")
+            print(f"商品种类数: {len(order_data['items'])}")
+            print("------------------------")
         
         # 返回所有订单数据
         return jsonify({
