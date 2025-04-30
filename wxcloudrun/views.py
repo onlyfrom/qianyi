@@ -2198,7 +2198,7 @@ def get_purchase_orders(user_id):
         keyword = request.args.get('keyword')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
-        
+        user_id = request.args.get('user_id',user_id)
         # 打印请求参数
         print("请求参数信息:")
         print(f"页码: {page}")
@@ -4099,33 +4099,33 @@ def generate_qrcode(page, scene):
         params = {
             "scene": scene,
             "page": page,
-            "env_version": "trial",  #体验版
+            "env_version": config.ENV_VERSION,  #体验版
             "check_path": False
         }
-        
+        app.logger.info(f'生成二维码请求参数: {params}')
         response = requests.post(url, json=params)
-        print(f'生成二维码响应: {response.text,response.status_code}')
+        app.logger.info(f'生成二维码响应: {response.text,response.status_code}')
         if response.status_code == 200:
             # 保存文件
             with open(filepath, 'wb') as f:
                 f.write(response.content)
             
-            print(f"二维码已保存到: {filepath}")
+            app.logger.info(f"二维码已保存到: {filepath}")
             # 返回相对路径
             relative_path = f'/static/qrcodes/{filename}'
         else:
-            print(f"生成二维码失败: {response.text}")
+            app.logger.error(f"生成二维码失败: {response.text}")
             return None       
 
         # 2. 获取到上传链接
-        print('\n[步骤3] 获取云存储上传链接')
+        app.logger.info('\n[步骤3] 获取云存储上传链接')
         try:
             upload_url = 'https://api.weixin.qq.com/tcb/uploadfile?access_token=' + access_token
             upload_params = {
                 'env': WX_ENV,
                 'path': f'qrcodes/{filename}'
             }
-            print(f'请求参数: {upload_params}')
+            app.logger.info(f'请求参数: {upload_params}')
             
             # 使用带有Authorization header的请求
             upload_response = requests.post(
@@ -4133,7 +4133,7 @@ def generate_qrcode(page, scene):
                 json=upload_params
             )
             upload_data = upload_response.json()
-            print(f'获取上传链接响应: {upload_data}')
+            app.logger.info(f'获取上传链接响应: {upload_data}')
             
             if upload_data.get('errcode', 0) != 0:
                 print(f"[错误] 获取上传链接失败: {upload_data}")
@@ -4145,8 +4145,8 @@ def generate_qrcode(page, scene):
                 }), 500
             
         except Exception as e:
-            print(f"[错误] 上传文件过程出错: {str(e)}")
-            print(f"错误追踪:\n{traceback.format_exc()}")
+            app.logger.error(f"[错误] 上传文件过程出错: {str(e)}")
+            app.logger.error(f"错误追踪:\n{traceback.format_exc()}")
             return jsonify({
                 'code': 500,
                 'message': '上传文件过程出错',
@@ -4157,7 +4157,6 @@ def generate_qrcode(page, scene):
         
         # 3. 上传文件到云存储
         try:
-            print('\n[步骤4] 上传文件到云存储')
             cos_url = upload_data['url']
             with open(filepath, 'rb') as f:
                 files = {
@@ -4168,17 +4167,16 @@ def generate_qrcode(page, scene):
                     'Signature': upload_data['authorization'],
                     'x-cos-security-token': upload_data['token'],
                     'x-cos-meta-fileid': upload_data['file_id']
-                }
-                print(f'上传参数: {form_data}')            
+                }       
                 # 上传到对象存储
                 upload_result = requests.post(cos_url, data=form_data, files=files)
-                print(f'上传响应状态码: {upload_result.status_code}')
+                app.logger.info(f'上传响应状态码: {upload_result.status_code}')
             
             return upload_data['file_id']
               
         except Exception as e:
-            print(f"[错误] 上传文件到云存储失败: {str(e)}")
-            print(f"错误追踪:\n{traceback.format_exc()}")
+            app.logger.error(f"[错误] 上传文件到云存储失败: {str(e)}")
+            app.logger.error(f"错误追踪:\n{traceback.format_exc()}")
             return jsonify({
                 'code': 500,
                 'message': '上传文件到云存储失败',
@@ -4187,8 +4185,8 @@ def generate_qrcode(page, scene):
         
         
     except Exception as e:
-        print(f"[错误] 生成二维码过程出错: {str(e)}")
-        print(f"错误追踪:\n{traceback.format_exc()}")
+        app.logger.error(f"[错误] 生成二维码过程出错: {str(e)}")
+        app.logger.error(f"错误追踪:\n{traceback.format_exc()}")
         return jsonify({
             'code': 500,
             'message': '生成二维码过程出错',
@@ -4215,24 +4213,24 @@ def generate_qrcode_wx(page, scene,version = 'trial'):
         params = {
             "scene": scene,
             "page": page,
-            "env_version": version,  #体验版  trial 正式 release 
+            "env_version": config.ENV_VERSION,  #体验版  trial 正式 release 
             "check_path": False
         }
-        
+        app.logger.info(f'生成二维码请求参数: {params}')
         response = requests.post(url, json=params)
-        
+        app.logger.info(f'生成二维码响应: {response.text,response.status_code}')
         if response.status_code == 200:
             # 保存文件
             with open(filepath, 'wb') as f:
                 f.write(response.content)
             
-            print(f"二维码已保存到: {filepath}")
+            app.logger.info(f"二维码已保存到: {filepath}")
         else:
-            print(f"生成二维码失败: {response.text}")
+            app.logger.error(f"生成二维码失败: {response.text}")
             return None       
 
         # 2. 获取到上传链接
-        print('\n[步骤3] 获取云存储上传链接')
+        app.logger.info('\n[步骤3] 获取云存储上传链接')
         try:
             upload_url = 'http://api.weixin.qq.com/tcb/uploadfile'
             upload_params = {
@@ -4544,8 +4542,8 @@ def get_push_orders(user_id):
                 
         user_type = user.user_type
         openid = user.openid
-
-        print(f'用户类型: {user_type}, openid: {openid}, user_id: {user_id}')
+        user_id = request.args.get('target_user_id',user_id)
+        app.logger.info(f'用户类型: {user_type}, openid: {openid}, user_id: {user_id}')
 
         # 构建查询
         if user_type == 1:  # 管理员
@@ -4642,7 +4640,7 @@ def get_push_orders(user_id):
         return jsonify({'orders': orders})
             
     except Exception as e:
-        print(f'获取推送单列表失败: {str(e)}')
+        app.logger.error(f'获取推送单列表失败: {str(e)}')
         return jsonify({'error': '获取推送单列表失败'}), 500
 
 
