@@ -124,39 +124,54 @@ def get_billing_list(user_id):
         for result in results:
             customer_id, customer_name, total_quantity, total_amount, total_additional_fee = result
             
-            # 单独查询该客户的收款总额
-            paid_amount_query = db.session.query(
-                db.func.sum(db.cast(Payment.amount, db.Float))
-            ).filter(
-                Payment.customer_id == customer_id
+            # 计算该客户在指定时间范围内的发货单总金额（包含附加费用）
+            actual_total = float(total_amount or 0) + float(total_additional_fee or 0)
+            
+            # 获取该客户在指定时间范围内的所有发货单
+            delivery_query = db.session.query(DeliveryOrder.id).filter(
+                DeliveryOrder.customer_id == customer_id,
+                DeliveryOrder.status.in_([1, 2])
             )
             
             if start_date:
-                paid_amount_query = paid_amount_query.filter(Payment.payment_date >= start_datetime)
+                delivery_query = delivery_query.filter(DeliveryOrder.created_at >= start_datetime)
             if end_date:
-                paid_amount_query = paid_amount_query.filter(Payment.payment_date <= end_datetime)
+                delivery_query = delivery_query.filter(DeliveryOrder.created_at <= end_datetime)
                 
-            paid_amount = paid_amount_query.scalar() or 0
+            delivery_ids = [id[0] for id in delivery_query.all()]
             
-            # 重新查询该客户的所有发货单附加费用总和
-            additional_fee_query = db.session.query(
-                db.func.sum(db.cast(DeliveryOrder.additional_fee, db.Float))
-            ).filter(
-                DeliveryOrder.customer_id == customer_id,
-                DeliveryOrder.status.in_([1, 2])  # 只统计已发货和已完成的订单
-            ).scalar()
-
-            total_additional_fee = float(additional_fee_query or 0)
-            actual_total = float(total_amount or 0) + total_additional_fee
-
+            # 计算已付金额
+            paid_amount = 0
+            if delivery_ids:
+                # 获取所有付款记录
+                payments = Payment.query.filter(
+                    Payment.customer_id == customer_id
+                ).all()
+                
+                # 在Python中过滤与发货单相关的付款
+                for payment in payments:
+                    # 检查付款时间是否在筛选范围内
+                    if start_date and payment.payment_date < start_datetime:
+                        continue
+                    if end_date and payment.payment_date > end_datetime:
+                        continue
+                        
+                    # 如果付款关联了发货单，则检查发货单是否在筛选范围内
+                    if payment.delivery_orders:
+                        if not any(delivery_id in delivery_ids for delivery_id in payment.delivery_orders):
+                            continue
+                            
+                    # 累加付款金额
+                    paid_amount += float(payment.amount or 0)
+            
             items.append({
                 'id': customer_id,  # 使用客户ID作为标识
                 'customer_name': customer_name,
                 'total_quantity': total_quantity or 0,
                 'total_amount': actual_total,  # 包含附加费用的总金额
-                'additional_fee': total_additional_fee,  # 添加附加费用字段
-                'paid_amount': float(paid_amount),
-                'unpaid_amount': float(actual_total - paid_amount)  # 使用包含附加费用的总金额计算未付金额
+                'additional_fee': float(total_additional_fee or 0),  # 添加附加费用字段
+                'paid_amount': paid_amount,  # 已付金额
+                'unpaid_amount': float(actual_total - paid_amount),  # 使用包含附加费用的总金额计算未付金额
             })
             
             # 如果是按收款金额排序，需要重新排序
@@ -853,11 +868,15 @@ def generate_delivery_image(user_id, delivery_id):
                 # 绘制文本
                 draw.text((text_x, text_y), text, fill=fill, font=font)
             
-            # 绘制标题
+            # 绘制标题 加粗
             title = "发货单"
             title_width = draw.textlength(title, font=title_font)
-            draw.text(((800 - title_width) // 2, 30), title, fill='black', font=title_font)
-            
+            #draw.text(((800 - title_width) // 2, 30), title, fill='black', font=title_font)
+            offset = 0.5  # 偏移量
+            for x_offset in [-offset, 0, offset]:
+                for y_offset in [-offset, 0, offset]:
+                    draw.text(((800 - title_width) // 2 + x_offset, 30 + y_offset), title, fill='black', font=title_font)
+
             # 绘制基本信息表格
             y = 100
             row_height = 40
@@ -875,7 +894,13 @@ def generate_delivery_image(user_id, delivery_id):
             
             # 绘制商品表格标题
             y += row_height + 20
-            draw.text((50, y), "商品明细", fill='black', font=font)
+            title = "商品明细"
+            title_width = draw.textlength(title, font=font)
+            # 使用与主标题相同的居中方式
+            offset = 0.5  # 偏移量
+            for x_offset in [-offset, 0, offset]:
+                for y_offset in [-offset, 0, offset]:
+                    draw.text(((800 - title_width) // 2 + x_offset, y + y_offset), title, fill='black', font=font)
             y += 40
             
             # 表头
@@ -942,15 +967,15 @@ def generate_delivery_image(user_id, delivery_id):
                     x = 50  # 重置x坐标到起始位置
                     
                     # 绘制每一列
-                    draw_cell(x, y, col_widths['name'], row_height, product.name, small_font, 'left')
+                    draw_cell(x, y, col_widths['name'], row_height, product.name, small_font, 'center')
                     x += col_widths['name']
                     draw_cell(x, y, col_widths['color'], row_height, item_info['color'] or '', small_font, 'center')
                     x += col_widths['color']
                     draw_cell(x, y, col_widths['quantity'], row_height, str(item_info['quantity']), small_font, 'center')
                     x += col_widths['quantity']
-                    draw_cell(x, y, col_widths['price'], row_height, f"¥{unit_price:.2f}", small_font, 'right')
+                    draw_cell(x, y, col_widths['price'], row_height, f"¥{unit_price:.2f}", small_font, 'center')
                     x += col_widths['price']
-                    draw_cell(x, y, col_widths['total'], row_height, f"¥{item_total:.2f}", small_font, 'right')
+                    draw_cell(x, y, col_widths['total'], row_height, f"¥{item_total:.2f}", small_font, 'center')
                     
                     y += row_height
             
@@ -958,31 +983,51 @@ def generate_delivery_image(user_id, delivery_id):
             y += 40  # 添加一些间距
             
             
-            # 绘制统计信息（右对齐）
+           # 绘制统计信息（右对齐）
             # 图片宽度为800，预留右边距20像素
-            right_margin = 20
+            right_margin = 50
+            text_margin = 300
             right_x = 800 - right_margin
-            
+
+            # 设置数值的最大宽度（例如：货款总额最大值1000000，对应7个字符）
+            max_value_width = 10  # 你可以根据最大可能数值调整
+
             # 绘制总包数（右对齐）
-            text = f"总包数：{package_count or 1}包"
+            text = f"　　　总包数："
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_margin, y), text, fill='black', font=summary_font)
+           
+            # 绘制总包数（右对齐）
+            text = f"{package_count or 1}包"
             text_width = draw.textlength(text, font=summary_font)
             draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
             y += 50
-            
+
             # 绘制商品总数（右对齐）
-            text = f"商品总数：{total_quantity}件"
+            text = f"　　商品总数："
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_margin, y), text, fill='black', font=summary_font)
+            
+            text = f"{total_quantity}件"
             text_width = draw.textlength(text, font=summary_font)
             draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
             y += 50
-            
-            # 绘制货款总额（右对齐）
-            text = f"货款总额：¥{int(total_amount)}"
+
+            # 绘制货款总额（右对齐）并补齐空格
+            text = f"　　货款总额："
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_margin, y), text, fill='black', font=summary_font)
+            text = f"¥{int(total_amount)}"
             text_width = draw.textlength(text, font=summary_font)
             draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
             y += 50
-            
-            # 绘制累计应付总额（右对齐）
-            text = f"累计应付总额：¥{int(total_unpaid)}"
+
+            # 绘制累计应付总额（右对齐）并补齐空格
+            text = f"累计应付总额："
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_margin, y), text, fill='black', font=summary_font)
+            # 绘制累计应付总额（右对齐）并补齐空格
+            text = f"¥{int(total_unpaid)}"
             text_width = draw.textlength(text, font=summary_font)
             draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
             
@@ -996,6 +1041,8 @@ def generate_delivery_image(user_id, delivery_id):
             # 将图片保存到内存中
             img_io = BytesIO()
             image.save(img_io, 'PNG')
+            #预览图片
+            image.show()
             img_io.seek(0)
             
             # 获取云存储上传链接

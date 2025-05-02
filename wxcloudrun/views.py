@@ -3023,20 +3023,32 @@ def get_delivery_order_detail(user_id, order_id):
         if user.role != 'admin' and user.role != 'STAFF' and user.role != 'normalAdmin' and order.created_by != user_id:
             return jsonify({'error': '无权限查看此配送单'}), 403
 
-        # 获取配送商品列表
         items = []
         total_amount = 0
+        
+        # 一次性获取所有需要的采购单项信息
+        purchase_items_map = {}
+        purchase_items = db.session.query(PurchaseOrderItem)\
+            .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id)\
+            .filter(
+                PurchaseOrder.order_number.in_([item.order_number for item in DeliveryItem.query.filter_by(delivery_id=order.id).all()])
+            ).all()
+        
+        for p_item in purchase_items:
+            key = f"{p_item.product_id}_{p_item.color}"
+            purchase_items_map[key] = p_item
+
+        # 一次性获取所有商品信息
+        products = {p.id: p for p in Product.query.filter(
+            Product.id.in_([item.product_id for item in DeliveryItem.query.filter_by(delivery_id=order.id).all()])
+        ).all()}
+
+        # 处理发货单商品
         for item in DeliveryItem.query.filter_by(delivery_id=order.id).all():
-            product = Product.query.get(item.product_id)
+            product = products.get(item.product_id)
             if product:
-                # 获取采购单中的价格信息
-                purchase_item = db.session.query(PurchaseOrderItem)\
-                    .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id)\
-                    .filter(
-                        PurchaseOrder.order_number == item.order_number,
-                        PurchaseOrderItem.product_id == item.product_id,
-                        PurchaseOrderItem.color == item.color
-                    ).first()
+                key = f"{item.product_id}_{item.color}"
+                purchase_item = purchase_items_map.get(key)
 
                 product_image = json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None
                 
@@ -3066,8 +3078,35 @@ def get_delivery_order_detail(user_id, order_id):
                     'has_packaging': packaging_price > 0,
                     'has_accessory': accessory_price > 0,
                     'package_id': item.package_id
-                    
                 })
+
+        # 获取该客户的所有发货单
+        all_orders_total = 0
+        delivery_orders = DeliveryOrder.query.filter_by(customer_id=order.customer_id).all()
+        
+        # 计算所有发货单的总金额
+        for d_order in delivery_orders:
+            order_total = 0
+            for d_item in DeliveryItem.query.filter_by(delivery_id=d_order.id).all():
+                p_item = db.session.query(PurchaseOrderItem)\
+                    .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id)\
+                    .filter(
+                        PurchaseOrder.order_number == d_item.order_number,
+                        PurchaseOrderItem.product_id == d_item.product_id,
+                        PurchaseOrderItem.color == d_item.color
+                    ).first()
+                if p_item:
+                    item_total = (p_item.price + p_item.logo_price + p_item.packaging_price + p_item.accessory_price) * d_item.quantity
+                    order_total += item_total
+            all_orders_total += order_total + (d_order.additional_fee or 0)
+
+        # 获取该客户的所有付款记录总额
+        total_paid = db.session.query(func.sum(Payment.amount))\
+            .filter(Payment.customer_id == order.customer_id)\
+            .scalar() or 0
+
+        # 计算总应付金额 = 所有订单总额 - 已付款总额
+        unpaid_amount = float(all_orders_total) - float(total_paid)
 
         # 获取创建者和配送员信息
         creator = User.query.get(order.created_by)
@@ -3111,7 +3150,8 @@ def get_delivery_order_detail(user_id, order_id):
             } if delivery_user else None,
             'deliveryImage': json.loads(order.delivery_image) if order.delivery_image else [],
             'total_quantity': sum(item['quantity'] for item in items),
-            'total_amount': total_amount + (order.additional_fee or 0)
+            'total_amount': total_amount + (order.additional_fee or 0),
+            'unpaid_amount': unpaid_amount
         }
 
         return jsonify({
@@ -4096,6 +4136,8 @@ def generate_qrcode(page, scene):
         access_token = get_access_token()
         url = f'https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token={access_token}'
         
+        if page.startswith('/'):
+            page = page[1:]
         params = {
             "scene": scene,
             "page": page,
@@ -4187,120 +4229,6 @@ def generate_qrcode(page, scene):
     except Exception as e:
         app.logger.error(f"[错误] 生成二维码过程出错: {str(e)}")
         app.logger.error(f"错误追踪:\n{traceback.format_exc()}")
-        return jsonify({
-            'code': 500,
-            'message': '生成二维码过程出错',
-            'error': {
-                'type': type(e).__name__,
-                'message': str(e),
-                'traceback': traceback.format_exc(),
-                'error_location': '整体流程'
-            }
-        }), 500
-    
-def generate_qrcode_wx(page, scene,version = 'trial'):
-    try:
-        
-        qrcode_dir = os.path.join(app.static_folder, 'qrcodes')
-        if not os.path.exists(qrcode_dir):
-            os.makedirs(qrcode_dir)
-            
-        filename = f"qr{scene}.jpg"
-        filepath = os.path.join(qrcode_dir, filename)
-        
-        url = f'http://api.weixin.qq.com/wxa/getwxacodeunlimit'
-        
-        params = {
-            "scene": scene,
-            "page": page,
-            "env_version": config.ENV_VERSION,  #体验版  trial 正式 release 
-            "check_path": False
-        }
-        app.logger.info(f'生成二维码请求参数: {params}')
-        response = requests.post(url, json=params)
-        app.logger.info(f'生成二维码响应: {response.text,response.status_code}')
-        if response.status_code == 200:
-            # 保存文件
-            with open(filepath, 'wb') as f:
-                f.write(response.content)
-            
-            app.logger.info(f"二维码已保存到: {filepath}")
-        else:
-            app.logger.error(f"生成二维码失败: {response.text}")
-            return None       
-
-        # 2. 获取到上传链接
-        app.logger.info('\n[步骤3] 获取云存储上传链接')
-        try:
-            upload_url = 'http://api.weixin.qq.com/tcb/uploadfile'
-            upload_params = {
-                'env': WX_ENV,
-                'path': f'qrcodes/{filename}'
-            }
-            print(f'请求参数: {upload_params}')
-            
-            # 使用带有Authorization header的请求
-            upload_response = requests.post(
-                upload_url, 
-                json=upload_params
-            )
-            upload_data = upload_response.json()
-            print(f'获取上传链接响应: {upload_data}')
-            
-            if upload_data.get('errcode', 0) != 0:
-                print(f"[错误] 获取上传链接失败: {upload_data}")
-                return jsonify({
-                    'code': 500,
-                    'message': '获取上传链接失败',
-                    'data': upload_data,
-                    'error_location': '获取云存储上传链接步骤'
-                }), 500
-            
-        except Exception as e:
-            print(f"[错误] 上传文件过程出错: {str(e)}")
-            print(f"错误追踪:\n{traceback.format_exc()}")
-            return jsonify({
-                'code': 500,
-                'message': '上传文件过程出错',
-                'error': str(e),
-                'error_location': '上传文件过程',
-                'traceback': traceback.format_exc()
-            }), 500
-        
-        # 3. 上传文件到云存储
-        try:
-            print('\n[步骤4] 上传文件到云存储')
-            cos_url = upload_data['url']
-            with open(filepath, 'rb') as f:
-                files = {
-                   'file': (filename, f, 'image/jpeg')
-                }
-                form_data = {
-                    'key': f'qrcodes/{filename}',
-                    'Signature': upload_data['authorization'],
-                    'x-cos-security-token': upload_data['token'],
-                    'x-cos-meta-fileid': upload_data['file_id']
-                }
-                print(f'上传参数: {form_data}')            
-                # 上传到对象存储
-                upload_result = requests.post(cos_url, data=form_data, files=files)
-                print(f'上传响应状态码: {upload_result.status_code}')
-            
-            return upload_data['file_id']
-              
-        except Exception as e:
-            print(f"[错误] 上传文件到云存储失败: {str(e)}")
-            print(f"错误追踪:\n{traceback.format_exc()}")
-            return jsonify({
-                'code': 500,
-                'message': '上传文件到云存储失败',
-                'error': str(e)
-            })
-        
-        
-    except Exception as e:
-        print(f"[错误] 生成二维码过程出错: {str(e)}")
-        print(f"错误追踪:\n{traceback.format_exc()}")
         return jsonify({
             'code': 500,
             'message': '生成二维码过程出错',
@@ -7344,9 +7272,7 @@ def select_cart_items(user_id):
         return jsonify({
             'code': 500,
             'message': '系统错误'
-        }), 500
-
-@app.route('/', methods=['GET', 'POST'])
+        }), 500@app.route('/', methods=['GET', 'POST'])
 def upload_handler():
     # 添加CORS头
     if request.method == 'OPTIONS':
@@ -7843,8 +7769,7 @@ def get_users_list(user_id):
         return jsonify({
             'code': -1,
             'message': f'获取用户列表失败: {str(e)}'
-        }), 500
-    
+        }), 500    
 @app.route('/wx/invite/code', methods=['GET'])
 @admin_required
 def generate_invite_code_route(user_id):
@@ -7863,3 +7788,5 @@ def binddingQrcode_creat():
     page = data.get('page')
     scene = data.get('scene')    
     return generate_qrcode(page,scene)
+
+
