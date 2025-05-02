@@ -4251,7 +4251,7 @@ def generate_qrcode_wx(page, scene,version = 'trial'):
              
          filename = f"qr{scene}.jpg"
          filepath = os.path.join(qrcode_dir, filename)
-         env = config.ENV_VERSION
+         #env = config.ENV_VERSION
          url = f'http://api.weixin.qq.com/wxa/getwxacodeunlimit'
          app.logger.info(f'QRCODE版本: {env}')
          if page.startswith('/'):
@@ -4259,7 +4259,7 @@ def generate_qrcode_wx(page, scene,version = 'trial'):
          params = {
              "scene": scene,
              "page": page,
-             "env_version": env,  #体验版  trial 正式 release 
+             "env_version": version,  #体验版  trial 正式 release 
              "check_path": False
          }
          app.logger.info(f'生成二维码请求参数: {params}')
