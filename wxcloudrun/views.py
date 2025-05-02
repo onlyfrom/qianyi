@@ -4092,6 +4092,8 @@ def generate_qrcode_api():
         # 检查请求头中是否有openid
         openid = request.headers.get('X-WX-OPENID')
         version = data.get('version',"release")
+
+        app.logger.info(f'生成二维码版本: {version}')
         # 构建scene参数
         scene = f'{share_code}&1'
         
