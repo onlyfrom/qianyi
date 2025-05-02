@@ -4240,6 +4240,120 @@ def generate_qrcode(page, scene):
             }
         }), 500
 
+def generate_qrcode_wx(page, scene,version = 'trial'):
+     try:
+         
+         qrcode_dir = os.path.join(app.static_folder, 'qrcodes')
+         if not os.path.exists(qrcode_dir):
+             os.makedirs(qrcode_dir)
+             
+         filename = f"qr{scene}.jpg"
+         filepath = os.path.join(qrcode_dir, filename)
+         
+         url = f'http://api.weixin.qq.com/wxa/getwxacodeunlimit'
+         
+         params = {
+             "scene": scene,
+             "page": page,
+             "env_version": config.ENV_VERSION,  #体验版  trial 正式 release 
+             "check_path": False
+         }
+         app.logger.info(f'生成二维码请求参数: {params}')
+         response = requests.post(url, json=params)
+         app.logger.info(f'生成二维码响应: {response.text,response.status_code}')
+         if response.status_code == 200:
+             # 保存文件
+             with open(filepath, 'wb') as f:
+                 f.write(response.content)
+             
+             app.logger.info(f"二维码已保存到: {filepath}")
+         else:
+             app.logger.error(f"生成二维码失败: {response.text}")
+             return None       
+ 
+         # 2. 获取到上传链接
+         app.logger.info('\n[步骤3] 获取云存储上传链接')
+         try:
+             upload_url = 'http://api.weixin.qq.com/tcb/uploadfile'
+             upload_params = {
+                 'env': WX_ENV,
+                 'path': f'qrcodes/{filename}'
+             }
+             print(f'请求参数: {upload_params}')
+             
+             # 使用带有Authorization header的请求
+             upload_response = requests.post(
+                 upload_url, 
+                 json=upload_params
+             )
+             upload_data = upload_response.json()
+             print(f'获取上传链接响应: {upload_data}')
+             
+             if upload_data.get('errcode', 0) != 0:
+                 print(f"[错误] 获取上传链接失败: {upload_data}")
+                 return jsonify({
+                     'code': 500,
+                     'message': '获取上传链接失败',
+                     'data': upload_data,
+                     'error_location': '获取云存储上传链接步骤'
+                 }), 500
+             
+         except Exception as e:
+             print(f"[错误] 上传文件过程出错: {str(e)}")
+             print(f"错误追踪:\n{traceback.format_exc()}")
+             return jsonify({
+                 'code': 500,
+                 'message': '上传文件过程出错',
+                 'error': str(e),
+                 'error_location': '上传文件过程',
+                 'traceback': traceback.format_exc()
+             }), 500
+         
+         # 3. 上传文件到云存储
+         try:
+             print('\n[步骤4] 上传文件到云存储')
+             cos_url = upload_data['url']
+             with open(filepath, 'rb') as f:
+                 files = {
+                    'file': (filename, f, 'image/jpeg')
+                 }
+                 form_data = {
+                     'key': f'qrcodes/{filename}',
+                     'Signature': upload_data['authorization'],
+                     'x-cos-security-token': upload_data['token'],
+                     'x-cos-meta-fileid': upload_data['file_id']
+                 }
+                 print(f'上传参数: {form_data}')            
+                 # 上传到对象存储
+                 upload_result = requests.post(cos_url, data=form_data, files=files)
+                 print(f'上传响应状态码: {upload_result.status_code}')
+             
+             return upload_data['file_id']
+               
+         except Exception as e:
+             print(f"[错误] 上传文件到云存储失败: {str(e)}")
+             print(f"错误追踪:\n{traceback.format_exc()}")
+             return jsonify({
+                 'code': 500,
+                 'message': '上传文件到云存储失败',
+                 'error': str(e)
+             })
+         
+         
+     except Exception as e:
+         print(f"[错误] 生成二维码过程出错: {str(e)}")
+         print(f"错误追踪:\n{traceback.format_exc()}")
+         return jsonify({
+             'code': 500,
+             'message': '生成二维码过程出错',
+             'error': {
+                 'type': type(e).__name__,
+                 'message': str(e),
+                 'traceback': traceback.format_exc(),
+                 'error_location': '整体流程'
+             }
+         }), 500
+
 @app.route('/get_access_token', methods=['GET'])
 def get_access_token_api():
     """获取小程序 access_token"""
