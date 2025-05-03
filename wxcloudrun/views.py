@@ -4069,7 +4069,7 @@ def generate_qrcode_api():
         data = request.get_json()
         page = data.get('page')
         target_name= data.get('target_name')
-        env = config.ENV_VERSION
+        #env = config.ENV_VERSION
         # 生成唯一的分享码
         max_attempts = 10  # 最大尝试次数
         attempt = 0
