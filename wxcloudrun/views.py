@@ -4069,7 +4069,7 @@ def generate_qrcode_api():
         data = request.get_json()
         page = data.get('page')
         target_name= data.get('target_name')
-        
+        env = config.ENV_VERSION
         # 生成唯一的分享码
         max_attempts = 10  # 最大尝试次数
         attempt = 0
@@ -4099,7 +4099,7 @@ def generate_qrcode_api():
         
         if openid:
             app.logger.info('使用微信云托管方式生成二维码')
-            qrcode_path = generate_qrcode_wx(page, scene,version)
+            qrcode_path = generate_qrcode_wx(page, scene)
         else:
             app.logger.info('使用普通方式生成二维码') 
             qrcode_path = generate_qrcode(page, scene)
@@ -4242,24 +4242,25 @@ def generate_qrcode(page, scene):
             }
         }), 500
 
-def generate_qrcode_wx(page, scene,version = 'trial'):
+def generate_qrcode_wx(page, scene):
+     app.logger.info(f'使用微信云托管生成二维码方法内部进入')
      try:
          
          qrcode_dir = os.path.join(app.static_folder, 'qrcodes')
          if not os.path.exists(qrcode_dir):
              os.makedirs(qrcode_dir)
-             
+         app.logger.info(f'保存目录: {qrcode_dir,page,scene}')
          filename = f"qr{scene}.jpg"
-         filepath = os.path.join(qrcode_dir, filename)
-         #env = config.ENV_VERSION
+         filepath = os.path.join(qrcode_dir, filename)         
          url = f'http://api.weixin.qq.com/wxa/getwxacodeunlimit'
-         app.logger.info(f'QRCODE版本: {env}')
          if page.startswith('/'):
             page = page[1:]
+
+         app.logger.info(f'生成二维码请求参数: {page,scene}')
          params = {
              "scene": scene,
              "page": page,
-             "env_version": version,  #体验版  trial 正式 release 
+             "env_version": 'release',  #体验版  trial 正式 release 
              "check_path": False
          }
          app.logger.info(f'生成二维码请求参数: {params}')
