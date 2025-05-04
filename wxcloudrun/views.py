@@ -600,7 +600,7 @@ def wechat_login():
         if not user:
             print('用户不存在,询问是否注册')
             return jsonify({
-                'code': 200,
+                'code': 400,
                 'data': {
                     'is_registered': False
                 }
