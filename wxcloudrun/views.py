@@ -26,7 +26,6 @@ from sqlalchemy.sql import literal, literal_column
 from wxcloudrun.response import *
 from wxcloudrun.recommended import get_recommended_products, update_recommended_products
 import re
-from flask_caching import Cache
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
 WX_ENV = 'prod-9gd4jllic76d4842'
