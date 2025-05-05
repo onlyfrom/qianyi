@@ -21,12 +21,12 @@ import base64
 from werkzeug.utils import secure_filename
 import string
 import random
-from sqlalchemy import inspect, text, func, desc, distinct, case, Text
+from sqlalchemy import inspect, text, func, desc, distinct, case, Text, and_
 from sqlalchemy.sql import literal, literal_column
 from wxcloudrun.response import *
 from wxcloudrun.recommended import get_recommended_products, update_recommended_products
 import re
-
+from flask_caching import Cache
 WECHAT_APPID = "wxa17a5479891750b3"
 WECHAT_SECRET = "33359853cfee1dc1e2b6e535249e351d"
 WX_ENV = 'prod-9gd4jllic76d4842'
@@ -3002,7 +3002,6 @@ def get_delivery_orders(user_id):
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '获取配送单列表失败'}), 500
 
-# 获取配送单详情
 @app.route('/delivery_orders/<int:order_id>', methods=['GET'])
 @login_required
 def get_delivery_order_detail(user_id, order_id):
@@ -3026,79 +3025,81 @@ def get_delivery_order_detail(user_id, order_id):
         items = []
         total_amount = 0
         
-        # 一次性获取所有需要的采购单项信息
-        purchase_items_map = {}
-        purchase_items = db.session.query(PurchaseOrderItem)\
-            .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id)\
-            .filter(
-                PurchaseOrder.order_number.in_([item.order_number for item in DeliveryItem.query.filter_by(delivery_id=order.id).all()])
-            ).all()
-        
-        for p_item in purchase_items:
-            key = f"{p_item.product_id}_{p_item.color}"
-            purchase_items_map[key] = p_item
-
-        # 一次性获取所有商品信息
-        products = {p.id: p for p in Product.query.filter(
-            Product.id.in_([item.product_id for item in DeliveryItem.query.filter_by(delivery_id=order.id).all()])
-        ).all()}
+        # 使用联表查询一次性获取所有需要的数据
+        delivery_items_query = db.session.query(
+            DeliveryItem,
+            Product,
+            PurchaseOrderItem,
+            PurchaseOrder
+        ).join(
+            Product, Product.id == DeliveryItem.product_id
+        ).join(
+            PurchaseOrder, PurchaseOrder.order_number == DeliveryItem.order_number
+        ).join(
+            PurchaseOrderItem,
+            and_(
+                PurchaseOrderItem.order_id == PurchaseOrder.id,
+                PurchaseOrderItem.product_id == DeliveryItem.product_id,
+                PurchaseOrderItem.color == DeliveryItem.color
+            )
+        ).filter(DeliveryItem.delivery_id == order.id).all()
 
         # 处理发货单商品
-        for item in DeliveryItem.query.filter_by(delivery_id=order.id).all():
-            product = products.get(item.product_id)
-            if product:
-                key = f"{item.product_id}_{item.color}"
-                purchase_item = purchase_items_map.get(key)
+        for delivery_item, product, purchase_item, _ in delivery_items_query:
+            product_image = json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None
+            
+            # 计算价格信息
+            price = purchase_item.price
+            logo_price = purchase_item.logo_price
+            packaging_price = purchase_item.packaging_price
+            accessory_price = purchase_item.accessory_price
+            
+            # 计算总价
+            item_total = (price + logo_price + packaging_price + accessory_price) * delivery_item.quantity
+            total_amount += item_total
 
-                product_image = json.loads(product.images)[0] if product.images and len(json.loads(product.images)) > 0 else None
-                
-                # 计算价格信息
-                price = purchase_item.price if purchase_item else 0
-                logo_price = purchase_item.logo_price if purchase_item else 0
-                packaging_price = purchase_item.packaging_price if purchase_item else 0
-                accessory_price = purchase_item.accessory_price if purchase_item else 0
-                
-                # 计算总价
-                item_total = (price + logo_price + packaging_price + accessory_price) * item.quantity
-                total_amount += item_total
+            items.append({
+                'id': delivery_item.id,
+                'product_id': delivery_item.product_id,
+                'product_name': product.name,
+                'quantity': delivery_item.quantity,
+                'color': delivery_item.color,
+                'product_image': product_image,
+                'price': price,
+                'logo_price': logo_price,
+                'packaging_price': packaging_price,
+                'accessory_price': accessory_price,
+                'total': item_total,
+                'has_logo': logo_price > 0,
+                'has_packaging': packaging_price > 0,
+                'has_accessory': accessory_price > 0,
+                'package_id': delivery_item.package_id
+            })
 
-                items.append({
-                    'id': item.id,
-                    'product_id': item.product_id,
-                    'product_name': product.name,
-                    'quantity': item.quantity,
-                    'color': item.color,
-                    'product_image': product_image,
-                    'price': price,
-                    'logo_price': logo_price,
-                    'packaging_price': packaging_price,
-                    'accessory_price': accessory_price,
-                    'total': item_total,
-                    'has_logo': logo_price > 0,
-                    'has_packaging': packaging_price > 0,
-                    'has_accessory': accessory_price > 0,
-                    'package_id': item.package_id
-                })
-
-        # 获取该客户的所有发货单
-        all_orders_total = 0
-        delivery_orders = DeliveryOrder.query.filter_by(customer_id=order.customer_id).all()
-        
-        # 计算所有发货单的总金额
-        for d_order in delivery_orders:
-            order_total = 0
-            for d_item in DeliveryItem.query.filter_by(delivery_id=d_order.id).all():
-                p_item = db.session.query(PurchaseOrderItem)\
-                    .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id)\
-                    .filter(
-                        PurchaseOrder.order_number == d_item.order_number,
-                        PurchaseOrderItem.product_id == d_item.product_id,
-                        PurchaseOrderItem.color == d_item.color
-                    ).first()
-                if p_item:
-                    item_total = (p_item.price + p_item.logo_price + p_item.packaging_price + p_item.accessory_price) * d_item.quantity
-                    order_total += item_total
-            all_orders_total += order_total + (d_order.additional_fee or 0)
+        # 使用子查询和聚合函数优化总金额计算
+        all_orders_total = db.session.query(
+            func.sum(
+                (PurchaseOrderItem.price + 
+                PurchaseOrderItem.logo_price + 
+                PurchaseOrderItem.packaging_price + 
+                PurchaseOrderItem.accessory_price) * 
+                DeliveryItem.quantity +
+                func.coalesce(DeliveryOrder.additional_fee, 0)
+            )
+        ).join(
+            DeliveryOrder, DeliveryOrder.id == DeliveryItem.delivery_id
+        ).join(
+            PurchaseOrder, PurchaseOrder.order_number == DeliveryItem.order_number
+        ).join(
+            PurchaseOrderItem,
+            and_(
+                PurchaseOrderItem.order_id == PurchaseOrder.id,
+                PurchaseOrderItem.product_id == DeliveryItem.product_id,
+                PurchaseOrderItem.color == DeliveryItem.color
+            )
+        ).filter(
+            DeliveryOrder.customer_id == order.customer_id
+        ).scalar() or 0
 
         # 获取该客户的所有付款记录总额
         total_paid = db.session.query(func.sum(Payment.amount))\

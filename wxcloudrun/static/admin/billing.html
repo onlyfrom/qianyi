@@ -749,7 +749,7 @@
                         <el-table-column prop="currentSpec.quantity" label="数量" width="100"></el-table-column>
                         <el-table-column prop="price" label="单价" width="100">
                             <template #default="scope">
-                                ¥{{ formatMoney(scope.row.price) }}
+                                ¥{{ formatMoney2(scope.row.price) }}
                             </template>
                         </el-table-column>
                         <el-table-column label="加标费用" width="100">
@@ -973,7 +973,7 @@
                             </el-table-column>
                             <el-table-column label="单价" width="120">
                                 <template #default="scope">
-                                    ¥{{ formatMoney(scope.row.price + scope.row.logo_price + scope.row.packaging_price + scope.row.accessory_price) }}
+                                    ¥{{ formatMoney2(scope.row.price + scope.row.logo_price + scope.row.packaging_price + scope.row.accessory_price) }}
                                 </template>
                             </el-table-column>
                             <el-table-column label="小计" width="120">
@@ -1531,6 +1531,11 @@
                     if (amount === null || amount === undefined) return '0';
                     return Number(amount).toFixed(0);
                 };
+                const formatMoney2 = (amount) => {
+                    if (amount === null || amount === undefined) return '0';
+                    return Number(amount).toFixed(2);
+                };
+
 
                 const getBillingTypeTag = (type) => {
                     const types = {
@@ -2202,6 +2207,7 @@
                     getDeliveryStatusText,
                     formatDate,
                     formatMoney,
+                    formatMoney2,
                     getBillingTypeTag,
                     getBillingTypeText,
                     getBillingStatusTag,

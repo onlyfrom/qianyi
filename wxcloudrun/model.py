@@ -439,3 +439,21 @@ class UserWechatBinding(db.Model):
     
     # 建立与User模型的关系
     user = db.relationship('User', backref=db.backref('wechat_bindings', lazy=True)) 
+
+# 制造计划模型
+class ManufacturePlan(db.Model):
+    __tablename__ = 'manufacture_plans'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.String(80), db.ForeignKey('products.id'), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    status1 = db.Column(db.Integer, default=0)  # 0:未完成 1:已完成
+    status2 = db.Column(db.Integer, default=0)  # 0:未完成 1:已完成
+    status3 = db.Column(db.Integer, default=0)  # 0:未完成 1:已完成
+    status4 = db.Column(db.Integer, default=0)  # 0:未完成 1:已完成
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+    color = db.Column(db.String(50))
+
+
+

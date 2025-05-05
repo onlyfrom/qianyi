@@ -116,8 +116,9 @@ from . import views
 from . import stock_import
 from . import billing
 from . import order
-
+from . import manufacture
 # 注册蓝图
 app.register_blueprint(billing.billing_bp)
 app.register_blueprint(order.order_bp)
+app.register_blueprint(manufacture.manufacture_bp)
 
