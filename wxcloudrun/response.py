@@ -580,7 +580,7 @@ def generate_invite_code_api(user_id):
             'message': '生成邀请码失败'
         }), 500
 
-def register_subaccount_api(data):
+def register_subaccount_api(data, openid):
     """通过邀请码注册子账号（绑定到父账号）"""
     try:
         print('='*50)
@@ -590,13 +590,20 @@ def register_subaccount_api(data):
         print('收到的请求数据:', json.dumps(data, ensure_ascii=False, indent=2))
         
         # 验证必要参数
-        required_fields = ['openid', 'invite_code', 'nickname']
+        required_fields = ['invite_code', 'nickname']
         for field in required_fields:
             if not data.get(field):
                 print(f'错误: 缺少必要参数 {field}')
                 return jsonify({'error': f'缺少必要参数: {field}'}), 400
-                
-        openid = data['openid']
+
+        if openid:
+            openid = openid
+        else:
+            openid = data.headers.get('x-wx-openid')
+            if not openid:
+                print('错误: 缺少openid')
+                return jsonify({'error': '缺少openid'}), 400
+            
         invite_code = data['invite_code']
         nickname = data['nickname']
         

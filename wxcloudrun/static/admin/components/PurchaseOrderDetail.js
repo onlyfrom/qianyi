@@ -9,7 +9,7 @@ const PurchaseOrderDetail = {
             <div v-if="orderData && orderData.order">
                 <el-descriptions :column="2" border>
                     <el-descriptions-item label="采购单号">{{ orderData.order.order_number }}</el-descriptions-item>
-                    <el-descriptions-item label="创建时间">{{ formatDate(orderData.order.created_at) }}</el-descriptions-item>
+                    <el-descriptions-item label="创建时间">{{ formatDate(orderData.order.created_at) }} {{ orderData.order.handler.nickname }}</el-descriptions-item>
                     <el-descriptions-item label="状态">
                         <el-tag :type="getStatusType(orderData.order.status)">
                             {{ getStatusText(orderData.order.status) }}

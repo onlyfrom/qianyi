@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+from sqlalchemy.orm import relationship
 
 from wxcloudrun import db
 
@@ -447,13 +448,30 @@ class ManufacturePlan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product_id = db.Column(db.String(80), db.ForeignKey('products.id'), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
-    status1 = db.Column(db.Integer, default=0)  # 0:未完成 1:已完成
-    status2 = db.Column(db.Integer, default=0)  # 0:未完成 1:已完成
-    status3 = db.Column(db.Integer, default=0)  # 0:未完成 1:已完成
-    status4 = db.Column(db.Integer, default=0)  # 0:未完成 1:已完成
+    status1 = db.Column(db.Integer, default=0)  # 机织数量
+    status2 = db.Column(db.Integer, default=0)  # 平车数量
+    status3 = db.Column(db.Integer, default=0)  # 套口数量
+    status4 = db.Column(db.Integer, default=0)  # 手工数量
+    status5 = db.Column(db.Integer, default=0)  # 下水数量
+    status6 = db.Column(db.Integer, default=0)  # 进场数量
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
     color = db.Column(db.String(50))
+    product = relationship('Product', backref='plans')
+
+# 制造状态历史记录模型
+class ManufactureStatusHistory(db.Model):
+    __tablename__ = 'manufacture_status_history'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('manufacture_plans.id'), nullable=False)
+    status = db.Column(db.String(20), nullable=False)  # status1:机织, status2:平车, status3:套口, status4:手工, status5:下水, status6:进场
+    value = db.Column(db.Integer, nullable=False)  # 该状态下的实际数量
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    created_by = db.Column(db.String(80), nullable=False)  # 操作人ID
+    
+    # 添加与 ManufacturePlan 的关联关系
+    plan = db.relationship('ManufacturePlan', backref=db.backref('status_history', lazy=True))
 
 
 

@@ -3718,7 +3718,10 @@ def get_purchase_order(user_id, order_id):
                 })
         except Exception as e:
             print(f"获取发货单列表失败: {str(e)}")
-        
+
+        #获取处理人的信息
+        handler = User.query.get(order.handler_id)
+       
         # 格式化返回数据
         order_detail = {
             'id': order.id,
@@ -3731,6 +3734,11 @@ def get_purchase_order(user_id, order_id):
             'remark': order.remark,
             'created_at': order.created_at.isoformat() if order.created_at else None,
             'items': items,
+            'handler': {
+                'id': handler.id if handler else None,
+                'username': handler.username if handler else None,
+                'nickname': handler.nickname if handler else None
+            },
             'user': {
                 'id': order_user.id,
                 'username': order_user.username,
@@ -7898,7 +7906,8 @@ def generate_invite_code_route(user_id):
 @app.route('/wx/register/subaccount', methods=['POST'])
 def register_subaccount_route():
     """注册子账号路由"""
-    return register_subaccount_api(request.json)
+    openid = request.headers.get('x-wx-openid')
+    return register_subaccount_api(request.json, openid)
 
 #创建邀请码QRCODE
 @app.route('/wx/binddingQrcode', methods = ['POST'])
