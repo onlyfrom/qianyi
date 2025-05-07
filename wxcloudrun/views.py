@@ -2181,6 +2181,127 @@ def create_purchase_order(user_id):
         print(f'创建采购单失败: {str(e)}')
         print(f'错误追踪:\n{traceback.format_exc()}')
         return jsonify({'error': '创建采购单失败'}), 500
+    
+# 代客下单 
+@app.route('/purchase_orders/<int:target_user_id>', methods=['POST'])
+@login_required
+def create_purchase_order_dkxd(user_id,target_user_id):
+    try:
+        data = request.json
+        if not data or 'items' not in data:
+            return jsonify({'error': '无效的请求数据'}), 400        
+        
+        # 获取目标用户信息
+        target_user = User.query.get(target_user_id)
+        if not target_user:
+            return jsonify({'error': '目标用户不存在'}), 404
+            
+        handler_id = data.get('handler_id')
+        # 生成订单号
+        order_number = datetime.now().strftime('%Y%m%d%H%M%S') + str(random.randint(1000, 9999))
+        
+        # 处理每个商品的价格
+        processed_items = []
+        for item in data['items']:
+            product_id = item['product_id']
+            
+            # 1. 查询用户自定义价格
+            custom_price = UserProductPrice.query.filter_by(
+                user_id=target_user_id,
+                product_id=product_id
+            ).first()
+            
+            if custom_price:
+                item_price = float(custom_price.custom_price)
+            else:
+                # 2. 查询最新推送单价格
+                latest_push = db.session.query(PushOrderProduct)\
+                    .join(PushOrder, PushOrder.id == PushOrderProduct.push_order_id)\
+                    .filter(
+                        PushOrderProduct.product_id == product_id,
+                        PushOrder.target_user_id == target_user_id,
+                        PushOrder.status != 2  # 排除已取消的推送单
+                    ).order_by(PushOrder.created_at.desc()).first()
+                
+                if latest_push:
+                    item_price = float(latest_push.price)
+                else:
+                    # 3. 根据用户类型获取默认价格
+                    product = Product.query.get(product_id)
+                    if not product:
+                        return jsonify({'error': f'商品ID {product_id} 不存在'}), 404
+                        
+                    if target_user.user_type == 2:  # A类客户
+                        item_price = float(product.price_b) if product.price_b else float(product.price)
+                    elif target_user.user_type == 3:  # B类客户
+                        item_price = float(product.price_c) if product.price_c else float(product.price)
+                    elif target_user.user_type == 4:  # C类客户
+                        item_price = float(product.price_d) if product.price_d else float(product.price)
+                    else:
+                        item_price = float(product.price)
+            
+            processed_item = {
+                'product_id': product_id,
+                'quantity': item['quantity'],
+                'price': item_price,
+                'color': item.get('color', ''),
+                'logo_price': item.get('logo_price', 0.0),
+                'accessory_price': item.get('accessory_price', 0.0),
+                'packaging_price': item.get('packaging_price', 0.0)
+            }
+            processed_items.append(processed_item)
+        
+        # 计算总金额
+        total_amount = sum(float(item['price']) * float(item['quantity']) for item in processed_items)
+        
+        if len(processed_items) == 0:
+            return jsonify({'error': '请添加至少一个商品'}), 400
+
+        # 创建采购单
+        status = data.get('status', 1)
+        purchase_order = PurchaseOrder(
+            order_number=order_number,
+            user_id=target_user_id,  # 使用目标用户ID           
+            total_amount=total_amount,
+            status=status,
+            remark=data.get('remark', ''),
+            created_at=datetime.now()
+        )
+        
+        if handler_id:
+            purchase_order.handler_id = handler_id
+        
+        db.session.add(purchase_order)
+        db.session.flush()
+        
+        # 添加采购明细
+        for item in processed_items:
+            order_item = PurchaseOrderItem(
+                order_id=purchase_order.id,
+                product_id=item['product_id'],
+                quantity=item['quantity'],
+                price=item['price'],
+                color=item['color'],
+                logo_price=item['logo_price'],
+                accessory_price=item['accessory_price'],
+                packaging_price=item['packaging_price']
+            )
+            db.session.add(order_item)
+
+        # 提交事务
+        db.session.commit()
+        
+        return jsonify({
+            'message': '采购单创建成功',
+            'order_id': purchase_order.id,
+            'order_number': order_number
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f'创建采购单失败: {str(e)}')
+        print(f'错误追踪:\n{traceback.format_exc()}')
+        return jsonify({'error': '创建采购单失败'}), 500
 
 # 获取采购单列表
 @app.route('/purchase_orders', methods=['GET'])
