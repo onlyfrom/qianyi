@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from flask import Response, request, jsonify
 import jwt
 from wxcloudrun import db
+from wxcloudrun.views import generate_token
 from wxcloudrun.model import *
 import config
 import requests
@@ -642,14 +643,7 @@ def register_subaccount_api(data, openid):
         print(f'微信附属账号绑定成功: 父账号ID={parent_user.id}')
         
         # 生成token
-        token = jwt.encode(
-            {
-                'user_id': parent_user.id,
-                'exp': datetime.utcnow() + timedelta(days=30)
-            },
-            config.SECRET_KEY,
-            algorithm='HS256'
-        )
+        token = generate_token(parent_user.id)
         
         # 获取所有绑定的微信账号信息
         bindings_info = [{
