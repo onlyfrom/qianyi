@@ -75,7 +75,10 @@ def create_manufacture_plan():
                 status1=0,
                 status2=0,
                 status3=0,
-                status4=0
+                status4=0,
+                status5=0,
+                status6=0
+
             )
             db.session.add(plan)
         
@@ -114,12 +117,12 @@ def get_manufacture_plans():
             'product_name': product.name if product else '未知商品',
             'quantity': plan.quantity,
             'color': plan.color,
-            'status1': plan.status1,
-            'status2': plan.status2,
-            'status3': plan.status3,
-            'status4': plan.status4,
-            'status5': plan.status5,
-            'status6': plan.status6,
+            'status1': plan.status1 or 0,
+            'status2': plan.status2 or 0,
+            'status3': plan.status3 or 0,
+            'status4': plan.status4 or 0,
+            'status5': plan.status5 or 0,
+            'status6': plan.status6 or 0,
             'created_at': plan.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': plan.updated_at.strftime('%Y-%m-%d %H:%M:%S')
         })
@@ -254,12 +257,12 @@ def search_manufacture_plans():
             'product_name': product.name if product else '未知商品',
             'quantity': plan.quantity,
             'color': plan.color,
-            'status1': plan.status1,
-            'status2': plan.status2,
-            'status3': plan.status3,
-            'status4': plan.status4,
-            'status5': plan.status5,
-            'status6': plan.status6,
+            'status1': plan.status1 or 0,
+            'status2': plan.status2 or 0,
+            'status3': plan.status3 or 0,
+            'status4': plan.status4 or 0,
+            'status5': plan.status5 or 0,
+            'status6': plan.status6 or 0,
             'created_at': plan.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': plan.updated_at.strftime('%Y-%m-%d %H:%M:%S')
         })
