@@ -882,15 +882,15 @@ def generate_delivery_image(user_id, delivery_id):
             row_height = 40
             
             # 第一行
-            draw_cell(50, y, 200, row_height, "发货物流", font, 'left')
-            draw_cell(250, y, 200, row_height, delivery_order.logistics_company or "无", font, 'left')
+            draw_cell(50, y, 120, row_height, "发货物流", font, 'left')
+            draw_cell(170, y, 280, row_height, delivery_order.logistics_company or "无", font, 'left')
             draw_cell(450, y, 150, row_height, "创建时间", font, 'left')
             draw_cell(600, y, 150, row_height, delivery_order.created_at.strftime('%Y/%m/%d'), font, 'left')
             
             # 第二行
             y += row_height
-            draw_cell(50, y, 200, row_height, "客户名称", font, 'left')
-            draw_cell(250, y, 500, row_height, delivery_order.customer_name, font, 'left')
+            draw_cell(50, y, 120, row_height, "客户名称", font, 'left')
+            draw_cell(170, y, 580, row_height, delivery_order.customer_name, font, 'left')
             
             # 绘制商品表格标题
             y += row_height + 20
