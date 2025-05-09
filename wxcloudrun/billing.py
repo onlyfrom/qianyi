@@ -519,8 +519,16 @@ def export_billing(user_id):
                 DeliveryOrder.status.in_([1, 2])
             ).scalar()
 
+            # 重新查询该客户的所有付款记录总额
+            total_paid_query = db.session.query(
+                db.func.sum(Payment.amount)
+            ).filter(
+                Payment.customer_id == customer_id
+            ).scalar()
+
             total_additional_fee = float(additional_fee_query or 0)
             actual_total = float(total_amount or 0) + total_additional_fee
+            total_paid = float(total_paid_query or 0)
 
             data.append({
                 '客户ID': customer_id,
@@ -529,8 +537,8 @@ def export_billing(user_id):
                 '商品总额': float(total_amount or 0),
                 '附加费用': total_additional_fee,
                 '应付总额': actual_total,
-                '已付金额': float(paid_amount or 0),
-                '未付金额': float(actual_total - (paid_amount or 0))
+                '已付金额': total_paid,
+                '未付金额': actual_total - total_paid
             })
 
         df = pd.DataFrame(data)
