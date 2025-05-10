@@ -461,8 +461,7 @@ def export_billing(user_id):
             User.nickname.label('customer_name'),
             db.func.sum(DeliveryItem.quantity).label('total_quantity'),  # 使用发货单数量
             db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity).label('total_amount'),  # 使用发货单数量计算金额
-            db.func.sum(DeliveryOrder.additional_fee).label('total_additional_fee'),  # 添加附加费用汇总
-            db.func.sum(Payment.amount).label('paid_amount')
+            db.func.sum(DeliveryOrder.additional_fee).label('total_additional_fee')  # 添加附加费用汇总
         ).join(
             PurchaseOrder, User.id == PurchaseOrder.user_id
         ).join(
@@ -510,25 +509,26 @@ def export_billing(user_id):
         # 构建Excel数据
         data = []
         for result in results:
-            customer_id, customer_name, total_quantity, total_amount, total_additional_fee, paid_amount = result
-            # 重新查询该客户的所有发货单附加费用总和
-            additional_fee_query = db.session.query(
-                db.func.sum(DeliveryOrder.additional_fee)
-            ).filter(
-                DeliveryOrder.customer_id == customer_id,
-                DeliveryOrder.status.in_([1, 2])
-            ).scalar()
-
-            # 重新查询该客户的所有付款记录总额
-            total_paid_query = db.session.query(
+            customer_id, customer_name, total_quantity, total_amount, total_additional_fee = result
+            
+            # 查询该客户在指定时间范围内的付款总额
+            payment_query = db.session.query(
                 db.func.sum(Payment.amount)
             ).filter(
                 Payment.customer_id == customer_id
-            ).scalar()
-
-            total_additional_fee = float(additional_fee_query or 0)
+            )
+            
+            # 应用日期筛选
+            if start_date:
+                payment_query = payment_query.filter(Payment.payment_date >= start_datetime)
+            if end_date:
+                payment_query = payment_query.filter(Payment.payment_date <= end_datetime)
+                
+            total_paid = float(payment_query.scalar() or 0)
+            
+            # 计算实际总额和未付金额
+            total_additional_fee = float(total_additional_fee or 0)
             actual_total = float(total_amount or 0) + total_additional_fee
-            total_paid = float(total_paid_query or 0)
 
             data.append({
                 '客户ID': customer_id,
@@ -541,18 +541,77 @@ def export_billing(user_id):
                 '未付金额': actual_total - total_paid
             })
 
+        # 创建DataFrame并设置列宽
         df = pd.DataFrame(data)
+        
+        # 按未付金额降序排序
+        df = df.sort_values(by='未付金额', ascending=False)
+        
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='账单数据')
-
+            
+            # 获取工作表
+            worksheet = writer.sheets['账单数据']
+            
+            # 设置列宽
+            column_widths = {
+                '客户ID': 10,
+                '客户名称': 20,
+                '商品总数': 12,
+                '商品总额': 15,
+                '附加费用': 12,
+                '应付总额': 15,
+                '已付金额': 15,
+                '未付金额': 15
+            }
+            
+            for col, width in column_widths.items():
+                col_idx = df.columns.get_loc(col)
+                worksheet.column_dimensions[chr(65 + col_idx)].width = width
+            
+            # 设置表头样式
+            for col in range(len(df.columns)):
+                cell = worksheet.cell(row=1, column=col+1)
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                cell.fill = PatternFill(start_color='D9D9D9', end_color='D9D9D9', fill_type='solid')
+                cell.border = Border(
+                    left=Side(style='thin'),
+                    right=Side(style='thin'),
+                    top=Side(style='thin'),
+                    bottom=Side(style='thin')
+                )
+            
+            # 设置数据样式
+            for row in range(2, len(df) + 2):
+                for col in range(len(df.columns)):
+                    cell = worksheet.cell(row=row, column=col+1)
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                    cell.border = Border(
+                        left=Side(style='thin'),
+                        right=Side(style='thin'),
+                        top=Side(style='thin'),
+                        bottom=Side(style='thin')
+                    )
+                    
+                    # 设置金额列的格式
+                    if df.columns[col] in ['商品总额', '附加费用', '应付总额', '已付金额', '未付金额']:
+                        cell.alignment = Alignment(horizontal='right', vertical='center')
+                        cell.number_format = '¥#,##0.00'
+        
         output.seek(0)
+        
+        # 生成文件名
+        filename = f'账单数据_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+        
         return send_file(
             output,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             as_attachment=True,
-            download_name=f'账单数据_{datetime.now().strftime("%Y%m%d")}.xlsx'
+            download_name=filename
         )
+        
     except Exception as e:
         print(f"[ERROR] 导出账单数据失败: {str(e)}")
         return jsonify({'error': '导出账单数据失败'}), 500
