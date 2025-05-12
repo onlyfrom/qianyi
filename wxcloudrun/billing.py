@@ -1177,6 +1177,365 @@ def generate_delivery_image(user_id, delivery_id):
         error_msg = f"生成发货单图片失败: delivery_id={delivery_id}, error={str(e)}"
         logger.error(error_msg)
         return jsonify({'error': error_msg}), 500
+    
+
+@billing_bp.route('/billing/image', methods=['GET'])
+@login_required
+def generate_deliverys_image(user_id):
+    """生成发货单图片（支持多张发货单合并）"""
+    try:
+        # 获取发货单ID列表，支持两种格式：
+        # 1. 多个delivery_id参数：delivery_id=3086&delivery_id=3085
+        # 2. 逗号分隔的格式：delivery_id=3086,3085,3076
+        delivery_id_param = request.args.get('delivery_id')
+        if not delivery_id_param:
+            return jsonify({'error': 'delivery_id参数缺失'}), 400
+            
+        # 处理逗号分隔的格式
+        if ',' in delivery_id_param:
+            delivery_ids = [id.strip() for id in delivery_id_param.split(',')]
+        else:
+            # 处理多个delivery_id参数
+            delivery_ids = request.args.getlist('delivery_id')
+            
+        if not delivery_ids:
+            return jsonify({'error': '没有有效的发货单ID'}), 400
+            
+        # 获取所有发货单信息
+        delivery_orders = []
+        all_delivery_items = []
+        total_amount = 0
+        total_quantity = 0
+        total_unpaid = 0
+        package_count = 0
+        
+        for delivery_id in delivery_ids:
+            try:
+                delivery_id = int(delivery_id)  # 转换为整数
+            except ValueError:
+                logger.error(f"无效的发货单ID: {delivery_id}")
+                continue
+                
+            delivery_order = DeliveryOrder.query.get_or_404(delivery_id)
+            delivery_orders.append(delivery_order)
+            
+            # 获取发货单商品
+            delivery_items = DeliveryItem.query.filter_by(delivery_id=delivery_id).all()
+            if not delivery_items:
+                logger.error(f"发货单商品列表为空: delivery_id={delivery_id}")
+                continue
+                
+            all_delivery_items.extend(delivery_items)
+            
+            # 获取对应的采购单
+            purchase_order = PurchaseOrder.query.filter_by(order_number=delivery_order.order_number).first()
+            if not purchase_order:
+                logger.error(f"未找到对应的采购单: order_number={delivery_order.order_number}")
+                continue
+                
+            # 获取客户的所有发货单总额
+            delivery_amount = db.session.query(
+                db.func.sum(PurchaseOrderItem.price * DeliveryItem.quantity)
+            ).join(
+                PurchaseOrder,
+                PurchaseOrder.id == PurchaseOrderItem.order_id
+            ).join(
+                DeliveryItem, 
+                db.and_(
+                    DeliveryItem.order_number == PurchaseOrder.order_number,
+                    DeliveryItem.product_id == PurchaseOrderItem.product_id,
+                    DeliveryItem.color == PurchaseOrderItem.color
+                )
+            ).join(
+                DeliveryOrder,
+                DeliveryOrder.id == DeliveryItem.delivery_id
+            ).join(
+                User,
+                User.id == PurchaseOrder.user_id
+            ).filter(
+                User.id == purchase_order.user_id
+            ).scalar() or 0
+
+            # 获取客户的已收款总额
+            paid_amount = db.session.query(
+                db.func.sum(Payment.amount)
+            ).join(
+                User,
+                User.id == Payment.customer_id
+            ).filter(
+                User.id == purchase_order.user_id
+            ).scalar() or 0
+
+            # 累加金额
+            total_amount += float(delivery_amount)
+            total_unpaid += float(delivery_amount) - float(paid_amount)
+            
+            # 累加包裹数
+            package_count += len(set(item.package_id for item in delivery_items if item.package_id))
+            
+        if not delivery_orders:
+            return jsonify({'error': '没有有效的发货单'}), 400
+            
+        # 创建商品单价映射
+        price_map = {}
+        for delivery_order in delivery_orders:
+            purchase_order = PurchaseOrder.query.filter_by(order_number=delivery_order.order_number).first()
+            if purchase_order:
+                for po_item in purchase_order.items:
+                    key = (po_item.product_id, po_item.color)
+                    price_map[key] = {
+                        'price': po_item.price,
+                        'logo_price': po_item.logo_price,
+                        'accessory_price': po_item.accessory_price,
+                        'packaging_price': po_item.packaging_price
+                    }
+
+        try:
+            # 创建图片 - 根据发货单数量动态调整高度
+            base_height = 1200
+            additional_height = (len(delivery_orders) - 1) * 200  # 每个额外的发货单增加200像素高度
+            image = Image.new('RGB', (800, base_height + additional_height), 'white')
+            draw = ImageDraw.Draw(image)
+            
+            # 加载字体
+            try:
+                font_path = os.path.join(os.path.dirname(__file__), 'static', 'simsun.ttc')
+                font = ImageFont.truetype(font_path, 24)
+                title_font = ImageFont.truetype(font_path, 32)
+                small_font = ImageFont.truetype(font_path, 20)
+                summary_font = ImageFont.truetype(font_path, 28)
+            except Exception as e:
+                logger.error(f"加载字体失败: {str(e)}")
+                return jsonify({'error': '加载字体失败，请确保static目录下存在simsun.ttc字体文件'}), 500
+
+            # 绘制表格边框
+            def draw_cell(x, y, width, height, text, font, align='left', fill='black'):
+                # 绘制边框
+                draw.rectangle((x, y, x + width, y + height), outline='black', width=1)
+                # 计算文本位置
+                text_width = draw.textlength(text, font=font)
+                if align == 'center':
+                    text_x = x + (width - text_width) // 2
+                elif align == 'right':
+                    text_x = x + width - text_width - 10
+                else:
+                    text_x = x + 10
+                text_y = y + (height - font.size) // 2
+                # 绘制文本
+                draw.text((text_x, text_y), text, fill=fill, font=font)
+            
+            # 绘制标题
+            title = "发货单汇总"
+            title_width = draw.textlength(title, font=title_font)
+            offset = 0.5
+            for x_offset in [-offset, 0, offset]:
+                for y_offset in [-offset, 0, offset]:
+                    draw.text(((800 - title_width) // 2 + x_offset, 30 + y_offset), title, fill='black', font=title_font)
+
+            # 绘制基本信息表格
+            y = 100
+            row_height = 40
+            
+            # 第一行
+            draw_cell(50, y, 120, row_height, "发货物流", font, 'left')
+            draw_cell(170, y, 280, row_height, delivery_orders[0].logistics_company or "无", font, 'left')
+            draw_cell(450, y, 150, row_height, "创建时间", font, 'left')
+            draw_cell(600, y, 150, row_height, datetime.now().strftime('%Y/%m/%d'), font, 'left')
+            
+            # 第二行
+            y += row_height
+            draw_cell(50, y, 120, row_height, "客户名称", font, 'left')
+            draw_cell(170, y, 580, row_height, delivery_orders[0].customer_name, font, 'left')
+            
+            # 绘制商品表格标题
+            y += row_height + 20
+            title = "商品明细"
+            title_width = draw.textlength(title, font=font)
+            for x_offset in [-offset, 0, offset]:
+                for y_offset in [-offset, 0, offset]:
+                    draw.text(((800 - title_width) // 2 + x_offset, y + y_offset), title, fill='black', font=font)
+            y += 40
+            
+            # 表头
+            header_height = 40
+            col_widths = {
+                'name': 250,
+                'color': 120,
+                'quantity': 100,
+                'price': 120,
+                'total': 120
+            }
+            
+            x = 50
+            draw_cell(x, y, col_widths['name'], header_height, "商品名称", font, 'center')
+            x += col_widths['name']
+            draw_cell(x, y, col_widths['color'], header_height, "颜色", font, 'center')
+            x += col_widths['color']
+            draw_cell(x, y, col_widths['quantity'], header_height, "数量", font, 'center')
+            x += col_widths['quantity']
+            draw_cell(x, y, col_widths['price'], header_height, "单价", font, 'center')
+            x += col_widths['price']
+            draw_cell(x, y, col_widths['total'], header_height, "小计", font, 'center')
+            
+            # 按商品ID和颜色分组汇总数量
+            grouped_items = {}
+            for item in all_delivery_items:
+                key = (item.product_id, item.color)
+                if key not in grouped_items:
+                    grouped_items[key] = {
+                        'product_id': item.product_id,
+                        'color': item.color,
+                        'quantity': 0
+                    }
+                grouped_items[key]['quantity'] += item.quantity
+
+            # 绘制商品列表
+            y += header_height
+            total_amount = 0
+            total_quantity = 0
+            
+            for item_info in grouped_items.values():
+                product = Product.query.get(item_info['product_id'])
+                if product:
+                    price_info = price_map.get((item_info['product_id'], item_info['color']), {
+                        'price': 0,
+                        'logo_price': 0,
+                        'accessory_price': 0,
+                        'packaging_price': 0
+                    })
+                    
+                    unit_price = (price_info['price'] + price_info['logo_price'] + 
+                                price_info['accessory_price'] + price_info['packaging_price'])
+                    item_total = float(item_info['quantity'] * unit_price)
+                    total_amount += item_total
+                    total_quantity += item_info['quantity']
+                    
+                    row_height = 40
+                    x = 50
+                    
+                    draw_cell(x, y, col_widths['name'], row_height, product.name, small_font, 'center')
+                    x += col_widths['name']
+                    draw_cell(x, y, col_widths['color'], row_height, item_info['color'] or '', small_font, 'center')
+                    x += col_widths['color']
+                    draw_cell(x, y, col_widths['quantity'], row_height, str(item_info['quantity']), small_font, 'center')
+                    x += col_widths['quantity']
+                    draw_cell(x, y, col_widths['price'], row_height, f"¥{unit_price:.2f}", small_font, 'center')
+                    x += col_widths['price']
+                    draw_cell(x, y, col_widths['total'], row_height, f"¥{item_total:.2f}", small_font, 'center')
+                    
+                    y += row_height
+            
+            # 绘制统计信息
+            y += 40
+            right_margin = 50
+            text_margin = 300
+            right_x = 800 - right_margin
+
+            # 绘制总包数
+            text = f"　　　总包数："
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_margin, y), text, fill='black', font=summary_font)
+            text = f"{package_count}包"
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
+            y += 50
+
+            # 绘制商品总数
+            text = f"　　商品总数："
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_margin, y), text, fill='black', font=summary_font)
+            text = f"{total_quantity}件"
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
+            y += 50
+
+            # 绘制货款总额
+            text = f"　　货款总额："
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_margin, y), text, fill='black', font=summary_font)
+            text = f"¥{int(total_amount)}"
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
+            y += 50
+
+            # 绘制累计应付总额
+            text = f"累计应付总额："
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_margin, y), text, fill='black', font=summary_font)
+            text = f"¥{int(total_unpaid)}"
+            text_width = draw.textlength(text, font=summary_font)
+            draw.text((right_x - text_width, y), text, fill='black', font=summary_font)
+            
+            # 将图片保存到内存中
+            img_io = BytesIO()
+            image.save(img_io, 'PNG')
+            image.show()
+            img_io.seek(0)
+            
+            # 获取云存储上传链接
+            try:
+                upload_url = 'http://api.weixin.qq.com/tcb/uploadfile'
+                upload_params = {
+                    'env': WX_ENV,
+                    'path': f'delivery_images/delivery.png'
+                }
+                logger.info(f"请求云存储上传链接: {upload_params}")
+                
+                upload_response = requests.post(upload_url, json=upload_params)
+                upload_data = upload_response.json()
+                logger.info(f"获取上传链接响应: {upload_data}")
+                
+                if upload_data.get('errcode') != 0:
+                    logger.error(f"获取上传链接失败: {upload_data}")
+                    return jsonify({
+                        'code': 500,
+                        'message': '获取上传链接失败',
+                        'data': upload_data
+                    }), 500
+                
+            except Exception as e:
+                logger.error(f"获取上传链接失败: {str(e)}")
+                return jsonify({'error': f'获取上传链接失败: {str(e)}'}), 500
+            
+            # 上传文件到云存储
+            try:
+                cos_url = upload_data['url']
+                files = {
+                    'file': (f'delivery.png', img_io, 'image/png')
+                }
+                form_data = {
+                    'key': f'delivery_images/delivery.png',
+                    'Signature': upload_data['authorization'],
+                    'x-cos-security-token': upload_data['token'],
+                    'x-cos-meta-fileid': upload_data['file_id']
+                }
+                
+                upload_result = requests.post(cos_url, data=form_data, files=files)
+                
+                logger.info(f"图片上传成功: file_id={upload_data['file_id']}")
+                
+                db.session.commit()
+                
+                return jsonify({
+                    'code': 0,
+                    'message': '发货单图片生成成功',
+                    'data': {
+                        'image_url': upload_data['file_id']
+                    }
+                })
+                
+            except Exception as e:
+                logger.error(f"上传文件到云存储失败: {str(e)}")
+                return jsonify({'error': f'上传文件到云存储失败: {str(e)}'}), 500
+            
+        except Exception as e:
+            logger.error(f"图片生成过程发生错误: {str(e)}")
+            return jsonify({'error': f'图片生成失败: {str(e)}'}), 500
+            
+    except Exception as e:
+        error_msg = f"生成发货单图片失败: {str(e)}"
+        logger.error(error_msg)
+        return jsonify({'error': error_msg}), 500
 
 @billing_bp.route('/delivery-orders/export', methods=['GET'])
 @login_required
@@ -1908,4 +2267,69 @@ def get_missing_products(user_id, customer_id):
             'code': -1,
             'message': f'查询缺失商品失败: {str(e)}'
         })
+
+@billing_bp.route('/orders/<order_number>/reset-to-pending', methods=['POST'])
+@login_required
+def reset_order_to_pending(user_id, order_number):
+    """将采购单状态改回待发货"""
+    try:
+        print(f"[DEBUG] 开始将采购单改回待发货状态: order_number={order_number}")
+        
+        # 查询采购单
+        order = PurchaseOrder.query.filter_by(order_number=order_number).first()
+        if not order:
+            print(f"[ERROR] 未找到采购单: {order_number}")
+            return jsonify({'error': '未找到采购单'}), 404
+            
+        # 检查订单状态是否为已完成
+        if False:
+            print(f"[ERROR] 订单状态不正确: {order.status}")
+            return jsonify({'error': '只能将已完成的订单改回待发货状态'}), 400
+            
+        # 更新订单状态为已确认（待发货）
+        order.status = 1
+        
+        # 提交事务
+        db.session.commit()
+        print(f"[DEBUG] 成功将采购单改回待发货状态: order_number={order_number}")
+        
+        return jsonify({
+            'code': 0,
+            'message': '订单状态已更新'
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 更新订单状态失败: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': f'更新订单状态失败: {str(e)}'}), 500
+
+@billing_bp.route('/purchase_orders/<int:order_id>/complete', methods=['POST'])
+@login_required
+def complete_purchase_order(user_id, order_id):
+    """将采购单标记为完成"""
+    try:
+        print(f"[DEBUG] 开始将采购单标记为完成: order_id={order_id}")
+        
+        # 查询采购单
+        order = PurchaseOrder.query.get(order_id)
+        if not order:
+            print(f"[ERROR] 未找到采购单: {order_id}")
+            return jsonify({'error': '未找到采购单'}), 404
+            
+        # 更新订单状态为已完成
+        order.status = 2  # 2表示已完成
+        
+        # 提交事务
+        db.session.commit()
+        print(f"[DEBUG] 成功将采购单标记为完成: order_id={order_id}")
+        
+        return jsonify({
+            'code': 0,
+            'message': '订单已标记为完成'
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 更新订单状态失败: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': f'更新订单状态失败: {str(e)}'}), 500
 
