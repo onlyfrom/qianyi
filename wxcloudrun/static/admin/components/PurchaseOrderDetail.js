@@ -39,7 +39,7 @@ const PurchaseOrderDetail = {
                         </template>
                     </el-table-column>
                     <el-table-column prop="product_id" label="款号" width="60"></el-table-column>
-                    <el-table-column label="颜色" width="120">
+                    <el-table-column label="颜色" width="100">
                         <template #default="scope">
                             <template v-if="isEditing">
                                 <el-select 
@@ -60,7 +60,7 @@ const PurchaseOrderDetail = {
                             </template>
                         </template>
                     </el-table-column>
-                    <el-table-column label="数量" :width="isEditing ? '150px' : '80px'">
+                    <el-table-column label="数量" :width="isEditing ? '110px' : '80px'">
                         <template #default="scope">
                             <template v-if="isEditing">
                                 <el-input-number
@@ -76,17 +76,17 @@ const PurchaseOrderDetail = {
                             </template>
                         </template>
                     </el-table-column>
-                    <el-table-column label="待发货" width="80">
+                    <el-table-column label="待发货" v-if = "!isEditing" width="70">
                         <template #default="scope">
                             {{ scope.row.currentSpec.quantity - (scope.row.currentSpec.shipped_quantity || 0) }}
                         </template>
                     </el-table-column>
-                    <el-table-column label="已发货" width="80">
+                    <el-table-column label="已发货" v-if = "!isEditing" width="70">
                         <template #default="scope">
                             {{ scope.row.currentSpec.shipped_quantity || 0 }}
                         </template>
                     </el-table-column>
-                     <el-table-column label="单价" width="80" v-if="isAdmin">
+                     <el-table-column label="单价" :width="isEditing ? '110px' : '80px'" v-if="isAdmin">
                         <template #default="scope">
                             <template v-if="isEditing">
                                 <el-input-number
@@ -103,7 +103,7 @@ const PurchaseOrderDetail = {
                         </template>
                     </el-table-column>
 
-                    <el-table-column label="总金额" width="120" v-if="isAdmin">
+                    <el-table-column label="总金额" width="100" v-if="isAdmin">
                         <template #default="scope">
                             ¥{{ ((scope.row.total_amount || 0) / scope.row.total_quantity * scope.row.currentSpec.quantity).toFixed(2) }}
                             <text style="font-size: 12px; color: #999;" v-if = "scope.row.currentSpec.extra > 0">+{{ scope.row.currentSpec.extra }}</text>
@@ -178,7 +178,12 @@ const PurchaseOrderDetail = {
                         取消订单
                     </el-button>
                     <el-button 
-                        v-if="orderData.order.status === 0 || orderData.order.status === 1"
+                        v-if="orderData.order.status === 2 && isAdmin"
+                        type="warning"
+                        @click="handleResetToPending">
+                        改回待发货
+                    </el-button>
+                    <el-button 
                         type="primary"
                         @click="toggleEdit">
                         {{ isEditing ? '完成编辑' : '编辑订单' }}
@@ -361,7 +366,7 @@ const PurchaseOrderDetail = {
         }
     },
 
-    emits: ['update:visible', 'accept', 'cancel', 'save', 'view-delivery'],
+    emits: ['update:visible', 'accept', 'cancel', 'save', 'view-delivery', 'reset-to-pending'],
 
     data() {
         return {
@@ -387,6 +392,9 @@ const PurchaseOrderDetail = {
     },
 
     computed: {
+        userId() {
+            return this.orderData?.order?.user?.id;
+        },
         expandedItems() {
             if (!this.orderData?.order?.items) return [];
             
@@ -471,6 +479,25 @@ const PurchaseOrderDetail = {
 
         handleCancel() {
             this.$emit('cancel', this.orderData.order);
+        },
+
+        handleResetToPending() {
+            ElementPlus.ElMessageBox.confirm('确定要将订单状态改回待发货吗？', '提示', {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }).then(async () => {
+                try {
+                    const response = await axios.post(`/orders/${this.orderData.order.order_number}/reset-to-pending`);
+                    if (response.status === 200) {
+                        this.orderData.order.status = 1; // 将状态改为已确认（待发货）
+                        ElementPlus.ElMessage.success('订单状态已更新');
+                    }
+                } catch (error) {
+                    console.error('更新订单状态失败:', error);
+                    ElementPlus.ElMessage.error('更新订单状态失败');
+                }
+            }).catch(() => {});
         },
 
         async toggleEdit() {
@@ -603,7 +630,7 @@ const PurchaseOrderDetail = {
                     params: {
                         keyword: this.searchKeyword,
                         page: 1,
-                        page_size: 10
+                        page_size: 10,                        
                     }
                 });
 
@@ -614,6 +641,10 @@ const PurchaseOrderDetail = {
                             const detail = await this.loadProductDetail(product.id);
                             return {
                                 ...product,
+                                price: detail?.price || 0,
+                                logo_price: detail?.logo_price || 0,
+                                accessory_price: detail?.accessory_price || 0,
+                                packaging_price: detail?.packaging_price || 0,
                                 specs: (detail?.specs || []).map(spec => ({
                                     ...spec,
                                     selectedQuantity: 0
@@ -648,6 +679,7 @@ const PurchaseOrderDetail = {
                 specs: selectedSpecs.map(spec => ({
                     color: spec.color,
                     quantity: spec.selectedQuantity,
+                    price: spec.price || product.price || 0,
                     shipped_quantity: 0
                 })),
                 total_quantity: selectedSpecs.reduce((sum, spec) => sum + spec.selectedQuantity, 0)
@@ -723,9 +755,15 @@ const PurchaseOrderDetail = {
 
         async loadProductDetail(productId) {
             try {
-                const response = await axios.get(`/products/${productId}`);
+                const response = await axios.get(`/products/${productId}`, {
+                    params: {
+                        traget_user_id: this.orderData.order.user.id
+                    }
+                });
                 if (response.status === 200) {
+                    console.log(response.data.product);
                     return response.data.product;
+
                 }
                 return null;
             } catch (error) {

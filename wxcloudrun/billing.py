@@ -1208,8 +1208,12 @@ def generate_deliverys_image(user_id):
         total_quantity = 0
         total_unpaid = 0
         package_count = 0
+        customer_id = None  # 用于记录客户ID
         
         for delivery_id in delivery_ids:
+            total_amount = 0
+            total_quantity = 0
+            total_unpaid = 0
             try:
                 delivery_id = int(delivery_id)  # 转换为整数
             except ValueError:
@@ -1218,6 +1222,10 @@ def generate_deliverys_image(user_id):
                 
             delivery_order = DeliveryOrder.query.get_or_404(delivery_id)
             delivery_orders.append(delivery_order)
+            
+            # 记录客户ID
+            if customer_id is None:
+                customer_id = delivery_order.customer_id
             
             # 获取发货单商品
             delivery_items = DeliveryItem.query.filter_by(delivery_id=delivery_id).all()

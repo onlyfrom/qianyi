@@ -385,6 +385,7 @@ const CreateDeliveryDialog = {
 
                 // 从订单中筛选出可选商品
                 const available = [];
+                let totalPendingQuantity = 0;
                 
                 if (this.order && this.order.items && this.order.items.length > 0) {
                     this.order.items.forEach(orderItem => {
@@ -400,6 +401,7 @@ const CreateDeliveryDialog = {
                                 const pendingQuantity = totalQuantity - shippedQuantity - allocatedQty;
 
                                 if (pendingQuantity > 0) {
+                                    totalPendingQuantity += pendingQuantity;
                                     available.push({
                                         product_id: orderItem.product_id,
                                         product_name: orderItem.product_name || '',
@@ -422,6 +424,7 @@ const CreateDeliveryDialog = {
                             const pendingQuantity = totalQuantity - shippedQuantity - allocatedQty;
 
                             if (pendingQuantity > 0) {
+                                totalPendingQuantity += pendingQuantity;
                                 available.push({
                                     product_id: orderItem.product_id,
                                     product_name: orderItem.product_name || '',
@@ -438,6 +441,34 @@ const CreateDeliveryDialog = {
                 }
 
                 this.availableProducts = available;
+                
+                // 如果没有待发货商品，显示提示
+                if (totalPendingQuantity === 0) {
+                    await ElementPlus.ElMessageBox.confirm(
+                        '当前订单没有待发货商品，是否将该订单直接标记为完成？',
+                        '提示',
+                        {
+                            confirmButtonText: '确认完成',
+                            cancelButtonText: '取消',
+                            type: 'warning'
+                        }
+                    ).then(async () => {
+                        try {
+                            // 调用完成订单的API
+                            const response = await axios.post(`/purchase_orders/${this.order.id}/complete`);
+                            if (response.status === 200) {
+                                ElementPlus.ElMessage.success('订单已标记为完成');
+                                this.$emit('success');
+                                this.handleDialogClose();
+                            }
+                        } catch (error) {
+                            console.error('完成订单失败:', error);
+                            ElementPlus.ElMessage.error('完成订单失败');
+                        }
+                    }).catch(() => {
+                        // 用户点击取消，不做任何操作
+                    });
+                }
                 
             } catch (error) {
                 console.error('加载可选商品失败:', error);
