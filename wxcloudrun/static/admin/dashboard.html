@@ -7329,8 +7329,13 @@
                     }
                     
                     try {
-                        const response = await axios.post('/purchase_orders', {
-                            user_id: this.placeOrderForm.userId,
+                        // const response = await axios.post('/purchase_orders', {
+                        //     user_id: this.placeOrderForm.userId,
+                        //     remark: this.placeOrderForm.remark,
+                        //     items: this.placeOrderForm.items,
+                        //     status: 1
+                        // });
+                        const response = await axios.post('/purchase_orders/'+this.placeOrderForm.userId, {
                             remark: this.placeOrderForm.remark,
                             items: this.placeOrderForm.items,
                             status: 1
