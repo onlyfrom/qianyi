@@ -1083,6 +1083,8 @@ def get_product_detail(user_id, product_id):
         product = Product.query.get(product_id)
         if not product:
             return jsonify({'error': '商品不存在'}), 404
+
+        user_id = request.args.get('traget_user_id', user_id)
             
         # 获取当前用户信息
         current_user = User.query.get(user_id)
@@ -2196,7 +2198,7 @@ def create_purchase_order_dkxd(user_id,target_user_id):
         if not target_user:
             return jsonify({'error': '目标用户不存在'}), 404
             
-        handler_id = data.get('handler_id')
+        handler_id = user_id
         # 生成订单号
         order_number = datetime.now().strftime('%Y%m%d%H%M%S') + str(random.randint(1000, 9999))
         
@@ -2239,7 +2241,6 @@ def create_purchase_order_dkxd(user_id,target_user_id):
                         item_price = float(product.price_d) if product.price_d else float(product.price)
                     else:
                         item_price = float(product.price)
-            
             processed_item = {
                 'product_id': product_id,
                 'quantity': item['quantity'],
