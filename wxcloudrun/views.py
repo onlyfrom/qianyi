@@ -2923,6 +2923,10 @@ def create_delivery_order(user_id):
             
             # 提交事务
             print('提交事务')
+            # 判断是否有相同订单号相同时间的发货单
+            same_time_delivery_order = DeliveryOrder.query.filter_by(order_number=data['order_number'], delivery_date=data['delivery_date']).first()
+            if same_time_delivery_order:
+                return jsonify({'error': '重复生成发货单'}), 400
             db.session.commit()
             print('事务提交成功')
             

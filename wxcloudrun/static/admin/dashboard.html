@@ -1298,6 +1298,12 @@
                             </el-icon>
                             <span>系统设置</span>
                         </el-menu-item>
+                        <el-menu-item index="9">
+                            <el-icon>
+                                <Setting />
+                            </el-icon>
+                            <span>库存管理</span>
+                        </el-menu-item>
 
                         <el-menu-item index="6">
                             <el-icon><Histogram /></el-icon>
@@ -2329,7 +2335,7 @@
                                             <el-button v-if="(scope.row.status === 0 || scope.row.status === 1) && userInfo.role === 'admin'" size="small" type="danger"
                                                 @click="handleCancelPurchase(scope.row)">取消</el-button>
                                             <el-button size="small" type="primary"
-                                                @click="createFromPurchase(scope.row.id)" v-if = "scope.row.status === 1 ">一键发货</el-button>
+                                                @click="createFromPurchase(scope.row.id)" v-if = "scope.row.status === 1 ">提前完成</el-button>
                                         </el-button-group>
                                     </template>
                                 </el-table-column>
@@ -3809,7 +3815,12 @@
                         } else {
                             ElementPlus.ElMessage.error('您没有权限访问此页面');
                         }
+                    } else if (index === '9') {
+                        this.showStockManager();
                     }
+                },
+                showStockManager() {
+                    this.stockManagerVisible = true;
                 },
 
                 showCustomerPriceManager() {
@@ -4792,19 +4803,28 @@
                     }
                 },
 
-                // 从采购单生成配送单
+                // 将采购单状态修改为已完成
                 async createFromPurchase(purchaseId) {
                     try {
-                        const response = await axios.post(`/delivery_orders/from_purchase/${purchaseId}`);
-                        console.log('生成配送单结果:', response);
+                        await ElementPlus.ElMessageBox.confirm('确定要提前完成这个采购单吗？', '警告', {
+                            confirmButtonText: '确定',
+                            cancelButtonText: '取消',
+                            type: 'warning'
+                        });                        
 
-                        if (response.status === 200) {
+                        const response = await axios.put(`/purchase_orders/${purchaseId}`, {
+                            status: 2 // 已完成状态码
+                        });
+
+                        if (response.statusCode === 200) {
                             // 使用采购单数据填充配送单表单 
-                            ElementPlus.ElMessage.success('配送单生成成功');
-                            this.loadDeliveryOrders(); // 刷新配送单列表
+                            ElementPlus.ElMessage.success('采购单已标记为已完成');
+                            // 刷新相关列表
+                            this.loadPurchaseOrders(); // 刷新采购单列表
                         }
                     } catch (error) {
-                        this.handleAxiosError(error, '生成配送单失败');
+                        console.error('标记采购单为已完成失败:', error);
+                        this.handleAxiosError(error, '标记采购单为已完成失败');
                     }
                 },
 

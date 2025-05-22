@@ -130,6 +130,7 @@ const CreateDeliveryDialog = {
                 </el-tabs>
                 
                 <div style="text-align: right; margin-top: 20px;">
+                    <el-button @click="closeOrder">结束订单</el-button>
                     <el-button @click="handleClose">取消</el-button>
                     <el-button type="primary" @click="submitDeliveryForm">确定</el-button>
                 </div>
@@ -330,6 +331,25 @@ const CreateDeliveryDialog = {
                 items: []
             });
             ElementPlus.ElMessage.success('新包裹已添加');
+        },
+
+        async closeOrder() {
+            ElementPlus.ElMessageBox.confirm('确定要结束这个订单吗？', '提示', {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }).then(async () => {
+                // 调用结束订单的API
+                const response = await axios.put(`/purchase_orders/${this.order.id}`, {
+                    status: 2 // 已完成状态码
+                });
+                console.log(response);
+                if (response.status === 200) {
+                    ElementPlus.ElMessage.success('订单已标记为完成');                    
+                    this.handleClose();
+                    this.$emit('success');
+                }
+            }).catch(() => {});
         },
         
         deletePackage(index) {
