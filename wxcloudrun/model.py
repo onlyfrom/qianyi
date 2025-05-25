@@ -479,17 +479,17 @@ class Yarn(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(100), nullable=False, comment='纱线名称')
-    material = db.Column(db.String(50), nullable=False, comment='材质')
-    weight = db.Column(db.DECIMAL(10, 2), nullable=False, comment='单卷克重(g)')
+    supplier = db.Column(db.String(100), nullable=False, comment='供应商')
+    material = db.Column(db.String(50), nullable=True, comment='材质')
+    weight = db.Column(db.DECIMAL(10, 2), nullable=True, comment='单卷克重(g)')
     color = db.Column(db.String(50), nullable=True, comment='颜色名称')
     color_code = db.Column(db.String(20), nullable=True, comment='颜色代码')
-    specification = db.Column(db.String(100), nullable=True, comment='规格')
-    supplier = db.Column(db.String(100), nullable=True, comment='供应商')
+    specification = db.Column(db.String(100), nullable=True, comment='规格')    
     stock = db.Column(db.Integer, nullable=True, default=0, comment='库存数量(卷)')
     remark = db.Column(db.Text, comment='备注')
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
-    composition = db.Column(db.String(100), nullable=False, comment='成分')
+    composition = db.Column(db.String(100), nullable=True, comment='成分')
 
     def __repr__(self):
         return f'<Yarn {self.name}>'

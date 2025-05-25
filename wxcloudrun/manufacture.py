@@ -598,4 +598,167 @@ def delete_yarn(yarn_id):
         return jsonify({
             'code': 1,
             'message': f'删除失败: {str(e)}'
+        })
+
+@manufacture_bp.route('/api/yarn/template', methods=['GET'])
+def download_yarn_template():
+    """下载纱线导入模板"""
+    try:
+        import pandas as pd
+        from io import BytesIO
+        from flask import send_file
+
+        # 创建示例数据
+        data = {
+            '纱厂': ['示例纱厂1', '示例纱厂2'],
+            '纱线': ['示例纱线1', '示例纱线2'],
+            '色号': ['#FFFFFF', '#000000'],
+            '颜色名称': ['白色', '黑色'],
+            '备注': ['示例备注1', '示例备注2']
+        }
+        
+        # 创建DataFrame
+        df = pd.DataFrame(data)
+        
+        # 创建Excel文件
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='纱线导入模板')
+        
+        output.seek(0)
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='纱线导入模板.xlsx'
+        )
+    except Exception as e:
+        return jsonify({
+            'code': 1,
+            'message': f'下载模板失败: {str(e)}'
+        })
+
+@manufacture_bp.route('/api/yarn/import', methods=['POST'])
+def import_yarn():
+    """导入纱线数据"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'code': 1, 'message': '未上传文件'})
+        
+        file = request.files['file']
+        if not file or file.filename == '':
+            return jsonify({'code': 1, 'message': '未选择文件'})
+            
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            return jsonify({'code': 1, 'message': '只支持Excel文件(.xlsx或.xls)'})
+        
+        import pandas as pd
+        from werkzeug.utils import secure_filename
+        
+        # 读取Excel文件
+        try:
+            df = pd.read_excel(file)
+        except Exception as e:
+            return jsonify({'code': 1, 'message': f'Excel文件读取失败: {str(e)}'})
+        
+        # 验证必要的列是否存在
+        required_columns = ['纱厂', '纱线', '色号', '颜色名称']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            return jsonify({'code': 1, 'message': f'缺少必要的列: {", ".join(missing_columns)}'})
+        
+        # 验证数据是否为空
+        if df.empty:
+            return jsonify({'code': 1, 'message': 'Excel文件中没有数据'})
+        
+        # 处理数据
+        success_count = 0
+        error_count = 0
+        error_messages = []
+        
+        print('开始导入，总行数:', len(df))
+        
+        for index, row in df.iterrows():
+            try:
+                # 数据验证
+                if pd.isna(row['纱厂']) or pd.isna(row['纱线']) or pd.isna(row['色号']) or pd.isna(row['颜色名称']):
+                    raise ValueError('必填字段不能为空')
+                
+                # 检查是否已存在相同的纱线
+                existing_yarn = Yarn.query.filter_by(
+                    name=str(row['纱线']).strip(),
+                    color_code=str(row['色号']).strip()
+                ).first()
+                
+                if existing_yarn:
+                    raise ValueError('该纱线已存在')
+                
+                # 创建纱线记录
+                yarn = Yarn(
+                    name=str(row['纱线']).strip(),
+                    material='',  # 留空
+                    weight=0,     # 留空
+                    color=str(row['颜色名称']).strip(),
+                    color_code=str(row['色号']).strip(),
+                    specification='',  # 留空
+                    supplier=str(row['纱厂']).strip(),
+                    stock=0,      # 留空
+                    remark=str(row.get('备注', '')).strip() if not pd.isna(row.get('备注', '')) else ''  # 备注可选
+                )
+                
+                print(f'处理第{index + 2}行:', {
+                    'name': yarn.name,
+                    'color': yarn.color,
+                    'color_code': yarn.color_code,
+                    'supplier': yarn.supplier
+                })
+                
+                db.session.add(yarn)
+                success_count += 1
+                
+                # 每100条提交一次，避免事务太大
+                if success_count % 100 == 0:
+                    db.session.commit()
+                    print(f'已成功导入{success_count}条记录')
+                
+            except Exception as e:
+                error_count += 1
+                error_msg = f'第{index + 2}行导入失败: {str(e)}'
+                error_messages.append(error_msg)
+                print(error_msg)
+                continue
+        
+        # 最终提交
+        try:
+            db.session.commit()
+            print('导入完成，最终提交成功')
+        except Exception as e:
+            db.session.rollback()
+            print('最终提交失败:', str(e))
+            return jsonify({
+                'code': 1,
+                'message': f'数据保存失败: {str(e)}',
+                'data': {
+                    'success_count': success_count,
+                    'error_count': error_count,
+                    'error_messages': error_messages
+                }
+            })
+        
+        return jsonify({
+            'code': 0,
+            'message': f'导入完成，成功: {success_count}条，失败: {error_count}条',
+            'data': {
+                'success_count': success_count,
+                'error_count': error_count,
+                'error_messages': error_messages
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        print('导入过程发生错误:', str(e))
+        return jsonify({
+            'code': 1,
+            'message': f'导入失败: {str(e)}'
         }) 

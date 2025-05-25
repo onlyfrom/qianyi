@@ -227,7 +227,13 @@ def update_delivery_order(user_id, order_id):
             logistics_company: 物流公司,
             tracking_number: 物流单号,
             remark: 备注,
-            additional_fee: 附加费用
+            additional_fee: 附加费用,
+            items: [{
+                product_id: 商品ID,
+                quantity: 数量,
+                color: 颜色,
+                package_id: 包装ID
+            }]
         }
     返回:
         成功: {"code": 200, "message": "更新成功", "order_id": order_id}
@@ -277,6 +283,23 @@ def update_delivery_order(user_id, order_id):
                 order.additional_fee = data['additional_fee']
             if 'remark' in data:
                 order.remark = data['remark']
+                
+            # 更新商品数量
+            if 'items' in data and isinstance(data['items'], list):
+                # 删除现有的发货单商品
+                DeliveryItem.query.filter_by(delivery_id=order_id).delete()
+                
+                # 添加新的发货单商品
+                for item in data['items']:
+                    delivery_item = DeliveryItem(
+                        delivery_id=order_id,
+                        order_number=order.order_number,
+                        product_id=item['product_id'],
+                        quantity=item['quantity'],
+                        color=item.get('color', ''),
+                        package_id=item.get('package_id', '1')
+                    )
+                    db.session.add(delivery_item)
                 
             # 更新修改时间
             order.updated_at = datetime.now()
