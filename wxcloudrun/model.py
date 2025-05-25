@@ -448,12 +448,12 @@ class ManufacturePlan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product_id = db.Column(db.String(80), db.ForeignKey('products.id'), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
-    status1 = db.Column(db.Integer, default=0)  # 机织数量
-    status2 = db.Column(db.Integer, default=0)  # 平车数量
-    status3 = db.Column(db.Integer, default=0)  # 套口数量
-    status4 = db.Column(db.Integer, default=0)  # 手工数量
-    status5 = db.Column(db.Integer, default=0)  # 下水数量
-    status6 = db.Column(db.Integer, default=0)  # 进场数量
+    weaving = db.Column(db.Integer, default=0)  # 机织数量
+    flat_sewing = db.Column(db.Integer, default=0)  # 平车数量
+    cuff_sewing = db.Column(db.Integer, default=0)  # 套口数量
+    handwork = db.Column(db.Integer, default=0)  # 手工数量
+    washing = db.Column(db.Integer, default=0)  # 下水数量
+    entry = db.Column(db.Integer, default=0)  # 进场数量
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
     color = db.Column(db.String(50))
@@ -465,13 +465,34 @@ class ManufactureStatusHistory(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('manufacture_plans.id'), nullable=False)
-    status = db.Column(db.String(20), nullable=False)  # status1:机织, status2:平车, status3:套口, status4:手工, status5:下水, status6:进场
+    status = db.Column(db.String(20), nullable=False)  # weaving:机织, flat_sewing:平车, cuff_sewing:套口, handwork:手工, washing:下水, entry:进场
     value = db.Column(db.Integer, nullable=False)  # 该状态下的实际数量
     created_at = db.Column(db.DateTime, default=datetime.now)
     created_by = db.Column(db.String(80), nullable=False)  # 操作人ID
     
     # 添加与 ManufacturePlan 的关联关系
     plan = db.relationship('ManufacturePlan', backref=db.backref('status_history', lazy=True))
+
+class Yarn(db.Model):
+    """纱线模型"""
+    __tablename__ = 'yarn'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(100), nullable=False, comment='纱线名称')
+    material = db.Column(db.String(50), nullable=False, comment='材质')
+    weight = db.Column(db.DECIMAL(10, 2), nullable=False, comment='单卷克重(g)')
+    color = db.Column(db.String(50), nullable=True, comment='颜色名称')
+    color_code = db.Column(db.String(20), nullable=True, comment='颜色代码')
+    specification = db.Column(db.String(100), nullable=True, comment='规格')
+    supplier = db.Column(db.String(100), nullable=True, comment='供应商')
+    stock = db.Column(db.Integer, nullable=True, default=0, comment='库存数量(卷)')
+    remark = db.Column(db.Text, comment='备注')
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
+    composition = db.Column(db.String(100), nullable=False, comment='成分')
+
+    def __repr__(self):
+        return f'<Yarn {self.name}>'
 
 
 

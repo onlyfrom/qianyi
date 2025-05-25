@@ -961,3 +961,210 @@ def get_customer_daily_details(user_id):
             'error': str(e)
         }), 500
 
+@app.route('/stock/list', methods=['GET'])
+@login_required
+def get_stock_list(user_id):
+    """
+    获取库存列表
+    参数：
+    - page: 页码
+    - per_page: 每页数量
+    - search: 搜索关键词
+    - filter: 库存状态筛选（safe/warning/danger）
+    """
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        search = request.args.get('search', '')
+        stock_filter = request.args.get('filter', '')
+
+        # 构建查询
+        query = Product.query
+
+        # 添加搜索条件
+        if search:
+            query = query.filter(Product.name.like(f'%{search}%'))
+
+        # 获取分页数据
+        pagination = query.paginate(page=page, per_page=per_page)
+        products = pagination.items
+
+        # 处理每个商品的库存信息
+        items = []
+        for product in products:
+            specs = json.loads(product.specs) if product.specs else []
+            total_stock = sum(spec.get('stock', 0) for spec in specs)
+
+            # 根据库存状态筛选
+            if stock_filter:
+                if stock_filter == 'safe' and total_stock <= 10:
+                    continue
+                elif stock_filter == 'warning' and (total_stock > 10 or total_stock <= 0):
+                    continue
+                elif stock_filter == 'danger' and total_stock > 0:
+                    continue
+
+            items.append({
+                'id': product.id,
+                'name': product.name,
+                'total_stock': total_stock,
+                'specs': specs,
+                'created_at': product.created_at
+            })
+
+        return jsonify({
+            'code': 0,
+            'data': {
+                'items': items,
+                'total': pagination.total
+            }
+        })
+
+    except Exception as e:
+        print(f'获取库存列表失败: {str(e)}')
+        return jsonify({
+            'code': 500,
+            'message': '获取库存列表失败'
+        }), 500
+
+@app.route('/stock/detail/<product_id>', methods=['GET'])
+@login_required
+def get_stock_detail(user_id, product_id):
+    """
+    获取库存详情
+    参数：
+    - product_id: 商品ID
+    """
+    try:
+        # 获取商品信息
+        product = Product.query.get_or_404(product_id)
+        specs = json.loads(product.specs) if product.specs else []
+
+        # 获取库存记录
+        stock_records = StockRecord.query.filter_by(product_id=product_id)\
+            .order_by(StockRecord.created_at.desc())\
+            .limit(50)\
+            .all()
+
+        records = [{
+            'id': record.id,
+            'change_amount': record.change_amount,
+            'type': record.type,
+            'remark': record.remark,
+            'operator': record.operator,
+            'color': record.color,
+            'created_at': record.created_at.isoformat() if record.created_at else None
+        } for record in stock_records]
+
+        return jsonify({
+            'code': 0,
+            'data': {
+                'product': {
+                    'id': product.id,
+                    'name': product.name,
+                    'specs': specs,
+                    'created_at': product.created_at
+                },
+                'stock_records': records
+            }
+        })
+
+    except Exception as e:
+        print(f'获取库存详情失败: {str(e)}')
+        return jsonify({
+            'code': 500,
+            'message': '获取库存详情失败'
+        }), 500
+
+@app.route('/stock/adjust', methods=['POST'])
+@login_required
+def adjust_stock(user_id):
+    """
+    调整库存
+    参数：
+    - product_id: 商品ID
+    - color: 颜色
+    - change_amount: 变动数量
+    - remark: 备注
+    """
+    try:
+        data = request.json
+        product_id = data.get('product_id')
+        color = data.get('color')
+        change_amount = data.get('change_amount', 0)
+        remark = data.get('remark', '')
+
+        if not product_id:
+            return jsonify({
+                'code': 400,
+                'message': '商品ID不能为空'
+            }), 400
+
+        if not color:
+            return jsonify({
+                'code': 400,
+                'message': '颜色不能为空'
+            }), 400
+
+        # 获取商品
+        product = Product.query.get_or_404(product_id)
+        specs = json.loads(product.specs) if product.specs else []
+
+        # 查找并更新对应颜色的库存
+        color_found = False
+        for spec in specs:
+            if spec.get('color') == color:
+                current_stock = spec.get('stock', 0)
+                new_stock = current_stock + change_amount
+                if new_stock < 0:
+                    return jsonify({
+                        'code': 400,
+                        'message': '库存不足'
+                    }), 400
+                spec['stock'] = new_stock
+                color_found = True
+                break
+
+        if not color_found:
+            specs.append({
+                'color': color,
+                'image': '',
+                'stock': change_amount
+            })
+
+        # 更新商品规格
+        product.specs = json.dumps(specs)
+
+        # 记录库存变动
+        stock_record = StockRecord(
+            product_id=product_id,
+            change_amount=change_amount,
+            type='adjust',
+            remark=remark,
+            operator=f'user_{user_id}',
+            color=color,
+            created_at=datetime.now()
+        )
+        db.session.add(stock_record)
+
+        try:
+            db.session.commit()
+            return jsonify({
+                'code': 0,
+                'message': '库存调整成功'
+            })
+        except Exception as e:
+            db.session.rollback()
+            print(f'调整库存失败: {str(e)}')
+            return jsonify({
+                'code': 500,
+                'message': '调整库存失败'
+            }), 500
+
+    except Exception as e:
+        print(f'调整库存失败: {str(e)}')
+        return jsonify({
+            'code': 500,
+            'message': '调整库存失败'
+        }), 500
+

@@ -648,9 +648,10 @@ const CreateDeliveryDialog = {
                     tracking_number: this.deliveryForm.tracking_number,
                     status: 1,
                     remark: this.deliveryForm.remark || '',
-                    packages: packageArrays
+                    packages: packageArrays,
+                    created_at: this.nowTime()
                 };
-                
+                console.log('deliveryData:', deliveryData);
                 const response = await axios.post('/delivery_orders', deliveryData);
                 if (response.status === 201 || response.status === 200) {
                     ElementPlus.ElMessage.success('发货单已提交成功');
@@ -674,6 +675,10 @@ const CreateDeliveryDialog = {
                 });
                 this.selectedProducts = Array.from(this.selectedProductMap.values());
             }
+        },
+        // 获取当前时间 格式：yyyy-mm-dd hh:mm:ss
+        nowTime() {
+            return new Date().toISOString().split('T')[0] + ' ' + new Date().toISOString().split('T')[1].split('.')[0];
         },
         
         handleProductSelectionChange(selection) {

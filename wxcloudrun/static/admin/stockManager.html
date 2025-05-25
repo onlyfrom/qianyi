@@ -1,0 +1,1745 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>库存管理</title>
+    <link rel="icon" type="image/x-icon" href="https://7072-prod-9gd4jllic76d4842-1348936510.tcb.qcloud.la/system/logo.png?sign=013420464d5c9d73dd11b8a00bbcc674&t=1742838676">
+    <!-- 引入 Element Plus 相关文件 -->
+    <link rel="stylesheet" href="/admin/lib/element-plus/index.css">
+    <script src="/admin/lib/vue/vue.global.min.js"></script>
+    <script src="/admin/lib/element-plus/index.full.min.js"></script>
+    <script src="/admin/lib/icons/icons-vue.js"></script>
+    <script src="/admin/lib/axios/axios.min.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/locale/zh-cn.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            background-color: #f5f7fa;
+        }
+
+        #app {
+            height: 100%;
+        }
+
+        .layout-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .el-header {
+            background-color: #545c64;
+            color: #fff;
+            line-height: 60px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+        }
+
+        .main-content {
+            padding: 20px;
+            flex: 1;
+            overflow: auto;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .user-info:hover {
+            opacity: 0.8;
+        }
+
+        .el-dropdown-link {
+            display: flex;
+            align-items: center;
+            color: #fff;
+        }
+
+        .stock-manager {
+            padding: 20px;
+        }
+        .search-bar {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .stock-table {
+            margin-top: 20px;
+        }
+        .stock-detail {
+            margin-top: 20px;
+        }
+        .stock-warning {
+            color: #E6A23C;
+        }
+        .stock-danger {
+            color: #F56C6C;
+        }
+        .stock-safe {
+            color: #67C23A;
+        }
+        .el-dialog__body {
+            padding: 20px;
+        }
+        .stock-record {
+            margin-top: 20px;
+        }
+        .filter-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f5f7fa;
+            border-radius: 4px;
+        }
+        .manufacture-container {
+            padding: 20px;
+        }
+        .el-progress {
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="layout-container">
+            <!-- 顶部导航栏 -->
+            <el-header>
+                <div class="header-title">
+                    <el-button link type="info" @click="goBack">
+                        <el-icon><Back /></el-icon>
+                        返回主页
+                    </el-button>
+                    库存管理系统
+                </div>
+                <div class="user-info">
+                    <el-dropdown @command="handleCommand">
+                        <span class="el-dropdown-link">
+                            <el-avatar :size="32" :src="getUserInfo().avatar"></el-avatar>
+                            <span style="margin-left: 8px">{{ getUserInfo().nickname || getUserInfo().username }}</span>
+                            <el-icon class="el-icon--right"><arrow-down /></el-icon>
+                        </span>
+                        <template #dropdown>
+                            <el-dropdown-menu>
+                                <el-dropdown-item command="profile">个人信息</el-dropdown-item>
+                                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+                            </el-dropdown-menu>
+                        </template>
+                    </el-dropdown>
+                </div>
+            </el-header>
+
+            <!-- 主要内容区域 -->
+            <div class="main-content">
+                <!-- 搜索和筛选区域 -->
+                <div class="filter-section">
+                    <el-row :gutter="20">
+                        <el-col :span="6">
+                            <el-input
+                                v-model="searchQuery"
+                                placeholder="搜索商品名称"
+                                clearable
+                                @clear="handleSearch"
+                                @keyup.enter.native="handleSearch">
+                                <el-button slot="append" icon="el-icon-search" @click="handleSearch"></el-button>
+                            </el-input>
+                        </el-col>
+                        <el-col :span="6">
+                            <el-select v-model="stockFilter" placeholder="库存状态" clearable @change="handleSearch">
+                                <el-option label="库存充足" value="safe"></el-option>
+                                <el-option label="库存警告" value="warning"></el-option>
+                                <el-option label="库存不足" value="danger"></el-option>
+                            </el-select>
+                        </el-col>
+                        <el-col :span="6">
+                            <el-button type="primary" @click="handleManufacture">制造管理</el-button>
+                        </el-col>
+                        <el-col :span="6">
+                            <el-button type="success" @click="handleYarn">纱线管理</el-button>
+                        </el-col>
+                    </el-row>
+                </div>
+
+                <!-- 库存列表 -->
+                <el-table
+                    :data="stockList"
+                    border
+                    style="width: 100%"
+                    v-loading="loading">
+                    <el-table-column
+                        prop="id"
+                        label="商品编号"
+                        width="120">
+                    </el-table-column>
+                    <el-table-column
+                        prop="name"
+                        label="商品名称"
+                        width="200">
+                    </el-table-column>
+                    <el-table-column
+                        label="总库存"
+                        width="100">
+                        <template #default="scope">
+                            <span :class="getStockClass(scope.row.total_stock)">{{ scope.row.total_stock }}</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column
+                        label="规格库存"
+                        width="300">
+                        <template #default="scope">
+                            <el-tag
+                                v-for="spec in scope.row.specs"
+                                :key="spec.color"
+                                :type="getStockTagType(spec.stock)"
+                                style="margin-right: 5px">
+                                {{ spec.color }}: {{ spec.stock }}
+                            </el-tag>
+                        </template>
+                    </el-table-column>
+                    <el-table-column
+                        label="创建时间"
+                        width="180">
+                        <template #default="scope">
+                            {{ formatDate(scope.row.created_at) }}
+                        </template>
+                    </el-table-column>
+                    <el-table-column
+                        label="操作"
+                        width="200">
+                        <template #default="scope">
+                            <el-button
+                                size="small"
+                                @click="handleDetail(scope.row)">详情</el-button>
+                            <el-button
+                                size="small"
+                                type="primary"
+                                @click="handleAdjust(scope.row)">调整库存</el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+
+                <!-- 分页 -->
+                <div class="pagination-container" style="margin-top: 20px; text-align: right;">
+                    <el-pagination
+                        @size-change="handleSizeChange"
+                        @current-change="handleCurrentChange"
+                        :current-page="currentPage"
+                        :page-sizes="[10, 20, 50, 100]"
+                        :page-size="pageSize"
+                        layout="total, sizes, prev, pager, next, jumper"
+                        :total="total">
+                    </el-pagination>
+                </div>
+                <!-- 库存详情对话框 -->
+                <el-dialog
+                    title="库存详情"
+                    v-model="detailDialogVisible"
+                    width="70%">
+                    <div v-if="currentProduct">
+                        <h3>{{ currentProduct.name }}</h3>
+                        <el-descriptions :column="2" border>
+                            <el-descriptions-item label="商品编号">{{ currentProduct.id }}</el-descriptions-item>
+                            <el-descriptions-item label="创建时间">{{ formatDate(currentProduct.created_at) }}</el-descriptions-item>
+                            <el-descriptions-item label="总库存">{{ currentProduct.total_stock }}</el-descriptions-item>
+                        </el-descriptions>
+
+                        <div class="stock-detail">
+                            <h4>规格库存</h4>
+                            <el-table :data="currentProduct.specs" border>
+                                <el-table-column prop="color" label="颜色" width="120"></el-table-column>
+                                <el-table-column prop="stock" label="库存" width="120">
+                                    <template #default="scope">
+                                        <span :class="getStockClass(scope.row.stock)">{{ scope.row.stock }}</span>
+                                    </template>
+                                </el-table-column>
+                                <el-table-column prop="image" label="图片" width="120">
+                                    <template #default="scope">
+                                        <el-image 
+                                            v-if="scope.row.image"
+                                            style="width: 50px; height: 50px"
+                                            :src="scope.row.image"
+                                            :preview-src-list="[scope.row.image]">
+                                        </el-image>
+                                        <span v-else>无图片</span>
+                                    </template>
+                                </el-table-column>
+                            </el-table>
+                        </div>
+
+                        <div class="stock-record">
+                            <h4>库存记录</h4>
+                            <el-table :data="stockRecords" border>
+                                <el-table-column prop="type" label="类型" width="100">
+                                    <template #default="scope">
+                                        <el-tag :type="getRecordTypeTag(scope.row.type)">
+                                            {{ getRecordTypeText(scope.row.type) }}
+                                        </el-tag>
+                                    </template>
+                                </el-table-column>
+                                <el-table-column prop="change_amount" label="变动数量" width="100"></el-table-column>
+                                <el-table-column prop="color" label="颜色" width="100"></el-table-column>
+                                <el-table-column prop="remark" label="备注"></el-table-column>
+                                <el-table-column prop="operator" label="操作人" width="120"></el-table-column>
+                                <el-table-column prop="created_at" label="时间" width="180">
+                                    <template #default="scope">
+                                        {{ formatDate(scope.row.created_at) }}
+                                    </template>
+                                </el-table-column>
+                            </el-table>
+                        </div>
+                    </div>
+                </el-dialog>
+
+                <!-- 调整库存对话框 -->
+                <el-dialog
+                    title="调整库存"
+                    v-model="adjustDialogVisible"
+                    width="500px">
+                    <el-form :model="adjustForm" label-width="100px">
+                        <el-form-item label="商品名称">
+                            <span>{{ currentProduct ? currentProduct.name : '' }}</span>
+                        </el-form-item>
+                        <el-form-item label="商品编号">
+                            <span>{{ currentProduct ? currentProduct.id : '' }}</span>
+                        </el-form-item>
+                        <el-form-item label="颜色">
+                            <el-select v-model="adjustForm.color" placeholder="请选择颜色" :disabled="!(currentProduct && currentProduct.specs && currentProduct.specs.length)">
+                                <el-option
+                                    v-for="spec in (currentProduct ? currentProduct.specs : [])"
+                                    :key="spec.color"
+                                    :label="spec.color"
+                                    :value="spec.color">
+                                </el-option>
+                            </el-select>
+                        </el-form-item>
+                        <el-form-item label="当前库存">
+                            <span>{{ getCurrentStock() }}</span>
+                        </el-form-item>
+                        <el-form-item label="变动数量">
+                            <el-input-number
+                                v-model="adjustForm.change_amount"
+                                :min="-9999"
+                                :max="9999"
+                                @change="handleAmountChange">
+                            </el-input-number>
+                        </el-form-item>
+                        <el-form-item label="备注">
+                            <el-input
+                                type="textarea"
+                                v-model="adjustForm.remark"
+                                placeholder="请输入备注信息">
+                            </el-input>
+                        </el-form-item>
+                    </el-form>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="adjustDialogVisible = false">取 消</el-button>
+                        <el-button type="primary" @click="submitAdjust" :loading="adjusting">确 定</el-button>
+                    </div>
+                </el-dialog>
+
+                <!-- 导入库存对话框 -->
+                <el-dialog
+                    title="导入库存"
+                    v-model="importDialogVisible"
+                    width="500px">
+                    <el-upload
+                        class="upload-demo"
+                        drag
+                        action="/products/import-stock"
+                        :headers="uploadHeaders"
+                        :on-success="handleImportSuccess"
+                        :on-error="handleImportError"
+                        :before-upload="beforeImportUpload">
+                        <i class="el-icon-upload"></i>
+                        <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
+                        <div class="el-upload__tip" slot="tip">只能上传xlsx/xls文件</div>
+                    </el-upload>
+                </el-dialog>
+                
+                <!-- 制造管理对话框 -->
+                <el-dialog
+                    title="制造管理"
+                    v-model="manufactureDialogVisible"
+                    width="90%">
+                    <div class="manufacture-container">
+                        <!-- 搜索和筛选区域 -->
+                        <div class="filter-section">
+                            <el-row :gutter="20">
+                                <el-col :span="6">
+                                    <el-input
+                                        v-model="manufactureSearchQuery"
+                                        placeholder="搜索商品名称/编号"
+                                        clearable
+                                        @clear="handleManufactureSearch"
+                                        @keyup.enter.native="handleManufactureSearch">
+                                    </el-input>
+                                </el-col>
+                                <el-col :span="6">
+                                    <el-date-picker
+                                        v-model="manufactureDateRange"
+                                        type="daterange"
+                                        range-separator="至"
+                                        start-placeholder="开始日期"
+                                        end-placeholder="结束日期"
+                                        @change="handleManufactureSearch">
+                                    </el-date-picker>
+                                </el-col>
+                                <el-col >
+                                    <el-button type="primary" @click="handleCreateManufacturePlan">新建制造计划</el-button>
+                                </el-col>
+                            </el-row>
+                        </div>
+
+                        <!-- 制造计划列表 -->
+                        <el-table
+                            :data="manufacturePlans"
+                            border
+                            style="width: 100%"
+                            v-loading="manufactureLoading"
+                            @row-click="handleManufactureDetail"
+                            :row-style="{ cursor: 'pointer' }">
+                            <el-table-column
+                                prop="id"
+                                label="计划ID"
+                                width="100">
+                            </el-table-column>
+                            <el-table-column
+                                prop="product_name"
+                                label="商品名称"
+                                width="200">
+                            </el-table-column>
+                            <el-table-column
+                                prop="quantity"
+                                label="计划数量"
+                                width="100">
+                            </el-table-column>
+                            <el-table-column
+                                prop="color"
+                                label="颜色"
+                                width="100">
+                            </el-table-column>
+                            <el-table-column
+                                label="制造状态"
+                                width="120">
+                                <template #default="scope">
+                                    <el-progress 
+                                        :percentage="(scope.row.weaving / scope.row.quantity) * 100"
+                                        :format="format => `${scope.row.weaving}/${scope.row.quantity}`">
+                                    </el-progress>
+                                </template>
+                            </el-table-column>
+                            <el-table-column
+                                prop="created_at"
+                                label="创建时间"
+                                width="180">
+                            </el-table-column>
+                            <el-table-column
+                                label="操作"
+                                width="200">
+                                <template #default="scope">
+                                    <el-button
+                                        size="small"
+                                        type="primary"
+                                        @click="handleUpdateStatus(scope.row)">更新状态</el-button>
+                                    <el-button
+                                        size="small"
+                                        @click="handleViewHistory(scope.row)">查看历史</el-button>
+                                    <el-button
+                                        size="small"
+                                        type="info"
+                                        @click="handleManufactureDetail(scope.row)">查看详情</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+
+                        <!-- 分页 -->
+                        <div class="pagination-container" style="margin-top: 20px; text-align: right;">
+                            <el-pagination
+                                @size-change="handleManufactureSizeChange"
+                                @current-change="handleManufactureCurrentChange"
+                                :current-page="manufactureCurrentPage"
+                                :page-sizes="[10, 20, 50, 100]"
+                                :page-size="manufacturePageSize"
+                                layout="total, sizes, prev, pager, next, jumper"
+                                :total="manufactureTotal">
+                            </el-pagination>
+                        </div>
+                    </div>
+                </el-dialog>
+
+                <!-- 新建制造计划对话框 -->
+                <el-dialog
+                    title="新建制造计划"
+                    v-model="createManufactureDialogVisible"
+                    width="800px">
+                    <el-form :model="manufactureForm" label-width="100px">
+                        <el-form-item label="商品">
+                            <el-select
+                                v-model="manufactureForm.product_id"
+                                filterable
+                                remote
+                                :remote-method="searchProducts"
+                                placeholder="请输入商品名称或编号搜索"
+                                style="width: 100%">
+                                <el-option
+                                    v-for="item in productOptions"
+                                    :key="item.id"
+                                    :label="item.name"
+                                    :value="item.id">
+                                    <span>{{ item.name }}</span>
+                                    <span style="float: right; color: #8492a6; font-size: 13px">{{ item.code }}</span>
+                                </el-option>
+                            </el-select>
+                        </el-form-item>
+                        <el-form-item label="颜色">
+                            <el-select
+                                v-model="manufactureForm.color"
+                                placeholder="请选择颜色"
+                                style="width: 100%">
+                                <el-option
+                                    v-for="spec in selectedProductSpecs"
+                                    :key="spec.color"
+                                    :label="spec.color"
+                                    :value="spec.color">
+                                </el-option>
+                            </el-select>
+                        </el-form-item>
+                        <el-form-item label="数量">
+                            <el-input-number
+                                v-model="manufactureForm.quantity"
+                                :min="1"
+                                :max="9999"
+                                style="width: 100%">
+                            </el-input-number>
+                        </el-form-item>
+                        <el-form-item label="使用材料">
+                            <div v-for="(material, index) in manufactureForm.materials" :key="index" style="margin-bottom: 10px; display: flex; gap: 10px;">
+                                <el-select
+                                    v-model="material.yarn_id"
+                                    filterable
+                                    remote
+                                    :remote-method="(query) => searchYarns(query, index)"
+                                    placeholder="选择纱线"
+                                    style="width: 200px">
+                                    <el-option
+                                        v-for="yarn in yarnOptions[index]"
+                                        :key="yarn.id"
+                                        :label="yarn.name"
+                                        :value="yarn.id">
+                                        <span>{{ yarn.name }}</span>
+                                        <span style="float: right; color: #8492a6; font-size: 13px">{{ yarn.material }}</span>
+                                    </el-option>
+                                </el-select>
+                                <el-input-number
+                                    v-model="material.quantity"
+                                    :min="1"
+                                    :max="9999"
+                                    placeholder="数量"
+                                    style="width: 150px">
+                                </el-input-number>
+                                <el-button type="danger" @click="removeMaterial(index)" :disabled="manufactureForm.materials.length === 1">
+                                    <el-icon><Delete /></el-icon>
+                                </el-button>
+                            </div>
+                            
+                        </el-form-item>
+                        <div style="margin-top: 10px; text-align: right;">
+                            <el-button type="primary" @click="addMaterial">
+                                <el-icon><Plus /></el-icon>添加材料
+                            </el-button>
+                        </div>
+                    </el-form>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="createManufactureDialogVisible = false">取 消</el-button>
+                        <el-button type="primary" @click="submitManufacturePlan" :loading="submitting">确 定</el-button>
+                    </div>
+                </el-dialog>
+
+                <!-- 更新状态对话框 -->
+                <el-dialog
+                    title="更新状态"
+                    v-model="updateStatusDialogVisible"
+                    width="500px">
+                    <el-form :model="statusForm" label-width="100px">
+                        <el-form-item label="状态类型">
+                            <el-select v-model="statusForm.status_type" placeholder="请选择状态类型">
+                                <el-option label="机织" value="weaving"></el-option>
+                                <el-option label="平车" value="flat_sewing"></el-option>
+                                <el-option label="套口" value="cuff_sewing"></el-option>
+                                <el-option label="手工" value="handwork"></el-option>
+                                <el-option label="下水" value="washing"></el-option>
+                                <el-option label="进场" value="entry"></el-option>
+                            </el-select>
+                        </el-form-item>
+                        <el-form-item label="变更数量">
+                            <el-input-number
+                                v-model="statusForm.value"
+                                :min="-9999"
+                                :max="9999"
+                                style="width: 100%">
+                            </el-input-number>
+                        </el-form-item>
+                    </el-form>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="updateStatusDialogVisible = false">取 消</el-button>
+                        <el-button type="primary" @click="submitStatusUpdate" :loading="updating">确 定</el-button>
+                    </div>
+                </el-dialog>
+
+                <!-- 状态历史对话框 -->
+                <el-dialog
+                    title="状态历史"
+                    v-model="historyDialogVisible"
+                    width="800px">
+                    <el-table :data="statusHistory" border>
+                        <el-table-column prop="status" label="状态类型" width="120">
+                            <template #default="scope">
+                                {{ getStatusTypeText(scope.row.status) }}
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="value" label="数量" width="120"></el-table-column>
+                        <el-table-column prop="created_by" label="操作人" width="120"></el-table-column>
+                        <el-table-column prop="created_at" label="操作时间" width="180"></el-table-column>
+                    </el-table>
+                </el-dialog>
+
+                <!-- 制造计划详情对话框 -->
+                <el-dialog
+                    title="制造计划详情"
+                    v-model="manufactureDetailVisible"
+                    width="800px">
+                    <div v-if="currentManufacturePlan" class="manufacture-detail" style="display: flex; align-items: center;">
+                        <!-- 左侧信息 -->
+                        <el-descriptions :column="1" border style="flex: 1;">
+                            <el-descriptions-item label="计划ID">{{ currentManufacturePlan.id }}</el-descriptions-item>
+                            <el-descriptions-item label="商品名称">{{ currentManufacturePlan.product_name }}</el-descriptions-item>
+                            <el-descriptions-item label="创建时间">{{ formatDate(currentManufacturePlan.created_at) }}</el-descriptions-item>
+                            <el-descriptions-item label="颜色">{{ currentManufacturePlan.color }}</el-descriptions-item>
+                            <el-descriptions-item label="数量">{{ currentManufacturePlan.quantity }}</el-descriptions-item>
+                        </el-descriptions>
+                        <!-- 右侧图片 -->
+                        <div style="margin-left: 32px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                            <el-image
+                                v-if="currentManufacturePlan.images && currentManufacturePlan.images.length > 0"
+                                style="width: 200px; height: 200px; border-radius: 4px;"
+                                :src="currentManufacturePlan.images[0]"
+                                :preview-src-list="currentManufacturePlan.images">
+                            </el-image>
+                            <div v-else style="width: 120px; height: 120px; background: #f5f7fa; display: flex; align-items: center; justify-content: center; border-radius: 4px;">
+                                <el-icon :size="40" color="#909399"><Picture /></el-icon>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="manufacture-status" style="margin-top: 20px;">
+                        <h4>材料消耗（预估）</h4>
+                        <el-table :data="yarnUsage" border>
+                            <el-table-column prop="yarn_name" label="纱线名称" ></el-table-column>
+                            <el-table-column prop="yarn_material" label="材质" width="120"></el-table-column>
+                            <el-table-column prop="yarn_weight" label="单卷克重" width="120"></el-table-column>
+                            <el-table-column prop="yarn_color" label="颜色" width="120"></el-table-column>
+                            <el-table-column prop="yarn_specification" label="使用数量" width="120"></el-table-column>
+                        </el-table>
+
+                    </div>
+                    <div class="manufacture-status" style="margin-top: 20px;">
+                        <h4>制造进度</h4>
+                        <el-row :gutter="20">
+                            <el-col :span="8">
+                                <el-card shadow="hover">
+                                    <template #header>
+                                        <div class="card-header">
+                                            <span>机织</span>
+                                        </div>
+                                    </template>
+                                    <el-progress 
+                                        :percentage="(currentManufacturePlan.weaving / currentManufacturePlan.quantity) * 100"
+                                        :format="format => `${currentManufacturePlan.weaving}/${currentManufacturePlan.quantity}`">
+                                    </el-progress>
+                                </el-card>
+                            </el-col>
+                            <el-col :span="8">
+                                <el-card shadow="hover">
+                                    <template #header>
+                                        <div class="card-header">
+                                            <span>平车</span>
+                                        </div>
+                                    </template>
+                                    <el-progress 
+                                        :percentage="(currentManufacturePlan.flat_sewing / currentManufacturePlan.quantity) * 100"
+                                        :format="format => `${currentManufacturePlan.flat_sewing}/${currentManufacturePlan.quantity}`">
+                                    </el-progress>
+                                </el-card>
+                            </el-col>
+                            <el-col :span="8">
+                                <el-card shadow="hover">
+                                    <template #header>
+                                        <div class="card-header">
+                                            <span>套口</span>
+                                        </div>
+                                    </template>
+                                    <el-progress 
+                                        :percentage="(currentManufacturePlan.cuff_sewing / currentManufacturePlan.quantity) * 100"
+                                        :format="format => `${currentManufacturePlan.cuff_sewing}/${currentManufacturePlan.quantity}`">
+                                    </el-progress>
+                                </el-card>
+                            </el-col>
+                        </el-row>
+                        <el-row :gutter="20" style="margin-top: 20px;">
+                            <el-col :span="8">
+                                <el-card shadow="hover">
+                                    <template #header>
+                                        <div class="card-header">
+                                            <span>手工</span>
+                                        </div>
+                                    </template>
+                                    <el-progress 
+                                        :percentage="(currentManufacturePlan.handwork / currentManufacturePlan.quantity) * 100"
+                                        :format="format => `${currentManufacturePlan.handwork}/${currentManufacturePlan.quantity}`">
+                                    </el-progress>
+                                </el-card>
+                            </el-col>
+                            <el-col :span="8">
+                                <el-card shadow="hover">
+                                    <template #header>
+                                        <div class="card-header">
+                                            <span>下水</span>
+                                        </div>
+                                    </template>
+                                    <el-progress 
+                                        :percentage="(currentManufacturePlan.washing / currentManufacturePlan.quantity) * 100"
+                                        :format="format => `${currentManufacturePlan.washing}/${currentManufacturePlan.quantity}`">
+                                    </el-progress>
+                                </el-card>
+                            </el-col>
+                            <el-col :span="8">
+                                <el-card shadow="hover">
+                                    <template #header>
+                                        <div class="card-header">
+                                            <span>进场</span>
+                                        </div>
+                                    </template>
+                                    <el-progress 
+                                        :percentage="(currentManufacturePlan.entry / currentManufacturePlan.quantity) * 100"
+                                        :format="format => `${currentManufacturePlan.entry}/${currentManufacturePlan.quantity}`">
+                                    </el-progress>
+                                </el-card>
+                            </el-col>
+                        </el-row>
+                    </div>
+                </el-dialog>
+
+                <!-- 纱线管理对话框 -->
+                <el-dialog
+                    title="纱线管理"
+                    v-model="yarnDialogVisible"
+                    width="90%">
+                    <div class="yarn-container">
+                        <!-- 搜索和筛选区域 -->
+                        <div class="filter-section">
+                            <el-row :gutter="20">
+                                <el-col :span="6">
+                                    <el-input
+                                        v-model="yarnSearchQuery"
+                                        placeholder="搜索纱线名称/材质"
+                                        clearable
+                                        @clear="handleYarnSearch"
+                                        @keyup.enter.native="handleYarnSearch">
+                                    </el-input>
+                                </el-col>
+                                <el-col :span="6">
+                                    <el-select v-model="yarnMaterialFilter" placeholder="材质筛选" clearable @change="handleYarnSearch">
+                                        <el-option label="棉" value="cotton"></el-option>
+                                        <el-option label="羊毛" value="wool"></el-option>
+                                        <el-option label="混纺" value="blend"></el-option>
+                                        <el-option label="化纤" value="synthetic"></el-option>
+                                    </el-select>
+                                </el-col>
+                                <el-col>
+                                    <el-button type="primary" @click="handleCreateYarn">新建纱线</el-button>
+                                </el-col>
+                            </el-row>
+                        </div>
+
+                        <!-- 纱线列表 -->
+                        <el-table
+                            :data="yarnList"
+                            border
+                            style="width: 100%"
+                            v-loading="yarnLoading">
+                            <el-table-column
+                                prop="id"
+                                label="纱线编号"
+                                width="120">
+                            </el-table-column>
+                            <el-table-column
+                                prop="name"
+                                label="纱线名称"
+                                width="180">
+                            </el-table-column>
+                            <el-table-column
+                                prop="material"
+                                label="材质"
+                                width="120">
+                                <template #default="scope">
+                                    {{ getMaterialText(scope.row.material) }}
+                                </template>
+                            </el-table-column>
+                            <el-table-column
+                                prop="weight"
+                                label="单卷克重(g)"
+                                width="120">
+                            </el-table-column>
+                            <el-table-column
+                                prop="color"
+                                label="颜色"
+                                width="120">
+                                <template #default="scope">
+                                    <el-tag :style="{ backgroundColor: scope.row.color_code, color: '#fff' }">
+                                        {{ scope.row.color }}
+                                    </el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column
+                                prop="specification"
+                                label="规格"
+                                width="120">
+                            </el-table-column>
+                            <el-table-column
+                                prop="supplier"
+                                label="供应商"
+                                width="150">
+                            </el-table-column>
+                            <el-table-column
+                                prop="stock"
+                                label="库存(卷)"
+                                width="120">
+                                <template #default="scope">
+                                    <span :class="getStockClass(scope.row.stock)">{{ scope.row.stock }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column
+                                prop="created_at"
+                                label="创建时间"
+                                width="180">
+                                <template #default="scope">
+                                    {{ formatDate(scope.row.created_at) }}
+                                </template>
+                            </el-table-column>
+                            <el-table-column
+                                label="操作"
+                                width="200">
+                                <template #default="scope">
+                                    <el-button
+                                        size="small"
+                                        type="primary"
+                                        @click="handleEditYarn(scope.row)">编辑</el-button>
+                                    <el-button
+                                        size="small"
+                                        type="danger"
+                                        @click="handleDeleteYarn(scope.row)">删除</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+
+                        <!-- 分页 -->
+                        <div class="pagination-container" style="margin-top: 20px; text-align: right;">
+                            <el-pagination
+                                @size-change="handleYarnSizeChange"
+                                @current-change="handleYarnCurrentChange"
+                                :current-page="yarnCurrentPage"
+                                :page-sizes="[10, 20, 50, 100]"
+                                :page-size="yarnPageSize"
+                                layout="total, sizes, prev, pager, next, jumper"
+                                :total="yarnTotal">
+                            </el-pagination>
+                        </div>
+                    </div>
+                </el-dialog>
+
+                <!-- 新建/编辑纱线对话框 -->
+                <el-dialog
+                    :title="yarnForm.id ? '编辑纱线' : '新建纱线'"
+                    v-model="yarnFormDialogVisible"
+                    width="500px">
+                    <el-form :model="yarnForm" label-width="100px" :rules="yarnRules" ref="yarnFormRef">
+                        <el-form-item label="纱线名称" prop="name">
+                            <el-input v-model="yarnForm.name" placeholder="请输入纱线名称"></el-input>
+                        </el-form-item>
+                        <el-form-item label="材质" prop="material">
+                            <el-autocomplete
+                                v-model="yarnForm.material"
+                                :fetch-suggestions="queryMaterialSearch"
+                                placeholder="请输入或选择材质"
+                                style="width: 100%"
+                                @select="handleMaterialSelect">
+                            </el-autocomplete>
+                        </el-form-item>
+                        <el-form-item label="成分" prop="composition">
+                            <el-input v-model="yarnForm.composition" placeholder="请输入成分"></el-input>
+                        </el-form-item>
+                        <el-form-item label="单卷克重" prop="weight">
+                            <el-input-number v-model="yarnForm.weight" :min="0" :precision="2" style="width: 100%"></el-input-number>
+                        </el-form-item>
+                        <el-form-item label="颜色" prop="color">
+                            <el-autocomplete
+                                v-model="yarnForm.color"
+                                :fetch-suggestions="queryColorSearch"
+                                placeholder="请输入或选择颜色"
+                                style="width: 100%"
+                                @select="handleColorSelect">
+                            </el-autocomplete>
+                        </el-form-item>
+                        <el-form-item label="规格" prop="specification">
+                            <el-input v-model="yarnForm.specification" placeholder="请输入规格"></el-input>
+                        </el-form-item>
+                        <el-form-item label="供应商" prop="supplier">
+                            <el-input v-model="yarnForm.supplier" placeholder="请输入供应商"></el-input>
+                        </el-form-item>
+                        <el-form-item label="库存" prop="stock">
+                            <el-input-number v-model="yarnForm.stock" :min="0" :precision="0" style="width: 100%"></el-input-number>
+                        </el-form-item>
+                        <el-form-item label="备注" prop="remark">
+                            <el-input type="textarea" v-model="yarnForm.remark" placeholder="请输入备注信息"></el-input>
+                        </el-form-item>
+                    </el-form>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="yarnFormDialogVisible = false">取 消</el-button>
+                        <el-button type="primary" @click="submitYarnForm" :loading="submittingYarn">确 定</el-button>
+                    </div>
+                </el-dialog>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, onMounted } = Vue
+
+        // 设置 axios 默认配置
+        const isDevelopment = window.location.hostname === 'localhost' || 
+                             window.location.hostname === '127.0.0.1';
+        
+        axios.defaults.baseURL = isDevelopment ? 'http://127.0.0.1' : '';
+        
+        // 请求拦截器
+        axios.interceptors.request.use(config => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                config.headers['Authorization'] = `Bearer ${token}`;
+            }
+            return config;
+        }, error => {
+            return Promise.reject(error);
+        });
+
+        // 响应拦截器
+        axios.interceptors.response.use(response => {
+            return response;
+        }, error => {
+            if (error.response?.status === 401) {
+                ElementPlus.ElMessage.error('登录已过期，请重新登录');
+                localStorage.removeItem('token');
+                localStorage.removeItem('userInfo');
+                window.location.href = '/admin/index.html';
+                return;
+            }
+            ElementPlus.ElMessage.error(error.response?.data?.message || '请求失败');
+            return Promise.reject(error);
+        });
+
+        const app = createApp({
+            setup() {
+                // 状态定义
+                const yarnFormDialogVisible = ref(false);       
+                const searchQuery = ref('');
+                const stockFilter = ref('');
+                const stockList = ref([]);
+                const loading = ref(false);
+                const currentPage = ref(1);
+                const pageSize = ref(20);
+                const total = ref(0);
+                const detailDialogVisible = ref(false);
+                const adjustDialogVisible = ref(false);
+                const importDialogVisible = ref(false);
+                const currentProduct = ref(null);
+                const stockRecords = ref([]);
+                const adjustForm = reactive({
+                    color: '',
+                    change_amount: 0,
+                    remark: ''
+                });
+                const adjusting = ref(false);
+                const uploadHeaders = reactive({
+                    'Authorization': 'Bearer ' + localStorage.getItem('token')
+                });
+                const manufactureDialogVisible = ref(false);
+                const manufactureSearchQuery = ref('');
+                const manufactureDateRange = ref([]);
+                const manufacturePlans = ref([]);
+                const manufactureLoading = ref(false);
+                const manufactureCurrentPage = ref(1);
+                const manufacturePageSize = ref(20);
+                const manufactureTotal = ref(0);
+                const createManufactureDialogVisible = ref(false);
+                const manufactureForm = reactive({
+                    product_id: '',
+                    color: '',
+                    quantity: 0,
+                    materials: [{ yarn_id: '', quantity: 1 }]
+                });
+                const submitting = ref(false);
+                const statusForm = reactive({
+                    status_type: '',
+                    value: 0
+                });
+                const updating = ref(false);
+                const statusHistory = ref([]);
+                const productOptions = ref([]);
+                const selectedProductSpecs = ref([]);
+                const historyDialogVisible = ref(false);
+                const updateStatusDialogVisible = ref(false);
+                const manufactureDetailVisible = ref(false);
+                const currentManufacturePlan = ref(null);
+                const yarnDialogVisible = ref(false);
+                const yarnSearchQuery = ref('');
+                const yarnMaterialFilter = ref('');
+                const yarnList = ref([]);
+                const yarnLoading = ref(false);
+                const yarnCurrentPage = ref(1);
+                const yarnPageSize = ref(20);
+                const yarnTotal = ref(0);
+                const yarnForm = reactive({
+                    name: '',
+                    material: '',
+                    weight: 0,
+                    color: '',
+                    specification: '',
+                    supplier: '',
+                    stock: 0,
+                    remark: ''
+                });
+                const yarnRules = reactive({
+                    name: [{ required: true, message: '请输入纱线名称', trigger: 'blur' }],
+                    material: [{ required: true, message: '请输入材质', trigger: 'blur' }],
+                    weight: [{ required: true, message: '请输入单卷克重', trigger: 'blur' }],
+                    color: [{ required: true, message: '请输入颜色名称', trigger: 'blur' }],
+                    stock: [{ required: true, message: '请输入库存', trigger: 'blur' }]
+                });
+                const submittingYarn = ref(false);
+                const yarnOptions = ref([[]]);
+
+                const materialOptions = [
+                    { value: '棉' },
+                    { value: '羊毛' },
+                    { value: '混纺' },
+                    { value: '化纤' },
+                    { value: '真丝' },
+                    { value: '麻' },
+                    { value: '腈纶' },
+                    { value: '涤纶' },
+                    { value: '锦纶' },
+                    { value: '氨纶' }
+                ];
+
+                const queryMaterialSearch = (queryString, cb) => {
+                    const results = queryString
+                        ? materialOptions.filter(item => item.value.toLowerCase().includes(queryString.toLowerCase()))
+                        : materialOptions;
+                    cb(results);
+                };
+
+                const handleMaterialSelect = (item) => {
+                    yarnForm.material = item.value;
+                };
+
+                const colorOptions = [
+                    { value: '白色' },
+                    { value: '黑色' },
+                    { value: '红色' },
+                    { value: '蓝色' },
+                    { value: '绿色' },
+                    { value: '黄色' },
+                    { value: '紫色' },
+                    { value: '灰色' },
+                    { value: '米色' },
+                    { value: '卡其色' },
+                    { value: '藏青色' },
+                    { value: '咖啡色' },
+                    { value: '粉色' },
+                    { value: '橙色' },
+                    { value: '棕色' },
+                    { value: '军绿色' },
+                    { value: '浅蓝色' },
+                    { value: '浅绿色' },
+                    { value: '浅灰色' },
+                    { value: '深蓝色' }
+                ];
+
+                const queryColorSearch = (queryString, cb) => {
+                    const results = queryString
+                        ? colorOptions.filter(item => item.value.toLowerCase().includes(queryString.toLowerCase()))
+                        : colorOptions;
+                    cb(results);
+                };
+
+                const handleColorSelect = (item) => {
+                    yarnForm.color = item.value;
+                };
+
+                // 方法定义
+                const fetchStockList = async () => {
+                    loading.value = true;
+                    try {
+                        const response = await axios.get('/stock/list', {
+                            params: {
+                                page: currentPage.value,
+                                per_page: pageSize.value,
+                                search: searchQuery.value,
+                                filter: stockFilter.value
+                            }
+                        });
+                        if (response.data.code === 0) {
+                            stockList.value = response.data.data.items;
+                            total.value = response.data.data.total;
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.msg);
+                        }
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('获取库存列表失败');
+                        console.error(error);
+                    }
+                    loading.value = false;
+                };
+
+                const handleSearch = () => {
+                    currentPage.value = 1;
+                    fetchStockList();
+                };
+
+                const handleSizeChange = (val) => {
+                    pageSize.value = val;
+                    fetchStockList();
+                };
+
+                const handleCurrentChange = (val) => {
+                    currentPage.value = val;
+                    fetchStockList();
+                };
+
+                const getStockClass = (stock) => {
+                    if (stock <= 0) return 'stock-danger';
+                    if (stock <= 10) return 'stock-warning';
+                    return 'stock-safe';
+                };
+
+                const getStockTagType = (stock) => {
+                    if (stock <= 0) return 'danger';
+                    if (stock <= 10) return 'warning';
+                    return 'success';
+                };
+
+                const handleDetail = async (row) => {
+                    currentProduct.value = row;
+                    detailDialogVisible.value = true;
+                    try {
+                        const response = await axios.get(`/stock/detail/${row.id}`);
+                        if (response.data.code === 0) {
+                            stockRecords.value = response.data.data.stock_records;
+                        }
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('获取库存详情失败');
+                        console.error(error);
+                    }
+                };
+
+                const handleAdjust = (row) => {
+                    currentProduct.value = row;
+                    if (row.specs && row.specs.length > 0) {
+                        adjustForm.color = row.specs[0].color;
+                    } else {
+                        adjustForm.color = '';
+                    }
+                    adjustForm.change_amount = 0;
+                    adjustForm.remark = '';
+                    adjustDialogVisible.value = true;
+                };
+
+                const submitAdjust = async () => {
+                    if (!adjustForm.color) {
+                        ElementPlus.ElMessage.warning('请选择颜色');
+                        return;
+                    }
+                    adjusting.value = true;
+                    try {
+                        const response = await axios.post('/stock/adjust', {
+                            product_id: currentProduct.value.id,
+                            ...adjustForm
+                        });
+                        if (response.data.code === 0) {
+                            ElementPlus.ElMessage.success('库存调整成功');
+                            adjustDialogVisible.value = false;
+                            fetchStockList();
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.msg);
+                        }
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('库存调整失败');
+                        console.error(error);
+                    }
+                    adjusting.value = false;
+                };
+
+                const handleImport = () => {
+                    importDialogVisible.value = true;
+                };
+
+                const beforeImportUpload = (file) => {
+                    const isExcel = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
+                                  file.type === 'application/vnd.ms-excel';
+                    if (!isExcel) {
+                        ElementPlus.ElMessage.error('只能上传Excel文件!');
+                        return false;
+                    }
+                    return true;
+                };
+
+                const handleImportSuccess = (response) => {
+                    if (response.code === 0) {
+                        ElementPlus.ElMessage.success('导入成功');
+                        importDialogVisible.value = false;
+                        fetchStockList();
+                    } else {
+                        ElementPlus.ElMessage.error(response.msg);
+                    }
+                };
+
+                const handleImportError = () => {
+                    ElementPlus.ElMessage.error('导入失败');
+                };
+
+                const formatDate = (date) => {
+                    if (!date) return '';
+                    return new Date(date).toLocaleString();
+                };
+
+                const getRecordTypeTag = (type) => {
+                    const types = {
+                        'in': 'success',
+                        'out': 'danger',
+                        'adjust': 'warning'
+                    };
+                    return types[type] || 'info';
+                };
+
+                const getRecordTypeText = (type) => {
+                    const types = {
+                        'in': '入库',
+                        'out': '出库',
+                        'adjust': '调整'
+                    };
+                    return types[type] || type;
+                };
+
+                const handleAmountChange = (value) => {
+                    adjustForm.change_amount = value;
+                };
+
+                const getCurrentStock = () => {
+                    if (!currentProduct.value || !adjustForm.color) return 0;
+                    const spec = currentProduct.value.specs.find(s => s.color === adjustForm.color);
+                    return spec ? spec.stock : 0;
+                };
+
+                const getUserInfo = () => {
+                    const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+                    return {
+                        username: userInfo.username || '',
+                        nickname: userInfo.nickname || '',
+                        avatar: userInfo.avatar || 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png'
+                    };
+                };
+
+                const handleCommand = (command) => {
+                    if (command === 'logout') {
+                        localStorage.removeItem('token');
+                        localStorage.removeItem('userInfo');
+                        window.location.href = '/admin/index.html';
+                    }
+                };
+
+                const goBack = () => {
+                    window.location.href = '/admin/dashboard.html';
+                };
+
+                const handleManufacture = () => {
+                    manufactureDialogVisible.value = true;
+                };
+
+                const handleManufactureSearch = () => {
+                    manufactureCurrentPage.value = 1;
+                    fetchManufacturePlans();
+                };
+
+                const fetchManufacturePlans = async () => {
+                    manufactureLoading.value = true;
+                    try {
+                        const params = {
+                            page: manufactureCurrentPage.value,
+                            page_size: manufacturePageSize.value,
+                            keyword: manufactureSearchQuery.value
+                        };
+                        if (manufactureDateRange.value && manufactureDateRange.value.length === 2) {
+                            params.start_time = manufactureDateRange.value[0];
+                            params.end_time = manufactureDateRange.value[1];
+                        }
+                        const response = await axios.get('/api/manufacture/plans', { params });
+                        console.log(response.data);
+                        if (response.data.code === 0) {
+                            manufacturePlans.value = response.data.data.items;
+                            manufactureTotal.value = response.data.data.total;
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.msg);
+                        }
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('获取制造计划列表失败');
+                        console.error(error);
+                    }
+                    manufactureLoading.value = false;
+                };
+
+                const handleCreateManufacturePlan = () => {
+                    // 重置表单数据
+                    manufactureForm.product_id = '';
+                    manufactureForm.color = '';
+                    manufactureForm.quantity = 0;
+                    manufactureForm.materials = [{ yarn_id: '', quantity: 1 }];
+                    yarnOptions.value = [[]];
+                    createManufactureDialogVisible.value = true;
+                };
+
+                const handleUpdateStatus = (row) => {
+                    currentProduct.value = row;
+                    statusForm.status_type = '';
+                    statusForm.value = 0;
+                    updateStatusDialogVisible.value = true;
+                };
+
+                const handleViewHistory = async (row) => {
+                    try {
+                        const response = await axios.get(`/api/manufacture/plan/${row.id}/status/history`);
+                        if (response.data.code === 0) {
+                            statusHistory.value = response.data.data.items;
+                            historyDialogVisible.value = true;
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.msg);
+                        }
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('获取状态历史失败');
+                        console.error(error);
+                    }
+                };
+
+                const searchProducts = async (query) => {
+                    if (query) {
+                        try {
+                            const response = await axios.get('/api/manufacture/products', {
+                                params: {
+                                    keyword: query,
+                                    page: 1,
+                                    page_size: 10
+                                }
+                            });
+                            if (response.data.code === 0) {
+                                productOptions.value = response.data.data.items;
+                            }
+                        } catch (error) {
+                            console.error('搜索商品失败:', error);
+                        }
+                    }
+                };
+
+                const searchYarns = async (query, index) => {
+                    if (query) {
+                        try {
+                            const response = await axios.get('/api/yarn/list', {
+                                params: {
+                                    keyword: query,
+                                    page: 1,
+                                    page_size: 10
+                                }
+                            });
+                            if (response.data.code === 0) {
+                                yarnOptions.value[index] = response.data.data.items;
+                            }
+                        } catch (error) {
+                            console.error('搜索纱线失败:', error);
+                        }
+                    }
+                };
+
+                const addMaterial = () => {
+                    manufactureForm.materials.push({ yarn_id: '', quantity: 1 });
+                    yarnOptions.value.push([]);
+                };
+
+                const removeMaterial = (index) => {
+                    manufactureForm.materials.splice(index, 1);
+                    yarnOptions.value.splice(index, 1);
+                };
+
+                const submitManufacturePlan = async () => {
+                    if (!manufactureForm.product_id || !manufactureForm.color || !manufactureForm.quantity) {
+                        ElementPlus.ElMessage.warning('请填写完整信息');
+                        return;
+                    }
+
+                    // 验证材料信息
+                    const invalidMaterial = manufactureForm.materials.find(m => !m.yarn_id || !m.quantity);
+                    if (invalidMaterial) {
+                        ElementPlus.ElMessage.warning('请完整填写材料信息');
+                        return;
+                    }
+
+                    submitting.value = true;
+                    try {
+                        const response = await axios.post('/api/manufacture/plan', {
+                            product_id: manufactureForm.product_id,
+                            color: manufactureForm.color,
+                            quantity: manufactureForm.quantity,
+                            materials: manufactureForm.materials
+                        });
+                        if (response.data.code === 0) {
+                            ElementPlus.ElMessage.success('创建成功');
+                            createManufactureDialogVisible.value = false;
+                            fetchManufacturePlans();
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.msg);
+                        }
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('创建失败');
+                        console.error(error);
+                    }
+                    submitting.value = false;
+                };
+
+                const submitStatusUpdate = async () => {
+                    if (!statusForm.status_type) {
+                        ElementPlus.ElMessage.warning('请选择状态类型');
+                        return;
+                    }
+
+                    updating.value = true;
+                    try {
+                        const response = await axios.put(`/api/manufacture/plan/${currentProduct.value.id}/status`, {
+                            status_type: statusForm.status_type,
+                            value: statusForm.value,
+                            operator: getUserInfo().username
+                        });
+                        if (response.data.code === 0) {
+                            ElementPlus.ElMessage.success('更新成功');
+                            updateStatusDialogVisible.value = false;
+                            fetchManufacturePlans();
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.msg);
+                        }
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('更新失败');
+                        console.error(error);
+                    }
+                    updating.value = false;
+                };
+
+                const getStatusTypeText = (status) => {
+                    const statusMap = {
+                        'weaving': '机织',
+                        'flat_sewing': '平车',
+                        'cuff_sewing': '套口',
+                        'handwork': '手工',
+                        'washing': '下水',
+                        'entry': '进场'
+                    };
+                    return statusMap[status] || status;
+                };
+
+                const handleManufactureSizeChange = (val) => {
+                    manufacturePageSize.value = val;
+                    fetchManufacturePlans();
+                };
+
+                const handleManufactureCurrentChange = (val) => {
+                    manufactureCurrentPage.value = val;
+                    fetchManufacturePlans();
+                };
+
+                const handleManufactureDetail = (row) => {
+                    // 处理 images 字段为数组
+                    if (typeof row.images === 'string') {
+                        try {
+                            row.images = JSON.parse(row.images);
+                        } catch (e) {
+                            row.images = [];
+                        }
+                    }
+                    currentManufacturePlan.value = row;
+                    manufactureDetailVisible.value = true;
+                };
+
+                const handleYarn = () => {
+                    yarnDialogVisible.value = true;
+                };
+
+                const handleYarnSearch = () => {
+                    yarnCurrentPage.value = 1;
+                    fetchYarnList();
+                };
+
+                const fetchYarnList = async () => {
+                    yarnLoading.value = true;
+                    try {
+                        const response = await axios.get('/api/yarn/list', {
+                            params: {
+                                page: yarnCurrentPage.value,
+                                page_size: yarnPageSize.value,
+                                search: yarnSearchQuery.value,
+                                filter: yarnMaterialFilter.value
+                            }
+                        });
+                        if (response.data.code === 0) {
+                            yarnList.value = response.data.data.items;
+                            yarnTotal.value = response.data.data.total;
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.msg);
+                        }
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('获取纱线列表失败');
+                        console.error(error);
+                    }
+                    yarnLoading.value = false;
+                };
+
+                const handleCreateYarn = () => {
+                    yarnForm.name = '';
+                    yarnForm.material = '';
+                    yarnForm.weight = 0;
+                    yarnForm.color = '';
+                    yarnForm.specification = '';
+                    yarnForm.supplier = '';
+                    yarnForm.stock = 0;
+                    yarnForm.remark = '';
+                    yarnFormDialogVisible.value = true;
+                };
+
+                const handleEditYarn = (row) => {
+                    yarnForm.name = row.name;
+                    yarnForm.material = row.material;
+                    yarnForm.weight = row.weight;
+                    yarnForm.color = row.color;
+                    yarnForm.specification = row.specification;
+                    yarnForm.supplier = row.supplier;
+                    yarnForm.stock = row.stock;
+                    yarnForm.remark = row.remark;
+                    yarnFormDialogVisible.value = true;
+                };
+
+                const handleDeleteYarn = async (row) => {
+                    try {
+                        const response = await axios.delete(`/api/yarn/${row.id}`);
+                        if (response.data.code === 0) {
+                            ElementPlus.ElMessage.success('删除成功');
+                            yarnCurrentPage.value = 1;
+                            fetchYarnList();
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.msg);
+                        }
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('删除失败');
+                        console.error(error);
+                    }
+                };
+
+                const submitYarnForm = async () => {
+                    if (!yarnForm.name || !yarnForm.material || !yarnForm.weight || !yarnForm.color || !yarnForm.specification || !yarnForm.supplier || !yarnForm.stock) {
+                        ElementPlus.ElMessage.warning('请填写完整信息');
+                        return;
+                    }
+
+                    submittingYarn.value = true;
+                    try {
+                        const response = await axios.post('/api/yarn', {
+                            ...yarnForm
+                        });
+                        if (response.data.code === 0) {
+                            ElementPlus.ElMessage.success('创建成功');
+                            yarnFormDialogVisible.value = false;
+                            fetchYarnList();
+                        } else {
+                            ElementPlus.ElMessage.error(response.data.msg);
+                        }
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('创建失败');
+                        console.error(error);
+                    }
+                    submittingYarn.value = false;
+                };
+
+                const handleYarnSizeChange = (val) => {
+                    yarnPageSize.value = val;
+                    fetchYarnList();
+                };
+
+                const handleYarnCurrentChange = (val) => {
+                    yarnCurrentPage.value = val;
+                    fetchYarnList();
+                };
+
+                const getMaterialText = (material) => {
+                    const materials = {
+                        'cotton': '棉',
+                        'wool': '羊毛',
+                        'blend': '混纺',
+                        'synthetic': '化纤'
+                    };
+                    return materials[material] || material;
+                };
+
+                // 生命周期钩子
+                onMounted(() => {
+                    // 检查登录状态
+                    const token = localStorage.getItem('token');
+                    if (!token) {
+                        ElementPlus.ElMessage.warning('请先登录');
+                        window.location.href = '/admin/index.html';
+                        return;
+                    }
+
+                    fetchStockList();
+                    fetchManufacturePlans();
+                    fetchYarnList();
+                });
+
+                return {
+                    searchQuery,
+                    stockFilter,
+                    stockList,
+                    loading,
+                    currentPage,
+                    pageSize,
+                    total,
+                    detailDialogVisible,
+                    adjustDialogVisible,
+                    importDialogVisible,
+                    currentProduct,
+                    stockRecords,
+                    adjustForm,
+                    adjusting,
+                    uploadHeaders,
+                    fetchStockList,
+                    handleSearch,
+                    handleSizeChange,
+                    handleCurrentChange,
+                    getStockClass,
+                    getStockTagType,
+                    handleDetail,
+                    handleAdjust,
+                    submitAdjust,
+                    handleImport,
+                    beforeImportUpload,
+                    handleImportSuccess,
+                    handleImportError,
+                    formatDate,
+                    getRecordTypeTag,
+                    getRecordTypeText,
+                    handleAmountChange,
+                    getCurrentStock,
+                    getUserInfo,
+                    handleCommand,
+                    goBack,
+                    manufactureDialogVisible,
+                    manufactureSearchQuery,
+                    manufactureDateRange,
+                    manufacturePlans,
+                    manufactureLoading,
+                    manufactureCurrentPage,
+                    manufacturePageSize,
+                    manufactureTotal,
+                    createManufactureDialogVisible,
+                    manufactureForm,
+                    submitting,
+                    statusForm,
+                    updating,
+                    statusHistory,
+                    handleManufacture,
+                    handleManufactureSearch,
+                    fetchManufacturePlans,
+                    handleCreateManufacturePlan,
+                    handleUpdateStatus,
+                    handleViewHistory,
+                    handleManufactureSizeChange,
+                    handleManufactureCurrentChange,
+                    searchProducts,
+                    submitManufacturePlan,
+                    submitStatusUpdate,
+                    getStatusTypeText,
+                    productOptions,
+                    selectedProductSpecs,
+                    historyDialogVisible,
+                    updateStatusDialogVisible,
+                    manufactureDetailVisible,
+                    currentManufacturePlan,
+                    handleManufactureDetail,
+                    yarnDialogVisible,
+                    yarnSearchQuery,
+                    yarnMaterialFilter,
+                    yarnList,
+                    yarnLoading,
+                    yarnCurrentPage,
+                    yarnPageSize,
+                    yarnTotal,
+                    yarnForm,
+                    yarnRules,
+                    yarnFormDialogVisible,
+                    submittingYarn,
+                    handleYarn,
+                    handleYarnSearch,
+                    fetchYarnList,
+                    handleCreateYarn,
+                    handleEditYarn,
+                    handleDeleteYarn,
+                    submitYarnForm,
+                    handleYarnSizeChange,
+                    handleYarnCurrentChange,
+                    getMaterialText,
+                    queryMaterialSearch,
+                    handleMaterialSelect,
+                    queryColorSearch,
+                    handleColorSelect,
+                    searchYarns,
+                    addMaterial,
+                    removeMaterial,
+                    yarnOptions
+                };
+            }
+        });
+
+        // 注册所有图标组件
+        for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+            app.component(key, component);
+        }
+
+        app.use(ElementPlus, {
+            locale: ElementPlusLocaleZhCn
+        });
+
+        app.mount('#app');
+    </script>
+</body>
+</html>

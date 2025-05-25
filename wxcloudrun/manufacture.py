@@ -1,10 +1,20 @@
 from flask import Blueprint, request, jsonify
 from wxcloudrun import db
-from wxcloudrun.model import Product, ColorStock, ManufacturePlan, ManufactureStatusHistory
+from wxcloudrun.model import Product, ColorStock, ManufacturePlan, ManufactureStatusHistory, Yarn
 from sqlalchemy import or_, func
 from datetime import datetime, timedelta
 
 manufacture_bp = Blueprint('manufacture', __name__)
+
+# 状态名称映射
+STATUS_MAPPING = {
+    'weaving': '机织',
+    'flat_sewing': '平车',
+    'cuff_sewing': '套口',
+    'handwork': '手工',
+    'washing': '下水',
+    'entry': '进场'
+}
 
 @manufacture_bp.route('/api/manufacture/products', methods=['GET'])
 def search_products():
@@ -72,13 +82,12 @@ def create_manufacture_plan():
                 product_id=item['product_id'],
                 quantity=item['quantity'],
                 color=item['color'],
-                status1=0,
-                status2=0,
-                status3=0,
-                status4=0,
-                status5=0,
-                status6=0
-
+                weaving=0,
+                flat_sewing=0,
+                cuff_sewing=0,
+                handwork=0,
+                washing=0,
+                entry=0
             )
             db.session.add(plan)
         
@@ -115,14 +124,15 @@ def get_manufacture_plans():
             'id': plan.id,
             'product_id': plan.product_id,
             'product_name': product.name if product else '未知商品',
+            'images': product.images if product.images else '',            
             'quantity': plan.quantity,
             'color': plan.color,
-            'status1': plan.status1 or 0,
-            'status2': plan.status2 or 0,
-            'status3': plan.status3 or 0,
-            'status4': plan.status4 or 0,
-            'status5': plan.status5 or 0,
-            'status6': plan.status6 or 0,
+            'weaving': plan.weaving or 0,
+            'flat_sewing': plan.flat_sewing or 0,
+            'cuff_sewing': plan.cuff_sewing or 0,
+            'handwork': plan.handwork or 0,
+            'washing': plan.washing or 0,
+            'entry': plan.entry or 0,
             'created_at': plan.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': plan.updated_at.strftime('%Y-%m-%d %H:%M:%S')
         })
@@ -169,7 +179,7 @@ def update_plan_status(plan_id):
             return jsonify({'code': 1, 'message': '变更后数量不能超过计划总数'})
         
         # 更新状态数量
-        if status_type in ['status1', 'status2', 'status3', 'status4', 'status5', 'status6']:
+        if status_type in ['weaving', 'flat_sewing', 'cuff_sewing', 'handwork', 'washing', 'entry']:
             setattr(plan, status_type, new_value)
         else:
             return jsonify({'code': 1, 'message': '无效的状态类型'})
@@ -225,7 +235,7 @@ def search_manufacture_plans():
         # 构建状态筛选条件
         status_conditions = []
         for status_type in status_list:
-            if status_type in ['status1', 'status2', 'status3', 'status4', 'status5', 'status6']:
+            if status_type in STATUS_MAPPING:
                 status_conditions.append(getattr(ManufacturePlan, status_type) > 0)
         
         if status_conditions:
@@ -257,12 +267,12 @@ def search_manufacture_plans():
             'product_name': product.name if product else '未知商品',
             'quantity': plan.quantity,
             'color': plan.color,
-            'status1': plan.status1 or 0,
-            'status2': plan.status2 or 0,
-            'status3': plan.status3 or 0,
-            'status4': plan.status4 or 0,
-            'status5': plan.status5 or 0,
-            'status6': plan.status6 or 0,
+            '机织': plan.weaving or 0,
+            '平车': plan.flat_sewing or 0,
+            '套口': plan.cuff_sewing or 0,
+            '手工': plan.handwork or 0,
+            '下水': plan.washing or 0,
+            '进场': plan.entry or 0,
             'created_at': plan.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': plan.updated_at.strftime('%Y-%m-%d %H:%M:%S')
         })
@@ -290,7 +300,7 @@ def batch_update_plan_status():
         status_value = data['status']
         
         # 验证状态类型
-        if status_type not in ['status1', 'status2', 'status3', 'status4']:
+        if status_type not in ['weaving', 'flat_sewing', 'cuff_sewing', 'handwork', 'washing', 'entry']:
             return jsonify({'code': 1, 'message': '无效的状态类型'})
         
         # 批量更新
@@ -316,29 +326,29 @@ def get_manufacture_statistics():
     try:
         # 获取各状态的数量统计
         status_stats = {
-            'status1': {
-                'total': ManufacturePlan.query.filter_by(status1=0).count(),
-                'completed': ManufacturePlan.query.filter_by(status1=1).count()
+            'weaving': {
+                'total': ManufacturePlan.query.filter_by(weaving=0).count(),
+                'completed': ManufacturePlan.query.filter_by(weaving=1).count()
             },
-            'status2': {
-                'total': ManufacturePlan.query.filter_by(status2=0).count(),
-                'completed': ManufacturePlan.query.filter_by(status2=1).count()
+            'flat_sewing': {
+                'total': ManufacturePlan.query.filter_by(flat_sewing=0).count(),
+                'completed': ManufacturePlan.query.filter_by(flat_sewing=1).count()
             },
-            'status3': {
-                'total': ManufacturePlan.query.filter_by(status3=0).count(),
-                'completed': ManufacturePlan.query.filter_by(status3=1).count()
+            'cuff_sewing': {
+                'total': ManufacturePlan.query.filter_by(cuff_sewing=0).count(),
+                'completed': ManufacturePlan.query.filter_by(cuff_sewing=1).count()
             },
-            'status4': {
-                'total': ManufacturePlan.query.filter_by(status4=0).count(),
-                'completed': ManufacturePlan.query.filter_by(status4=1).count()
+            'handwork': {
+                'total': ManufacturePlan.query.filter_by(handwork=0).count(),
+                'completed': ManufacturePlan.query.filter_by(handwork=1).count()
             },
-            'status5': {    
-                'total': ManufacturePlan.query.filter_by(status5=0).count(),
-                'completed': ManufacturePlan.query.filter_by(status5=1).count()
+            'washing': {    
+                'total': ManufacturePlan.query.filter_by(washing=0).count(),
+                'completed': ManufacturePlan.query.filter_by(washing=1).count()
             },
-            'status6': {
-                'total': ManufacturePlan.query.filter_by(status6=0).count(),
-                'completed': ManufacturePlan.query.filter_by(status6=1).count()
+            'entry': {
+                'total': ManufacturePlan.query.filter_by(entry=0).count(),
+                'completed': ManufacturePlan.query.filter_by(entry=1).count()
             }
         }
         # 获取最近7天的制造计划数量
@@ -383,12 +393,12 @@ def export_manufacture_plans():
                 '商品名称': product.name if product else '未知商品',
                 '数量': plan.quantity,
                 '颜色': plan.color,
-                '状态1': '已完成' if plan.status1 == 1 else '未完成',
-                '状态2': '已完成' if plan.status2 == 1 else '未完成',
-                '状态3': '已完成' if plan.status3 == 1 else '未完成',
-                '状态4': '已完成' if plan.status4 == 1 else '未完成',
-                '状态5': '已完成' if plan.status5 == 1 else '未完成',
-                '状态6': '已完成' if plan.status6 == 1 else '未完成',
+                '机织': '已完成' if plan.weaving == 1 else '未完成',
+                '平车': '已完成' if plan.flat_sewing == 1 else '未完成',
+                '套口': '已完成' if plan.cuff_sewing == 1 else '未完成',
+                '手工': '已完成' if plan.handwork == 1 else '未完成',
+                '下水': '已完成' if plan.washing == 1 else '未完成',
+                '进场': '已完成' if plan.entry == 1 else '未完成',
                 '创建时间': plan.created_at.strftime('%Y-%m-%d %H:%M:%S'),
                 '更新时间': plan.updated_at.strftime('%Y-%m-%d %H:%M:%S')
             })
@@ -404,20 +414,16 @@ def export_manufacture_plans():
         })
 
 @manufacture_bp.route('/api/manufacture/plan/<int:plan_id>/status/history', methods=['GET'])
-def get_plan_status_history():
+def get_plan_status_history(plan_id):
     """获取制造计划状态修改历史"""
-    plan_id = request.view_args.get('plan_id')
     page = int(request.args.get('page', 1))
     page_size = int(request.args.get('page_size', 10))
-    
     try:
         # 构建查询
         query = ManufactureStatusHistory.query.filter_by(plan_id=plan_id)
-        
         # 分页查询
         pagination = query.paginate(page=page, per_page=page_size)
         history_items = pagination.items
-        
         # 构建返回数据
         result = []
         for item in history_items:
@@ -429,7 +435,6 @@ def get_plan_status_history():
                 'created_at': item.created_at.strftime('%Y-%m-%d %H:%M:%S'),
                 'created_by': item.created_by
             })
-        
         return jsonify({
             'code': 0,
             'data': {
@@ -443,4 +448,154 @@ def get_plan_status_history():
         return jsonify({
             'code': 1,
             'message': f'获取历史记录失败: {str(e)}'
+        })
+
+@manufacture_bp.route('/api/yarn/list', methods=['GET'])
+def get_yarn_list():
+    """获取纱线列表"""
+    page = int(request.args.get('page', 1))
+    page_size = int(request.args.get('page_size', 10))
+    search = request.args.get('search', '')
+    filter_material = request.args.get('filter', '')
+
+    # 构建查询
+    query = Yarn.query
+
+    # 搜索条件
+    if search:
+        query = query.filter(
+            or_(
+                Yarn.name.like(f'%{search}%'),
+                Yarn.specification.like(f'%{search}%')
+            )
+        )
+
+    # 材质筛选
+    if filter_material:
+        query = query.filter(Yarn.material == filter_material)
+
+    # 分页查询
+    pagination = query.paginate(page=page, per_page=page_size)
+    yarns = pagination.items
+
+    # 构建返回数据
+    result = []
+    for yarn in yarns:
+        result.append({
+            'id': yarn.id,
+            'name': yarn.name,
+            'material': yarn.material,
+            'weight': float(yarn.weight),
+            'color': yarn.color,
+            'color_code': yarn.color_code,
+            'specification': yarn.specification,
+            'supplier': yarn.supplier,
+            'stock': yarn.stock,
+            'remark': yarn.remark,
+            'created_at': yarn.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'updated_at': yarn.updated_at.strftime('%Y-%m-%d %H:%M:%S')
+        })
+
+    return jsonify({
+        'code': 0,
+        'data': {
+            'items': result,
+            'total': pagination.total,
+            'page': page,
+            'page_size': page_size
+        }
+    })
+
+@manufacture_bp.route('/api/yarn', methods=['POST'])
+def create_yarn():
+    """创建纱线"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'code': 1, 'message': '参数错误'})
+
+    try:
+        # 验证必要字段
+        required_fields = ['name', 'material', 'weight', 'color', 'color_code', 'specification', 'supplier', 'stock']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'code': 1, 'message': f'缺少必要参数: {field}'})
+
+        # 创建纱线记录
+        yarn = Yarn(
+            name=data['name'],
+            material=data['material'],
+            weight=data['weight'],
+            color=data['color'],
+            color_code=data['color_code'],
+            specification=data['specification'],
+            supplier=data['supplier'],
+            stock=data['stock'],
+            remark=data.get('remark', '')
+        )
+        db.session.add(yarn)
+        db.session.commit()
+
+        return jsonify({
+            'code': 0,
+            'message': '创建成功',
+            'data': {
+                'id': yarn.id
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'code': 1,
+            'message': f'创建失败: {str(e)}'
+        })
+
+@manufacture_bp.route('/api/yarn/<int:yarn_id>', methods=['PUT'])
+def update_yarn(yarn_id):
+    """更新纱线信息"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'code': 1, 'message': '参数错误'})
+
+    try:
+        yarn = Yarn.query.get(yarn_id)
+        if not yarn:
+            return jsonify({'code': 1, 'message': '纱线不存在'})
+
+        # 更新字段
+        fields = ['name', 'material', 'weight', 'color', 'color_code', 'specification', 'supplier', 'stock', 'remark']
+        for field in fields:
+            if field in data:
+                setattr(yarn, field, data[field])
+
+        db.session.commit()
+        return jsonify({
+            'code': 0,
+            'message': '更新成功'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'code': 1,
+            'message': f'更新失败: {str(e)}'
+        })
+
+@manufacture_bp.route('/api/yarn/<int:yarn_id>', methods=['DELETE'])
+def delete_yarn(yarn_id):
+    """删除纱线"""
+    try:
+        yarn = Yarn.query.get(yarn_id)
+        if not yarn:
+            return jsonify({'code': 1, 'message': '纱线不存在'})
+
+        db.session.delete(yarn)
+        db.session.commit()
+        return jsonify({
+            'code': 0,
+            'message': '删除成功'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'code': 1,
+            'message': f'删除失败: {str(e)}'
         }) 

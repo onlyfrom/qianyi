@@ -2856,6 +2856,12 @@ def create_delivery_order(user_id):
                 return jsonify({'error': f'缺少必要字段: {field}'}), 400
         
         try:
+
+            # 判断是否有相同订单号相同时间的发货单
+            same_time_delivery_order = DeliveryOrder.query.filter_by(order_number=data['order_number'], created_at=data['created_at']).first()
+            print(f'same_time_delivery_order: {same_time_delivery_order}')
+            if same_time_delivery_order:
+                return jsonify({'error': '重复生成发货单'}), 400
             # 创建发货单
             delivery_order = DeliveryOrder(
                 order_number=data['order_number'],
@@ -2869,7 +2875,8 @@ def create_delivery_order(user_id):
                 logistics_company=data.get('logistics_company'),  # 添加物流公司
                 tracking_number=data.get('tracking_number'),  # 添加物流单号
                 created_by=user_id,
-                created_at=datetime.now(),
+                #created_at=datetime.now(),
+                created_at=data['created_at'],
                 updated_at=datetime.now()
             )
             
@@ -2923,10 +2930,7 @@ def create_delivery_order(user_id):
             
             # 提交事务
             print('提交事务')
-            # 判断是否有相同订单号相同时间的发货单
-            #same_time_delivery_order = DeliveryOrder.query.filter_by(order_number=data['order_number'], delivery_date=data['delivery_date']).first()
-            #if same_time_delivery_order:
-            #    return jsonify({'error': '重复生成发货单'}), 400
+            
             db.session.commit()
             print('事务提交成功')
             
