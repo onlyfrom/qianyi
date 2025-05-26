@@ -244,7 +244,7 @@
                 <el-dialog
                     title="库存详情"
                     v-model="detailDialogVisible"
-                    width="70%">
+                    width="850px">
                     <div v-if="currentProduct">
                         <h3>{{ currentProduct.name }}</h3>
                         <el-descriptions :column="2" border>
@@ -255,25 +255,27 @@
 
                         <div class="stock-detail">
                             <h4>规格库存</h4>
-                            <el-table :data="currentProduct.specs" border>
-                                <el-table-column prop="color" label="颜色" width="120"></el-table-column>
-                                <el-table-column prop="stock" label="库存" width="120">
-                                    <template #default="scope">
-                                        <span :class="getStockClass(scope.row.stock)">{{ scope.row.stock }}</span>
-                                    </template>
-                                </el-table-column>
-                                <el-table-column prop="image" label="图片" width="120">
-                                    <template #default="scope">
+                            <div class="spec-cards" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 16px; margin-top: 16px;">
+                                <el-card v-for="spec in currentProduct.specs" :key="spec.color" shadow="hover" :body-style="{ padding: '12px' }">
+                                    <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
                                         <el-image 
-                                            v-if="scope.row.image"
-                                            style="width: 50px; height: 50px"
-                                            :src="scope.row.image"
-                                            :preview-src-list="[scope.row.image]">
+                                            v-if="spec.image"
+                                            style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px;"
+                                            :src="handleImageUrl(spec.image)"
+                                            :preview-src-list="[handleImageUrl(spec.image)]">
                                         </el-image>
-                                        <span v-else>无图片</span>
-                                    </template>
-                                </el-table-column>
-                            </el-table>
+                                        <div v-else style="width: 100px; height: 100px; background: #f5f7fa; display: flex; align-items: center; justify-content: center; border-radius: 4px;">
+                                            <el-icon :size="40" color="#909399"><Picture /></el-icon>
+                                        </div>
+                                        <div style="text-align: center;">
+                                            <el-tag size="large" style="margin-bottom: 8px;">{{ spec.color }}</el-tag>
+                                            <div :class="getStockClass(spec.stock)" style="font-size: 18px; font-weight: bold;">
+                                                {{ spec.stock }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </el-card>
+                            </div>
                         </div>
 
                         <div class="stock-record">
@@ -454,10 +456,10 @@
                                     <el-button
                                         size="small"
                                         @click="handleViewHistory(scope.row)" @click.stop>查看历史</el-button>
-                                    <el-button
+                                    <!--el-button
                                         size="small"
                                         type="info"
-                                        @click="handleManufactureDetail(scope.row)" @click.stop>查看详情</el-button>
+                                        @click="handleManufactureDetail(scope.row)" @click.stop>查看详情</el-button-->
                                 </template>
                             </el-table-column>
                         </el-table>
@@ -490,7 +492,8 @@
                                 remote
                                 :remote-method="searchProducts"
                                 placeholder="请输入商品名称或编号搜索"
-                                style="width: 100%">
+                                style="width: 100%"
+                                @change="handleProductSelect">
                                 <el-option
                                     v-for="item in productOptions"
                                     :key="item.id"
@@ -501,13 +504,26 @@
                                 </el-option>
                             </el-select>
                         </el-form-item>
+                        <el-form-item label="克重">
+                            <el-input-number
+                                v-model="manufactureForm.weight"
+                                :min="0"
+                                :precision="2"
+                                :step="1"
+                                placeholder="请输入克重"
+                                >
+                            </el-input-number>
+                            　单位：克（g）
+                        </el-form-item>
                         <el-form-item label="颜色">
                             <div v-for="(colorItem, colorIndex) in manufactureForm.colors" :key="colorIndex" style="margin-bottom: 16px; border: 1px solid #ebeef5; border-radius: 6px; padding: 16px; background: #fafbfc;">
                                 <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
                                     <el-select
                                         v-model="colorItem.color"
                                         placeholder="请选择颜色"
-                                        style="width: 180px">
+                                        style="width: 180px"
+                                        filterable
+                                        allow-create>
                                         <el-option
                                             v-for="spec in selectedProductSpecs"
                                             :key="spec.color"
@@ -527,17 +543,18 @@
                                     </el-button>
                                 </div>
                                 <div style="margin-left: 10px;">
-                                    <div v-for="(material, materialIndex) in colorItem.materials" :key="materialIndex" style="margin-bottom: 8px; display: flex; gap: 10px; align-items: center;">
+                                    <div v-for="(yarn, yarnIndex) in colorItem.yarns" :key="yarnIndex" style="margin-bottom: 8px; display: flex; gap: 10px; align-items: center;">
                                         <div style="display: flex;width: 60px; gap: 10px; align-items: center;">纱线：</div>
                                         <el-select
-                                            v-model="material.yarn_id"
+                                            v-model="colorItem.yarns[yarnIndex]"
                                             filterable
                                             remote
-                                            :remote-method="(query) => searchYarns(query, colorIndex, materialIndex)"
+                                            :remote-method="(query) => searchYarns(query, colorIndex, yarnIndex)"
                                             placeholder="选择纱线"
-                                            style="width: 100%">
+                                            style="width: 100%"
+                                            @visible-change="(visible) => { if (visible) searchYarns(colorItem.color, colorIndex, yarnIndex) }">
                                             <el-option
-                                                v-for="yarn in yarnOptions[colorIndex][materialIndex]"
+                                                v-for="yarn in yarnOptions[colorIndex][yarnIndex]"
                                                 :key="yarn.id"
                                                 :label="yarn.label"
                                                 :value="yarn.id">
@@ -553,17 +570,16 @@
                                                 </div>
                                             </el-option>
                                         </el-select>
-                                        <el-button type="danger" @click="removeMaterial(colorIndex, materialIndex)" :disabled="colorItem.materials.length === 1" circle>
+                                        <el-button type="danger" @click="removeYarn(colorIndex, yarnIndex)" :disabled="colorItem.yarns.length === 1" circle>
                                             <el-icon><Delete /></el-icon>
                                         </el-button>
                                     </div>
                                     <div style="display: flex; justify-content: flex-end;">
-                                        <el-button type="primary" @click="addMaterial(colorIndex)" style="margin-top: 4px; margin-bottom: 4px;" plain>
+                                        <el-button type="primary" @click="addYarn(colorIndex)" style="margin-top: 4px; margin-bottom: 4px;" plain>
                                             <el-icon><Plus /></el-icon>
                                             添加纱线
                                         </el-button>
                                     </div>
-                                    
                                 </div>
                             </div>
                             <el-button type="primary" @click="addColor" style="margin-top: 10px;" plain>
@@ -656,19 +672,23 @@
                     <div class="manufacture-status" style="margin-top: 20px;">
                         <h4>材料消耗（预估）</h4>
                         <el-table :data="yarnUsage" border>
-                            <el-table-column prop="yarn_name" label="纱线名称" ></el-table-column>
-                            <el-table-column prop="yarn_material" label="材质" width="120"></el-table-column>
-                            <el-table-column prop="yarn_weight" label="单卷克重" width="120"></el-table-column>
-                            <el-table-column prop="yarn_color" label="颜色" width="120"></el-table-column>
-                            <el-table-column prop="yarn_specification" label="使用数量" width="120"></el-table-column>
+                            <el-table-column prop="supplier" label="纱厂" width="100"></el-table-column>
+                            <el-table-column prop="name" label="纱线名称" ></el-table-column>
+                            <el-table-column prop="color" label="纱线颜色" width="120"></el-table-column>
+                            <el-table-column prop="color_code" label="色号" width="120"></el-table-column>
+                            <el-table-column label="纱线使用量（kg）" width="150">
+                                <template #default="scope">
+                                    {{ calculateYarnUsage(scope.row) }}
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="remark" label="备注" width="120"></el-table-column>
                         </el-table>
-
                     </div>
                     <div class="manufacture-status" style="margin-top: 20px;">
                         <h4>制造进度</h4>
                         <el-row :gutter="20">
                             <el-col :span="8">
-                                <el-card shadow="hover">
+                                <el-card shadow="hover" @click="handleUpdateStatus(currentManufacturePlan)" style="cursor: pointer">
                                     <template #header>
                                         <div class="card-header">
                                             <span>机织</span>
@@ -681,7 +701,7 @@
                                 </el-card>
                             </el-col>
                             <el-col :span="8">
-                                <el-card shadow="hover">
+                                <el-card shadow="hover" @click="handleUpdateStatus(currentManufacturePlan)" style="cursor: pointer">
                                     <template #header>
                                         <div class="card-header">
                                             <span>平车</span>
@@ -694,7 +714,7 @@
                                 </el-card>
                             </el-col>
                             <el-col :span="8">
-                                <el-card shadow="hover">
+                                <el-card shadow="hover" @click="handleUpdateStatus(currentManufacturePlan)" style="cursor: pointer">
                                     <template #header>
                                         <div class="card-header">
                                             <span>套口</span>
@@ -709,7 +729,7 @@
                         </el-row>
                         <el-row :gutter="20" style="margin-top: 20px;">
                             <el-col :span="8">
-                                <el-card shadow="hover">
+                                <el-card shadow="hover" @click="handleUpdateStatus(currentManufacturePlan)" style="cursor: pointer">
                                     <template #header>
                                         <div class="card-header">
                                             <span>手工</span>
@@ -722,7 +742,7 @@
                                 </el-card>
                             </el-col>
                             <el-col :span="8">
-                                <el-card shadow="hover">
+                                <el-card shadow="hover" @click="handleUpdateStatus(currentManufacturePlan)" style="cursor: pointer">
                                     <template #header>
                                         <div class="card-header">
                                             <span>下水</span>
@@ -735,7 +755,7 @@
                                 </el-card>
                             </el-col>
                             <el-col :span="8">
-                                <el-card shadow="hover">
+                                <el-card shadow="hover" @click="handleUpdateStatus(currentManufacturePlan)" style="cursor: pointer">
                                     <template #header>
                                         <div class="card-header">
                                             <span>进场</span>
@@ -816,22 +836,14 @@
                                 </template>
                             </el-table-column>
                             <el-table-column
-                                prop="material"
-                                label="材质"
-                                width="120">
-                                <template #default="scope">
-                                    {{ getMaterialText(scope.row.material) }}
-                                </template>
-                            </el-table-column>
-                            <el-table-column
                                 prop="weight"
                                 label="单卷克重(g)"
                                 width="120">
                             </el-table-column>
                             
                             <el-table-column
-                                prop="specification"
-                                label="规格"
+                                prop="loss_rate"
+                                label="损耗率"
                                 width="120">
                             </el-table-column>
                             
@@ -888,23 +900,11 @@
                     v-model="yarnFormDialogVisible"
                     width="500px">
                     <el-form :model="yarnForm" label-width="100px" :rules="yarnRules" ref="yarnFormRef">
+                        <el-form-item label="供应商" prop="supplier">
+                            <el-input v-model="yarnForm.supplier" placeholder="请输入供应商"></el-input>
+                        </el-form-item>
                         <el-form-item label="纱线名称" prop="name">
                             <el-input v-model="yarnForm.name" placeholder="请输入纱线名称"></el-input>
-                        </el-form-item>
-                        <el-form-item label="材质" prop="material">
-                            <el-autocomplete
-                                v-model="yarnForm.material"
-                                :fetch-suggestions="queryMaterialSearch"
-                                placeholder="请输入或选择材质"
-                                style="width: 100%"
-                                @select="handleMaterialSelect">
-                            </el-autocomplete>
-                        </el-form-item>
-                        <el-form-item label="成分" prop="composition">
-                            <el-input v-model="yarnForm.composition" placeholder="请输入成分"></el-input>
-                        </el-form-item>
-                        <el-form-item label="单卷克重" prop="weight">
-                            <el-input-number v-model="yarnForm.weight" :min="0" :precision="2" style="width: 100%"></el-input-number>
                         </el-form-item>
                         <el-form-item label="颜色" prop="color">
                             <el-autocomplete
@@ -915,6 +915,13 @@
                                 @select="handleColorSelect">
                             </el-autocomplete>
                         </el-form-item>
+                        <el-form-item label="成分" prop="composition">
+                            <el-input v-model="yarnForm.composition" placeholder="请输入成分"></el-input>
+                        </el-form-item>
+                        <el-form-item label="单卷克重" prop="weight">
+                            <el-input-number v-model="yarnForm.weight" :min="0" :precision="2" style="width: 100%"></el-input-number>
+                        </el-form-item>
+                        
                         <el-form-item label="色号" prop="color_code">
                             <el-input v-model="yarnForm.color_code" placeholder="请输入色号"></el-input>
                         </el-form-item>
@@ -922,11 +929,14 @@
                         <el-form-item label="规格" prop="specification">
                             <el-input v-model="yarnForm.specification" placeholder="请输入规格"></el-input>
                         </el-form-item>
-                        <el-form-item label="供应商" prop="supplier">
-                            <el-input v-model="yarnForm.supplier" placeholder="请输入供应商"></el-input>
-                        </el-form-item>
+                        
                         <el-form-item label="库存" prop="stock">
                             <el-input-number v-model="yarnForm.stock" :min="0" :precision="0" style="width: 100%"></el-input-number>
+                        </el-form-item>
+                        <el-form-item label="损耗率" prop="loss_rate">
+                            <el-input-number v-model="yarnForm.loss_rate" :min="0" :max="100" :precision="2" style="width: 100%">
+                                <template #suffix>%</template>
+                            </el-input-number>
                         </el-form-item>
                         <el-form-item label="备注" prop="remark">
                             <el-input type="textarea" v-model="yarnForm.remark" placeholder="请输入备注信息"></el-input>
@@ -946,7 +956,7 @@
                     <el-upload
                         class="upload-demo"
                         drag
-                        action="/api/yarn/import"
+                        action="/api/yarn/import-loss-rate"
                         :headers="uploadHeaders"
                         :on-success="handleImportYarnSuccess"
                         :on-error="handleImportYarnError"
@@ -967,7 +977,7 @@
     </div>
 
     <script>
-        const { createApp, ref, reactive, onMounted } = Vue
+        const { createApp, ref, reactive, onMounted, computed } = Vue
 
         // 设置 axios 默认配置
         const isDevelopment = window.location.hostname === 'localhost' || 
@@ -1037,7 +1047,8 @@
                 const createManufactureDialogVisible = ref(false);
                 const manufactureForm = reactive({
                     product_id: '',
-                    colors: [{ color: '', quantity: 0, materials: [{ yarn_id: '', quantity: 1 }] }],
+                    weight: 0,
+                    colors: [{ color: '', quantity: 0, yarns: [] }],
                 });
                 const submitting = ref(false);
                 const statusForm = reactive({
@@ -1068,11 +1079,11 @@
                     specification: '',
                     supplier: '',
                     stock: 0,
+                    loss_rate: 0,
                     remark: ''
                 });
                 const yarnRules = reactive({
                     name: [{ required: true, message: '请输入纱线名称', trigger: 'blur' }],
-                    material: [{ required: true, message: '请输入材质', trigger: 'blur' }],
                     weight: [{ required: true, message: '请输入单卷克重', trigger: 'blur' }],
                     color: [{ required: true, message: '请输入颜色名称', trigger: 'blur' }],
                     stock: [{ required: true, message: '请输入库存', trigger: 'blur' }]
@@ -1080,30 +1091,6 @@
                 const submittingYarn = ref(false);
                 const yarnOptions = ref([[]]);
                 const importYarnDialogVisible = ref(false);
-
-                const materialOptions = [
-                    { value: '棉' },
-                    { value: '羊毛' },
-                    { value: '混纺' },
-                    { value: '化纤' },
-                    { value: '真丝' },
-                    { value: '麻' },
-                    { value: '腈纶' },
-                    { value: '涤纶' },
-                    { value: '锦纶' },
-                    { value: '氨纶' }
-                ];
-
-                const queryMaterialSearch = (queryString, cb) => {
-                    const results = queryString
-                        ? materialOptions.filter(item => item.value.toLowerCase().includes(queryString.toLowerCase()))
-                        : materialOptions;
-                    cb(results);
-                };
-
-                const handleMaterialSelect = (item) => {
-                    yarnForm.material = item.value;
-                };
 
                 const colorOptions = [
                     { value: '白色' },
@@ -1367,8 +1354,10 @@
                 const handleCreateManufacturePlan = () => {
                     // 重置表单数据
                     manufactureForm.product_id = '';
-                    manufactureForm.colors = [{ color: '', quantity: 0, materials: [{ yarn_id: '', quantity: 1 }] }],
+                    manufactureForm.weight = 0;
+                    manufactureForm.colors = [{ color: '', quantity: 0, yarns: [] }];
                     yarnOptions.value = [[]];
+                    selectedProductSpecs.value = [];  // 重置颜色选项
                     createManufactureDialogVisible.value = true;
                 };
 
@@ -1413,35 +1402,43 @@
                     }
                 };
 
-                const searchYarns = async (query, colorIndex, materialIndex) => {
-                    if (query) {
-                        try {
-                            const response = await axios.get('/api/yarn/list', {
-                                params: {
-                                    search: query,
-                                    page: 1,
-                                    page_size: 20
-                                }
-                            });
-                            if (response.data.code === 0) {
-                                if (!yarnOptions.value[colorIndex]) {
-                                    yarnOptions.value[colorIndex] = [];
-                                }
-                                yarnOptions.value[colorIndex][materialIndex] = response.data.data.items.map(yarn => ({
-                                    ...yarn,
-                                    label: `[${yarn.supplier}] ${yarn.name} - ${yarn.color}`,
-                                    value: yarn.id
-                                }));
+                const handleProductSelect = (productId) => {
+                    const selectedProduct = productOptions.value.find(p => p.id === productId);
+                    console.log(selectedProduct)
+                    if (selectedProduct) {
+                        console.log('设置克重:', selectedProduct.weight);
+                        manufactureForm.weight = Number(selectedProduct.weight) || 0;
+                        // 优先用 colors 字段，否则用 stock_info
+                        if (selectedProduct.colors && selectedProduct.colors.length > 0) {
+                            selectedProductSpecs.value = selectedProduct.colors.map(color => ({ color }));
+                        } else {
+                            selectedProductSpecs.value = selectedProduct.stock_info || [];
+                        }
+                    }
+                };
+
+                const searchYarns = async (query, colorIndex, yarnIndex) => {
+                    try {
+                        const response = await axios.get('/api/yarn/list', {
+                            params: {
+                                search: query,
+                                page: 1,
+                                page_size: 20
                             }
-                        } catch (error) {
-                            console.error('搜索纱线失败:', error);
-                            ElementPlus.ElMessage.error('搜索纱线失败');
+                        });
+                        if (response.data.code === 0) {
+                            if (!yarnOptions.value[colorIndex]) {
+                                yarnOptions.value[colorIndex] = [];
+                            }
+                            yarnOptions.value[colorIndex][yarnIndex] = response.data.data.items.map(yarn => ({
+                                ...yarn,
+                                label: `[${yarn.supplier}] ${yarn.name} - ${yarn.color}`,
+                                value: yarn.id
+                            }));
                         }
-                    } else {
-                        if (!yarnOptions.value[colorIndex]) {
-                            yarnOptions.value[colorIndex] = [];
-                        }
-                        yarnOptions.value[colorIndex][materialIndex] = [];
+                    } catch (error) {
+                        console.error('搜索纱线失败:', error);
+                        ElementPlus.ElMessage.error('搜索纱线失败');
                     }
                 };
 
@@ -1449,9 +1446,30 @@
                     manufactureForm.colors.push({
                         color: '',
                         quantity: 0,
-                        materials: [{ yarn_id: '', quantity: 1 }]
+                        yarns: []
                     });
-                    yarnOptions.value.push([[]]);
+                    yarnOptions.value.push([]);
+                };
+                // 处理图片链接
+                const handleImageUrl = (url) => {
+                    const cloudBaseUrl = 'cloud://prod-9gd4jllic76d4842.7072-prod-9gd4jllic76d4842-1348936510'; // 替换为您的云存储域名
+                    const httpsBaseUrl = 'https://7072-prod-9gd4jllic76d4842-1348936510.tcb.qcloud.la/'; // 替换为您的云存储域名
+                    if (!url) return '';
+                    try {
+                        if (url.startsWith('http')) {
+                            return url;
+                        }
+                    if (url.startsWith('cloud://')) {
+                            return url.replace(
+                                cloudBaseUrl,
+                                httpsBaseUrl
+                            );
+                        }
+                        return `http://127.0.0.1/${url}`;
+                    } catch (error) {
+                        console.error('处理图片URL失败:', error);
+                        return '';
+                    }
                 };
 
                 const removeColor = (colorIndex) => {
@@ -1459,14 +1477,17 @@
                     yarnOptions.value.splice(colorIndex, 1);
                 };
 
-                const addMaterial = (colorIndex) => {
-                    manufactureForm.colors[colorIndex].materials.push({ yarn_id: '', quantity: 1 });
+                const addYarn = (colorIndex) => {
+                    manufactureForm.colors[colorIndex].yarns.push('');
+                    if (!yarnOptions.value[colorIndex]) {
+                        yarnOptions.value[colorIndex] = [];
+                    }
                     yarnOptions.value[colorIndex].push([]);
                 };
 
-                const removeMaterial = (colorIndex, materialIndex) => {
-                    manufactureForm.colors[colorIndex].materials.splice(materialIndex, 1);
-                    yarnOptions.value[colorIndex].splice(materialIndex, 1);
+                const removeYarn = (colorIndex, yarnIndex) => {
+                    manufactureForm.colors[colorIndex].yarns.splice(yarnIndex, 1);
+                    yarnOptions.value[colorIndex].splice(yarnIndex, 1);
                 };
 
                 const submitManufacturePlan = async () => {
@@ -1482,12 +1503,12 @@
                         return;
                     }
 
-                    // 验证材料信息
-                    const invalidMaterial = manufactureForm.colors.some(c => 
-                        c.materials.some(m => !m.yarn_id || !m.quantity)
+                    // 验证纱线信息
+                    const invalidYarn = manufactureForm.colors.some(c => 
+                        c.yarns.some(y => !y)
                     );
-                    if (invalidMaterial) {
-                        ElementPlus.ElMessage.warning('请完整填写材料信息');
+                    if (invalidYarn) {
+                        ElementPlus.ElMessage.warning('请完整填写纱线信息');
                         return;
                     }
 
@@ -1614,6 +1635,7 @@
                     yarnForm.specification = '';
                     yarnForm.supplier = '';
                     yarnForm.stock = 0;
+                    yarnForm.loss_rate = 0;
                     yarnForm.remark = '';
                     yarnFormDialogVisible.value = true;
                 };
@@ -1626,6 +1648,7 @@
                     yarnForm.specification = row.specification;
                     yarnForm.supplier = row.supplier;
                     yarnForm.stock = row.stock;
+                    yarnForm.loss_rate = row.loss_rate;
                     yarnForm.remark = row.remark;
                     yarnFormDialogVisible.value = true;
                 };
@@ -1647,7 +1670,7 @@
                 };
 
                 const submitYarnForm = async () => {
-                    if (!yarnForm.name || !yarnForm.material || !yarnForm.weight || !yarnForm.color || !yarnForm.specification || !yarnForm.supplier || !yarnForm.stock) {
+                    if (!yarnForm.name || !yarnForm.weight || !yarnForm.color || !yarnForm.specification || !yarnForm.supplier || !yarnForm.stock) {
                         ElementPlus.ElMessage.warning('请填写完整信息');
                         return;
                     }
@@ -1721,6 +1744,19 @@
                     window.open('/api/yarn/template', '_blank');
                 };
 
+                const calculateYarnUsage = (yarn) => {
+                    console.log('商品克重:', currentManufacturePlan.value);
+                    console.log('纱线损耗率:', yarn.loss_rate);
+                    // 计算预估使用量：计划数量 * 商品克重 * (1 + 损耗率)
+                    const usage = currentManufacturePlan.value.quantity * (currentManufacturePlan.value.weight / 1000) * (1 + (yarn.loss_rate || 0) / 100);
+                    return usage.toFixed(2);
+                };
+
+                const yarnUsage = computed(() => {
+                    if (!currentManufacturePlan.value || !currentManufacturePlan.value.yarns) return [];
+                    return currentManufacturePlan.value.yarns;
+                });
+
                 // 生命周期钩子
                 onMounted(() => {
                     // 检查登录状态
@@ -1773,6 +1809,7 @@
                     getUserInfo,
                     handleCommand,
                     goBack,
+                    handleImageUrl,
                     manufactureDialogVisible,
                     manufactureSearchQuery,
                     manufactureDateRange,
@@ -1828,22 +1865,23 @@
                     handleYarnSizeChange,
                     handleYarnCurrentChange,
                     getMaterialText,
-                    queryMaterialSearch,
-                    handleMaterialSelect,
                     queryColorSearch,
                     handleColorSelect,
                     searchYarns,
                     addColor,
                     removeColor,
-                    addMaterial,
-                    removeMaterial,
+                    addYarn,
+                    removeYarn,
                     yarnOptions,
                     importYarnDialogVisible,
                     handleImportYarn,
                     beforeImportYarnUpload,
                     handleImportYarnSuccess,
                     handleImportYarnError,
-                    downloadYarnTemplate
+                    downloadYarnTemplate,
+                    handleProductSelect,
+                    calculateYarnUsage,
+                    yarnUsage
                 };
             }
         });

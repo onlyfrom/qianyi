@@ -457,7 +457,9 @@ class ManufacturePlan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
     color = db.Column(db.String(50))
+    weight = db.Column(db.Integer,default=0)
     product = relationship('Product', backref='plans')
+    yarns = db.Column(db.Text)  #纱线IDS 数组 JSON  
 
 # 制造状态历史记录模型
 class ManufactureStatusHistory(db.Model):
@@ -490,6 +492,7 @@ class Yarn(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
     composition = db.Column(db.String(100), nullable=True, comment='成分')
+    loss_rate = db.Column(db.Float,nullable=True,comment='损耗率')
 
     def __repr__(self):
         return f'<Yarn {self.name}>'

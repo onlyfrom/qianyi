@@ -3,6 +3,7 @@ from wxcloudrun import db
 from wxcloudrun.model import Product, ColorStock, ManufacturePlan, ManufactureStatusHistory, Yarn
 from sqlalchemy import or_, func
 from datetime import datetime, timedelta
+import json
 
 manufacture_bp = Blueprint('manufacture', __name__)
 
@@ -40,20 +41,27 @@ def search_products():
     # 获取每个商品的库存信息
     result = []
     for product in products:
-        # 获取颜色库存
-        color_stocks = ColorStock.query.filter_by(product_id=product.id).all()
+        # 解析 specs 字段获取颜色和库存
+        try:
+            specs = json.loads(product.specs) if product.specs else []
+        except Exception:
+            specs = []
         stock_info = [{
-            'color': stock.color,
-            'stock': stock.stock
-        } for stock in color_stocks]
-        
-        result.append({
+            'color': spec.get('color', ''),
+            'stock': spec.get('stock', 0)
+        } for spec in specs]
+        colors = [spec.get('color', '') for spec in specs if spec.get('color', '')]
+        product_data = {
             'id': product.id,
             'name': product.name,
             'code': product.id,  # 使用商品ID作为货号
-            'stock_info': stock_info
-        })
-    print(result)
+            'weight': product.weight,  # 添加克重信息
+            'stock_info': stock_info,
+            'colors': colors  # 新增字段
+        }
+        print("商品数据:", product_data)  # 添加调试日志
+        result.append(product_data)
+    print("最终返回数据:", result)  # 添加调试日志
     return jsonify({
         'code': 0,
         'data': {
@@ -66,42 +74,45 @@ def search_products():
 
 @manufacture_bp.route('/api/manufacture/plan', methods=['POST'])
 def create_manufacture_plan():
-    """创建制造计划"""
+    """创建制造计划（新版结构）"""
     data = request.get_json()
-    if not data or 'items' not in data:
+    if not data or 'product_id' not in data or 'colors' not in data:
         return jsonify({'code': 1, 'message': '参数错误'})
-    
+
     try:
-        for item in data['items']:
-            # 验证必要字段
-            if not all(k in item for k in ['product_id', 'quantity', 'color']):
-                return jsonify({'code': 1, 'message': '缺少必要参数'})
-            
-            # 创建制造计划
+        product_id = data['product_id']
+        weight = data.get('weight', 0)
+        colors = data['colors']
+
+        for color_item in colors:
+            color = color_item.get('color')
+            quantity = color_item.get('quantity')
+            yarns = color_item.get('yarns', [])
+
+            if not color or not quantity:
+                return jsonify({'code': 1, 'message': '颜色和数量不能为空'})
+
             plan = ManufacturePlan(
-                product_id=item['product_id'],
-                quantity=item['quantity'],
-                color=item['color'],
+                product_id=product_id,
+                quantity=quantity,
+                color=color,
+                weight=weight,
                 weaving=0,
                 flat_sewing=0,
                 cuff_sewing=0,
                 handwork=0,
                 washing=0,
-                entry=0
+                entry=0,
+                yarns=json.dumps(yarns)  # 将纱线数组转换为JSON字符串存储
             )
             db.session.add(plan)
-        
+            db.session.flush()  # 如需 plan.id 可用
+
         db.session.commit()
-        return jsonify({
-            'code': 0,
-            'message': '创建成功'
-        })
+        return jsonify({'code': 0, 'message': '创建成功'})
     except Exception as e:
         db.session.rollback()
-        return jsonify({
-            'code': 1,
-            'message': f'创建失败: {str(e)}'
-        })
+        return jsonify({'code': 1, 'message': f'创建失败: {str(e)}'})
 
 @manufacture_bp.route('/api/manufacture/plans', methods=['GET'])
 def get_manufacture_plans():
@@ -113,13 +124,33 @@ def get_manufacture_plans():
     query = ManufacturePlan.query
     
     # 分页查询
-    pagination = query.paginate(page=page, per_page=page_size)
+    pagination = query.order_by(ManufacturePlan.created_at.desc()).paginate(page=page, per_page=page_size)
     plans = pagination.items
     
     # 构建返回数据
     result = []
     for plan in plans:
         product = Product.query.get(plan.product_id)
+        # 解析纱线信息
+        yarn_ids = json.loads(plan.yarns) if plan.yarns else []
+        yarns = []
+        for yarn_id in yarn_ids:
+            yarn = Yarn.query.get(yarn_id)
+            if yarn:
+                print(f"纱线信息 - ID: {yarn.id}, 名称: {yarn.name}, 损耗率: {yarn.loss_rate}")  # 添加调试日志
+                yarns.append({
+                    'id': yarn.id,
+                    'name': yarn.name,
+                    'supplier': yarn.supplier,
+                    'color': yarn.color,
+                    'color_code': yarn.color_code,
+                    'material': yarn.material,
+                    'weight': float(yarn.weight) if yarn.weight else 0,
+                    'specification': yarn.specification,
+                    'remark': yarn.remark,
+                    'loss_rate': float(yarn.loss_rate) if yarn.loss_rate is not None else 0  # 修改这里，确保返回数值类型
+                })
+        
         result.append({
             'id': plan.id,
             'product_id': plan.product_id,
@@ -134,7 +165,9 @@ def get_manufacture_plans():
             'washing': plan.washing or 0,
             'entry': plan.entry or 0,
             'created_at': plan.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-            'updated_at': plan.updated_at.strftime('%Y-%m-%d %H:%M:%S')
+            'updated_at': plan.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'yarns': yarns,  # 添加完整的纱线信息
+            'weight':product.weight
         })
     
     return jsonify({
@@ -466,7 +499,8 @@ def get_yarn_list():
         query = query.filter(
             or_(
                 Yarn.name.like(f'%{search}%'),
-                Yarn.specification.like(f'%{search}%')
+                Yarn.specification.like(f'%{search}%'),
+                Yarn.color.like(f'%{search}%'),
             )
         )
 
@@ -492,6 +526,7 @@ def get_yarn_list():
             'supplier': yarn.supplier,
             'stock': yarn.stock,
             'remark': yarn.remark,
+            'loss_rate': yarn.loss_rate,
             'created_at': yarn.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': yarn.updated_at.strftime('%Y-%m-%d %H:%M:%S')
         })
@@ -530,7 +565,8 @@ def create_yarn():
             specification=data['specification'],
             supplier=data['supplier'],
             stock=data['stock'],
-            remark=data.get('remark', '')
+            remark=data.get('remark', ''),
+            loss_rate=data.get('loss_rate', 0)
         )
         db.session.add(yarn)
         db.session.commit()
@@ -562,7 +598,7 @@ def update_yarn(yarn_id):
             return jsonify({'code': 1, 'message': '纱线不存在'})
 
         # 更新字段
-        fields = ['name', 'material', 'weight', 'color', 'color_code', 'specification', 'supplier', 'stock', 'remark']
+        fields = ['name', 'material', 'weight', 'color', 'color_code', 'specification', 'supplier', 'stock', 'remark', 'loss_rate']
         for field in fields:
             if field in data:
                 setattr(yarn, field, data[field])
@@ -704,7 +740,8 @@ def import_yarn():
                     specification='',  # 留空
                     supplier=str(row['纱厂']).strip(),
                     stock=0,      # 留空
-                    remark=str(row.get('备注', '')).strip() if not pd.isna(row.get('备注', '')) else ''  # 备注可选
+                    remark=str(row.get('备注', '')).strip() if not pd.isna(row.get('备注', '')) else '',  # 备注可选
+                    loss_rate=0  # 留空
                 )
                 
                 print(f'处理第{index + 2}行:', {
@@ -761,4 +798,157 @@ def import_yarn():
         return jsonify({
             'code': 1,
             'message': f'导入失败: {str(e)}'
+        })
+
+@manufacture_bp.route('/api/yarn/import-loss-rate', methods=['POST'])
+def import_yarn_loss_rate():
+    """导入纱线损耗率"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'code': 1, 'message': '未上传文件'})
+        
+        file = request.files['file']
+        if not file or file.filename == '':
+            return jsonify({'code': 1, 'message': '未选择文件'})
+            
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            return jsonify({'code': 1, 'message': '只支持Excel文件(.xlsx或.xls)'})
+        
+        import pandas as pd
+        
+        # 读取Excel文件
+        try:
+            df = pd.read_excel(file)
+        except Exception as e:
+            return jsonify({'code': 1, 'message': f'Excel文件读取失败: {str(e)}'})
+        
+        # 验证必要的列是否存在
+        required_columns = ['纱厂', '纱线名称', '损耗率']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            return jsonify({'code': 1, 'message': f'缺少必要的列: {", ".join(missing_columns)}'})
+        
+        # 验证数据是否为空
+        if df.empty:
+            return jsonify({'code': 1, 'message': 'Excel文件中没有数据'})
+        
+        # 处理数据
+        success_count = 0
+        error_count = 0
+        error_messages = []
+        
+        print('开始导入损耗率，总行数:', len(df))
+        
+        for index, row in df.iterrows():
+            try:
+                # 数据验证
+                if pd.isna(row['纱厂']) or pd.isna(row['纱线名称']) or pd.isna(row['损耗率']):
+                    raise ValueError('必填字段不能为空')
+                
+                # 检查纱线是否存在
+                print(row['纱线名称'],row['纱厂'])
+                yarns = Yarn.query.filter_by(
+                    name=str(row['纱线名称']).strip(),
+                    supplier=str(row['纱厂']).strip()
+                ).all()
+                
+                if not yarns:
+                    raise ValueError('未找到对应的纱线记录')
+                
+                # 验证损耗率格式
+                try:
+                    loss_rate = float(row['损耗率'])
+                    if loss_rate < 0 or loss_rate > 100:
+                        raise ValueError('损耗率必须在0-100之间')
+                except ValueError:
+                    raise ValueError('损耗率必须是有效的数字')
+                
+                # 更新所有匹配的纱线损耗率
+                for yarn in yarns:
+                    yarn.loss_rate = loss_rate
+                    print(f"更新纱线 - ID: {yarn.id}, 名称: {yarn.name}, 新损耗率: {loss_rate}")
+                
+                success_count += len(yarns)
+                
+                # 每100条提交一次，避免事务太大
+                if success_count % 100 == 0:
+                    db.session.commit()
+                    print(f'已成功更新{success_count}条记录')
+                
+            except Exception as e:
+                error_count += 1
+                error_msg = f'第{index + 2}行更新失败: {str(e)}'
+                error_messages.append(error_msg)
+                print(error_msg)
+                continue
+        
+        # 最终提交
+        try:
+            db.session.commit()
+            print('导入完成，最终提交成功')
+        except Exception as e:
+            db.session.rollback()
+            print('最终提交失败:', str(e))
+            return jsonify({
+                'code': 1,
+                'message': f'数据保存失败: {str(e)}',
+                'data': {
+                    'success_count': success_count,
+                    'error_count': error_count,
+                    'error_messages': error_messages
+                }
+            })
+        
+        return jsonify({
+            'code': 0,
+            'message': f'导入完成，成功: {success_count}条，失败: {error_count}条',
+            'data': {
+                'success_count': success_count,
+                'error_count': error_count,
+                'error_messages': error_messages
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        print('导入过程发生错误:', str(e))
+        return jsonify({
+            'code': 1,
+            'message': f'导入失败: {str(e)}'
+        })
+
+@manufacture_bp.route('/api/yarn/loss-rate-template', methods=['GET'])
+def download_yarn_loss_rate_template():
+    """下载纱线损耗率导入模板"""
+    try:
+        import pandas as pd
+        from io import BytesIO
+        from flask import send_file
+
+        # 创建示例数据
+        data = {
+            '纱厂': ['示例纱厂1', '示例纱厂2'],
+            '纱线名称': ['示例纱线1', '示例纱线2'],
+            '损耗率': [5.5, 3.2]  # 示例损耗率
+        }
+        
+        # 创建DataFrame
+        df = pd.DataFrame(data)
+        
+        # 创建Excel文件
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='纱线损耗率导入模板')
+        
+        output.seek(0)
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='纱线损耗率导入模板.xlsx'
+        )
+    except Exception as e:
+        return jsonify({
+            'code': 1,
+            'message': f'下载模板失败: {str(e)}'
         }) 
